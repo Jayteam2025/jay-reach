@@ -37,6 +37,8 @@ export interface TableContactsLibelles {
   colonneContact: string;
   colonnePourquoi: string;
   colonneScore: string;
+  /** Colonne de la phrase du modèle (`ligne.explication`) ; absente = pas de colonne (écran global). */
+  colonneExplication?: string;
   colonneEmail: string;
   colonneEtape: string;
   colonneCampagne: string;
@@ -147,6 +149,9 @@ export function TableContacts({
           : [
               { cle: 'pourquoi', titre: libelles.colonnePourquoi, largeur: '30%', largeurMax: '0' },
               { cle: 'score', titre: libelles.colonneScore },
+              ...(libelles.colonneExplication
+                ? [{ cle: 'explication', titre: libelles.colonneExplication, largeur: '25%', largeurMax: '0' }]
+                : []),
             ]),
         { cle: 'email', titre: libelles.colonneEmail },
         { cle: 'etape', titre: libelles.colonneEtape, nowrap: true },
@@ -196,6 +201,15 @@ export function TableContacts({
                   <span className="jr-secondaire">—</span>
                 ),
                 score: ligne.score ?? <span className="jr-secondaire">—</span>,
+                ...(libelles.colonneExplication
+                  ? {
+                      explication: ligne.explication ? (
+                        <TexteTronque className="jr-petit">{ligne.explication}</TexteTronque>
+                      ) : (
+                        <span className="jr-secondaire">—</span>
+                      ),
+                    }
+                  : {}),
               }),
           email: ligne.email ? (
             <Puce ton="bon" point>

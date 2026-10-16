@@ -22,7 +22,8 @@ import {
   nettoyerMessageErreurJournal,
   plafondDuJour,
   fuseauDeLOrganisation,
-  jourCourantDansFuseau, estSignalDePersonne} from '@jay-reach/core';
+  jourCourantDansFuseau, estSignalDePersonne,
+  envoiRetenuParUnPost} from '@jay-reach/core';
 import { runDiscover, type DiscoverJob } from './handlers/discover.js';
 import { runQualify, type QualifyJob } from './handlers/qualify.js';
 import { runScore, DEFAULT_BATCH, compterSignauxScorables, type ScoreSummary } from './handlers/score.js';
@@ -43,6 +44,7 @@ import {
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
 import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { rejeterFichesPostExpirees } from './linkedin/posts-fiches.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
 import {
@@ -76,6 +78,7 @@ import {
   type CollecteLinkedInJob,
 } from './handlers/collecte-linkedin.js';
 import { dependancesEnvoiReelles, traiterEnvoiLinkedIn, type EnvoiLinkedInJob } from './handlers/envoi-linkedin.js';
+import { dependancesFichePostReelles, traiterFichePost, type FichePostJob } from './handlers/fiche-post.js';
 import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -113,6 +116,8 @@ export const FILES_BRANCHEES = [
   // Exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`) ; la garde `JAY_REACH_LINKEDIN`
   // en tête du handler n'est que la seconde barrière.
   'linkedin.envoi',
+  // Ouvre une page LinkedIn : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
+  'linkedin.fiche-post',
   'retention.purge',
 ] as const;
 
@@ -123,7 +128,7 @@ export const FILES_BRANCHEES = [
  * (ou la collecte) serait détruite sans un message d'erreur. Elles restent à qui a un navigateur :
  * le worker permanent.
  */
-export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi'];
+export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post'];
 
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
@@ -530,7 +535,12 @@ export async function rejouerActionsEmailEnAttente(ctx: Contexte): Promise<numbe
        join sequence_steps s on s.id = a.step_id
        join organizations org on org.id = a.organization_id
       where a.channel = 'email'
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled : une action approuvée par un humain n'était reprise
+        -- par AUCUN chemin — les deux balayages filtraient scheduled, approuverEnvoi n'enfile
+        -- rien, et rien ne la ramenait en arrière. Elle restait approved sans erreur, pendant
+        -- que l'écran la comptait comme « prévue ». pending_approval reste dehors : elle attend
+        -- encore un accord, et la laisser partir casserait la règle non négociable n°1.
+        and a.status in ('scheduled', 'approved')
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
@@ -624,10 +634,11 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
     channel: 'linkedin_invite' | 'linkedin_message';
     contact_id: string;
     signal_id: string | null;
+    campaign_id: string;
     linkedin_url: string;
   }>(
     `select a.id as action_id, a.organization_id, e.id as enrollment_id, st.template_parent_id,
-            a.channel::text as channel, e.contact_id, e.signal_id, c.linkedin_url /* jr:linkedin_rejeu_attente */
+            a.channel::text as channel, e.contact_id, e.signal_id, e.campaign_id, c.linkedin_url /* jr:linkedin_rejeu_attente */
        from actions a
        join enrollments e on e.id = a.enrollment_id
        join contacts c on c.id = e.contact_id
@@ -635,7 +646,12 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
        join organizations org on org.id = a.organization_id
        left join sequence_steps st on st.id = a.step_id
       where a.channel in ('linkedin_invite', 'linkedin_message')
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled : une action approuvée par un humain n'était reprise
+        -- par AUCUN chemin — les deux balayages filtraient scheduled, approuverEnvoi n'enfile
+        -- rien, et rien ne la ramenait en arrière. Elle restait approved sans erreur, pendant
+        -- que l'écran la comptait comme « prévue ». pending_approval reste dehors : elle attend
+        -- encore un accord, et la laisser partir casserait la règle non négociable n°1.
+        and a.status in ('scheduled', 'approved')
         and a.dispatched_at is null
         and a.created_at < now() - interval '2 minutes'
         and org.sending_paused_at is null
@@ -683,12 +699,26 @@ export async function rejouerActionsLinkedInEnAttente(ctx: Contexte): Promise<nu
             `update actions
                 set status = 'blocked', block_reason = $2,
                     payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('missingVariables', $3::jsonb)
-              where id = $1 and organization_id = $4 and status = 'scheduled' and dispatched_at is null /* jr:linkedin_rejeu_attente_bloque */`,
+              where id = $1 and organization_id = $4 and status in ('scheduled', 'approved') and dispatched_at is null /* jr:linkedin_rejeu_attente_bloque */`,
             [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
           );
           continue;
         }
         messageBody = corps.texte;
+      }
+      // La garde du post, ICI aussi : ce balayage RE-REND le corps depuis le gabarit COURANT,
+      // donc une accroche ajoutée après la création de l'action part par ce chemin sans jamais
+      // repasser par le tick. Les variables se résolvent (la fiche porte l'adresse dès la
+      // capture), `missing_variable` ne prend pas le relais, et le message nommerait un post que
+      // personne n'a relu. Le blocage est RELÂCHÉ par `validerPost` comme celui du tick.
+      if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_id)) {
+        await pool.query(
+          `update actions set status = 'blocked', block_reason = 'post_a_relire'
+            where id = $1 and organization_id = $2 and status in ('scheduled', 'approved') and dispatched_at is null /* jr:linkedin_rejeu_attente_post */`,
+          [row.action_id, row.organization_id],
+        );
+        console.warn(`[tick] action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);
+        continue;
       }
       const job: DispatchJob = {
         organizationId: row.organization_id,
@@ -752,10 +782,14 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
     kind: 'invite' | 'message';
     contact_id: string;
     signal_id: string | null;
+    campaign_id: string;
+    /** Le signal de l'INSCRIPTION, celui que la garde du post juge — `q.signal_id` est celui de la file. */
+    signal_inscription: string | null;
     linkedin_url: string;
   }>(
     `select a.id as action_id, q.id as queue_id, e.id as enrollment_id, st.template_parent_id,
-            a.organization_id, q.kind, e.contact_id, q.signal_id,
+            a.organization_id, q.kind, e.contact_id, q.signal_id, e.campaign_id,
+            e.signal_id as signal_inscription,
             coalesce(c.linkedin_url, q.linkedin_url) as linkedin_url /* jr:linkedin_rejeu_reprises */
        from actions a
        left join sequence_steps st on st.id = a.step_id
@@ -770,7 +804,11 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
           limit 1
        ) q on true
       where a.channel in ('linkedin_invite', 'linkedin_message')
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled, comme les deux autres balayages : une action approuvée
+        -- par un humain n'était lue par AUCUN des trois, et le balayage des actions jamais
+        -- enfilées l'exclut en plus par son not exists sur la file. Ouvrir deux sorties sur
+        -- trois fabriquait un blocage définitif et muet, créé par notre propre élargissement.
+        and a.status in ('scheduled', 'approved')
         and e.status = 'active'
         and camp.status = 'active'
         and org.sending_paused_at is null
@@ -815,9 +853,23 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
           `update actions
               set status = 'blocked', block_reason = $2,
                   payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('missingVariables', $3::jsonb)
-            where id = $1 and organization_id = $4 and status = 'scheduled' /* jr:linkedin_rejeu_bloque */`,
+            where id = $1 and organization_id = $4 and status in ('scheduled', 'approved') /* jr:linkedin_rejeu_bloque */`,
           [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
         );
+        continue;
+      }
+      // La garde du post, ICI aussi, et pour la même raison qu'au-dessus : ce balayage RE-REND le
+      // corps depuis le gabarit COURANT. Le chemin réel est celui-ci — un envoi LinkedIn échoue,
+      // l'opérateur ajoute l'accroche, clique « Reprendre », et le message repart en nommant un
+      // post que personne n'a relu. Le signal jugé est celui de l'INSCRIPTION, comme partout
+      // ailleurs dans cette garde, et non celui de la ligne de file.
+      if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_inscription)) {
+        await pool.query(
+          `update actions set status = 'blocked', block_reason = 'post_a_relire'
+            where id = $1 and organization_id = $2 and status in ('scheduled', 'approved') /* jr:linkedin_rejeu_reprise_post */`,
+          [row.action_id, row.organization_id],
+        );
+        console.warn(`[tick] reprise de l'action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);
         continue;
       }
       const id = await enqueueLinkedInAction(pool, {
@@ -1061,6 +1113,14 @@ export async function traiterEnrichContacts(ctx: Contexte, data: EnrichContactsJ
 export async function produire(ctx: Contexte): Promise<Error | null> {
   const { pool, boss } = ctx;
   try {
+    // AVANT la purge d'ancienneté, et c'est l'ordre qui compte : une fiche dont la fenêtre de
+    // décision est passée cesse d'épargner les personnes qui ont réagi à ce post, et celles-ci
+    // retombent sous la purge dès ce passage-ci plutôt qu'au suivant. Rien n'est effacé ici,
+    // seul le statut de la fiche change.
+    const fichesExpirees = await rejeterFichesPostExpirees(pool);
+    if (fichesExpirees > 0) {
+      console.log(`[produire] ${fichesExpirees} fiche(s) de post rejetée(s) faute de validation dans la fenêtre`);
+    }
     const ecartes = await ecarterSignauxTropAnciens(pool, AGE_MAX_SIGNAL_JOURS);
     if (ecartes.nouveaux > 0 || ecartes.qualifies > 0) {
       console.log(`[produire] signaux ecartes pour anciennete (> ${AGE_MAX_SIGNAL_JOURS} j) : ${ecartes.nouveaux} non scores, ${ecartes.qualifies} qualifies non enrichis`);
@@ -1186,6 +1246,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterCollecteLinkedIn(dependancesCollecteReelles(ctx.pool), donnees as CollecteLinkedInJob);
     case 'linkedin.envoi':
       return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
+    case 'linkedin.fiche-post':
+      return traiterFichePost(dependancesFichePostReelles(ctx.pool, ctx.encryptionKey), donnees as FichePostJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

@@ -164,6 +164,7 @@ export default async function CampagneContactsPage({
             colonneContact: t('contacts.columns.contact'),
             colonnePourquoi: t('contacts.columns.why'),
             colonneScore: t('contacts.columns.score'),
+            colonneExplication: t('contacts.columns.scoreReason'),
             colonneEmail: t('contacts.columns.email'),
             colonneEtape: t('contacts.columns.step'),
             colonneCampagne: t('contacts.columns.campaign'),

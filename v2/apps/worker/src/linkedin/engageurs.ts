@@ -14,6 +14,7 @@
  * lieu. Elles sont isolées dans `urlReactions` / `urlCommentaires` pour n'avoir
  * qu'un endroit à corriger à la première recette avec le compte réel.
  */
+import { lireFichePostDepuisPageOuverte, type FichePost } from './fiche-post.js';
 import type { Pilote } from './navigateur.js';
 import type { Engageur } from '../handlers/post-engagement.js';
 
@@ -413,7 +414,12 @@ export async function lireEngageurs(
   surRequete: () => Promise<void>,
   /** Injectée pour que les tests n'attendent pas réellement. */
   pause: (ms: number) => Promise<void> = pauseReelle,
-): Promise<{ personnes: Engageur[]; arret: ArretCollecte }> {
+  /**
+   * Lire aussi la fiche du post sur la page qu'on vient d'ouvrir. Gratuit : le texte se lit dans
+   * le document déjà chargé, aucune navigation ni requête ne part pour elle.
+   */
+  capturerFiche = false,
+): Promise<{ personnes: Engageur[]; arret: ArretCollecte; fiche?: FichePost }> {
   if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { personnes: [], arret: 'plafond' };
 
   const urn = urnDActivite(urlPost);
@@ -439,13 +445,18 @@ export async function lireEngageurs(
   const frictionArrivee = frictionDeLUrl(await pilote.url());
   if (frictionArrivee) return { personnes: [], arret: frictionArrivee };
 
+  // L'adresse demandée prime sur celle d'arrivée (une redirection) pour l'identité du post.
+  const fiche: FichePost | undefined = capturerFiche ? await lireFicheDuPostOuvert(pilote, urlPost, urn) : undefined;
+  const rendre = (personnes: Engageur[], arret: ArretCollecte): { personnes: Engageur[]; arret: ArretCollecte; fiche?: FichePost } =>
+    fiche === undefined ? { personnes, arret } : { personnes, arret, fiche };
+
   // Combien de listes ont abouti. Sert à distinguer « ce post n'existe pas » de « cette
   // liste-ci n'existe pas pour ce post ».
   let listesAbouties = 0;
   for (const fabriquer of adressesDemandees(garder)) {
     let debut = 0;
     for (let page = 0; page < PAGES_MAX; page += 1) {
-      if (restantes <= 0) return { personnes: personnes(), arret: 'plafond' };
+      if (restantes <= 0) return rendre(personnes(), 'plafond');
       // Toujours une pause : la précédente « requête » est au minimum le chargement
       // de la page du post, et enchaîner sans délai est ce qui se repère le mieux.
       await pause(delaiAleatoire());
@@ -461,7 +472,7 @@ export async function lireEngageurs(
         // enverrait l'opérateur vérifier une adresse parfaitement valide, et jetterait le
         // passage entier.
         if (friction.type === 'post_introuvable' && listesAbouties > 0) break;
-        return { personnes: personnes(), arret: friction };
+        return rendre(personnes(), friction);
       }
       if (rep.statut < 200 || rep.statut >= 300) {
         // Un statut anormal est un verdict de LinkedIn sur nous (429, 5xx répétés) :
@@ -496,7 +507,7 @@ export async function lireEngageurs(
             false,
           );
         }
-        return { personnes: [], arret: { type: 'liste_vide' } };
+        return rendre([], { type: 'liste_vide' });
       }
       premiereReponse = false;
       listesAbouties += 1;
@@ -513,5 +524,11 @@ export async function lireEngageurs(
       if (total !== undefined && debut >= total) break;
     }
   }
-  return { personnes: personnes(), arret: 'fini' };
+  return rendre(personnes(), 'fini');
+}
+
+/** La fiche, lue sur la page ouverte et rattachée à l'adresse demandée. Ne lève jamais. */
+async function lireFicheDuPostOuvert(pilote: Pilote, urlPost: string, urn: string): Promise<FichePost> {
+  const lue = await lireFichePostDepuisPageOuverte(pilote);
+  return { ...lue, url: urlPost, urn };
 }

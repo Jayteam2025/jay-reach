@@ -2,8 +2,9 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import type { CanalModele, ModeleMessage } from '@jay-reach/core';
+import { variablesProposees, type CanalModele, type ModeleMessage } from '@jay-reach/core';
 import { Bouton, Champ, EtatVide, Puce, Table, Tiroir, TuileLogo, type ColonneTable } from '../ui';
+import { PucesVariables } from '../messages/PucesVariables';
 import { actionEnregistrerModele } from '../../app/actions/templates';
 
 export type CanalModeleVue = CanalModele;
@@ -17,18 +18,6 @@ export interface TableModelesProps {
 }
 
 type Filtre = 'tous' | 'email' | 'linkedin' | 'non_utilises';
-
-/** Variables offertes à l'insertion (mêmes que `TiroirEtape`, `sequence/TiroirEtape.tsx`). */
-const VARIABLES_INSERABLES = [
-  'prenom',
-  'entreprise',
-  'poste',
-  'ville',
-  'signal_titre',
-  'signal_date',
-  'lien_offre',
-  'persona_angle',
-] as const;
 
 function estEmail(canal: CanalModeleVue): boolean {
   return canal === 'email';
@@ -82,6 +71,7 @@ function TiroirModele({
   onFermer: () => void;
 }) {
   const tDrawer = useTranslations('reglages.messages.drawer');
+  const tRacine = useTranslations();
   const [pending, startTransition] = useTransition();
   const [erreur, setErreur] = useState<string | null>(null);
   const [issues, setIssues] = useState<string[] | undefined>(undefined);
@@ -205,18 +195,13 @@ function TiroirModele({
             />
           </Champ>
           <div className="jr-aide">{tDrawer('bodyHint')}</div>
-          <div className="jr-puces variables">
-            {VARIABLES_INSERABLES.map((nom) => (
-              <button
-                key={nom}
-                type="button"
-                className="jr-puce variable"
-                onClick={() => inserVariable(nom)}
-              >
-                {`{{${nom}}}`}
-              </button>
-            ))}
-          </div>
+          {/* Un modèle n'est rattaché à aucune campagne : pour la nature signal on offre les variables
+              de post, que l'enregistrement accepte dans toute campagne de signal. */}
+          <PucesVariables
+            variables={variablesProposees(etat.nature, etat.nature === 'signal')}
+            onInserer={inserVariable}
+            libelle={(nom) => tRacine(`common.variables.${nom}`)}
+          />
         </div>
 
         {issues && issues.length > 0 && (

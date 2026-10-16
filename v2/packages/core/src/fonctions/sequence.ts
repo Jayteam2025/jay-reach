@@ -20,6 +20,7 @@
  * (constaté en base réelle, R30 : une séquence alterne email et
  * invitations/messages LinkedIn, jamais couvert par la maquette).
  */
+import { sqlEtatApresDeblocage } from '../sequencer/approbation.js';
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurIntrouvable, ErreurEntree } from './contexte.js';
@@ -33,7 +34,7 @@ import {
   type CampaignNature,
 } from '../messages/index.js';
 import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } from './campagnes.js';
-import { SQL_PROVIDER_ID_AFFICHAGE } from './sources.js';
+import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_SOURCES_DE_POST } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
 import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
@@ -715,6 +716,39 @@ export async function colonnesDeListeCampagne(ctx: Contexte, entree: unknown): P
 }
 
 // ---------------------------------------------------------------------------
+// variablesDeLaCampagne : ce que le sélecteur de variables a besoin de savoir
+// ---------------------------------------------------------------------------
+
+export const schemaVariablesDeLaCampagne = z.object({ campagneId: z.string().uuid() });
+
+export interface VariablesDeLaCampagne {
+  /** Même règle que `enregistrerEtape` : une campagne reliée à une source est de signal, sinon de liste. */
+  readonly nature: CampaignNature;
+  /** Au moins une source dont les signaux portent une fiche de post : les variables `post_*` ont alors un sens. */
+  readonly aSourceDePost: boolean;
+}
+
+/**
+ * Nature de la campagne et présence d'une source de post, pour que `TiroirEtape` et le reste du
+ * sélecteur ne proposent que ce que l'enregistrement acceptera, et les variables de post que
+ * lorsqu'elles se résoudront. Campagne hors organisation ou inconnue : `ErreurIntrouvable`.
+ */
+export async function variablesDeLaCampagne(ctx: Contexte, entree: unknown): Promise<VariablesDeLaCampagne> {
+  exiger(ctx, 'viewer');
+  const { campagneId } = valider(schemaVariablesDeLaCampagne, entree);
+  const campagne = await lireCampagnePourEtape(ctx, campagneId);
+  const res = await ctx.ex.query<{ present: boolean }>(
+    `select exists (
+              select 1 from campaign_sources cs join sources so on so.id = cs.source_id /* jr:sequence_source_de_post */
+               where cs.campaign_id = $1 and so.organization_id = $2
+                 and so.config->>'sourceType' = any($3::text[])
+            ) as present`,
+    [campagneId, ctx.organisationId, TYPES_SOURCES_DE_POST],
+  );
+  return { nature: campagne.source_id ? 'signal' : 'list', aSourceDePost: res.rows[0]?.present === true };
+}
+
+// ---------------------------------------------------------------------------
 // apercuEtape
 // ---------------------------------------------------------------------------
 
@@ -743,6 +777,10 @@ const VALEURS_CONTACT_FICTIF: Readonly<Record<string, string>> = {
   pays: 'France',
   signal_date: '12 septembre 2026',
   signal_mois: 'septembre',
+  post_auteur: 'Ana Test',
+  post_sujet: 'le recrutement des commerciaux',
+  post_url: 'https://exemple.fr/posts/12345',
+  post_date: '8 octobre 2026',
 };
 
 export interface ApercuEtape {
@@ -1139,10 +1177,27 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
     // manuelle, c'est le redémarrage que l'opérateur vient de demander.
     // Toujours tentée (aucun cas particulier à coder) : sans ligne bloquée à
     // rejouer, elle ne matche simplement aucune ligne côté vraie base.
+      // L'état de retour N'EST PAS toujours `scheduled` : une action bloquée alors que l'accord
+      // d'un humain était exigé doit retourner dans la FILE, pas en partance. Le tick écrit
+      // `requiresApproval` dans le payload au moment du blocage `post_a_relire`
+      // (`apps/worker/src/handlers/sequence.ts`), et les trois chemins qui débloquent une action
+      // lisent le même drapeau — celui-ci, la relance de `validerPost`, et le retour d'absence.
+      // Pour tout autre motif il est absent du payload, donc rien ne change : c'est ce qui rend
+      // cette lecture sûre.
     await ctx.ex.query(
-      `update actions /* jr:reprendre_action */
-          set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
-        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+      `update actions a /* jr:reprendre_action */
+      -- Le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE : c'est un MINIMUM, pas la
+      -- vérité du jour. Une politique passée à all depuis, ou un canal letter, exigent
+      -- l'accord maintenant. On pose donc pending_approval dès que l'un des trois le dit :
+      -- ça ne peut que durcir, jamais laisser partir davantage.
+      -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
+      -- partis, hors de portée d'une mise à jour en masse.)
+          set status = ${sqlEtatApresDeblocage('a', 'camp')},
+              scheduled_for = $3, error = null, block_reason = null
+         from enrollments e
+         join campaigns camp on camp.id = e.campaign_id
+        where a.enrollment_id = e.id
+          and a.idempotency_key = $1 and a.organization_id = $2 and a.status in ('blocked', 'failed')`,
       [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId, new Date(instantDeReprise).toISOString()],
     );
     // LinkedIn : marque la ligne de file refusée comme REPRISE par un humain. Seule une ligne

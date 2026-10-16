@@ -4,7 +4,30 @@
   },
   "common": {
     "loading": "Loading…",
-    "language": "Language"
+    "language": "Language",
+    "variables": {
+      "prenom": "Contact's first name",
+      "salutation": "Greeting: “Bonjour Marie”, or “Bonjour” without a first name",
+      "nom": "Contact's last name",
+      "poste": "Contact's job title",
+      "entreprise": "Company name",
+      "ville": "Company city",
+      "effectif": "Company headcount",
+      "persona_angle": "Persona's angle of approach",
+      "signal_date": "Signal date",
+      "signal_mois": "Signal month",
+      "signal_titre": "Signal title (the job offer, the event)",
+      "signal_zone": "Signal location",
+      "lien_offre": "Link to the job offer",
+      "contexte": "Context note of the imported list",
+      "site": "Company website",
+      "departement": "Department (first two digits of the postcode)",
+      "pays": "Company country",
+      "post_auteur": "Author of the post the person reacted to",
+      "post_sujet": "Subject of the post, validated before being quoted",
+      "post_url": "Link to the post",
+      "post_date": "Publication date of the post"
+    }
   },
   "login": {
     "title": "Sign in",
@@ -370,6 +393,7 @@
       "contacts": "Contacts",
       "queue": "Today's queue",
       "sources": "Sources",
+      "posts": "Posts",
       "sequence": "Sequence",
       "activity": "Activity",
       "settings": "Settings"
@@ -434,6 +458,7 @@
         "contact": "Contact",
         "why": "Why them",
         "score": "Score",
+        "scoreReason": "Why this score",
         "listJobTitle": "Job title",
         "email": "Email",
         "step": "Step",
@@ -561,12 +586,14 @@
         "skipped": "Cancelled"
       },
       "pendingDelivery": "delivery pending",
+      "blockedPostToReview": "This message names a post nobody has reviewed.",
       "actions": {
         "review": "Review",
         "postpone": "Postpone",
         "discard": "Discard",
         "findEmail": "Find the email",
-        "retry": "Retry"
+        "retry": "Retry",
+        "reviewPost": "Review the post"
       },
       "empty": {
         "title": "Nothing to send today",
@@ -1068,6 +1095,64 @@
         "saveDraft": "Save as draft",
         "createAndLaunch": "Create and launch",
         "continue": "Continue"
+      }
+    },
+    "posts": {
+      "title": "Posts to review",
+      "description": "What you review here is the sentence as it will be sent. The subject is written inside the sentence, where it will land.",
+      "bar": {
+        "posts": "{n, plural, one {# post is} other {# posts are}} waiting for your review",
+        "personnes": "up to {n, plural, one {# person does} other {# people do}} not enter the sequence until their post is approved",
+        "rien": "No post is waiting for your review.",
+        "sansAccroche": "This campaign doesn't name any post. Reviewing them here unblocks no one for it, but counts for the campaigns that do.",
+        "toutValider": "Approve all ({n})",
+        "lotBloque": "Save or undo your change before approving everything."
+      },
+      "phrase": {
+        "avantAuteur": "I saw you react to ",
+        "apresAuteur": "'s post about ",
+        "sujetInvite": "write the post's subject",
+        "sujetEtiquette": "Subject of {auteur}'s post",
+        "auteurInvite": "write the author's name",
+        "auteurEtiquette": "Name of the post's author, as it will be sent",
+        "manquant": {
+          "post_url": "link unavailable",
+          "post_date": "date unavailable"
+        },
+        "manquantAide": "This detail could not be read from the post page. Jay Reach will read it again automatically; there is nothing for you to write here."
+      },
+      "ligne": {
+        "auteurInconnu": "Unknown author",
+        "publie": "published {date}",
+        "publieInconnu": "publication date unknown",
+        "voir": "View the post on LinkedIn",
+        "attente": "up to {n, plural, one {# person is} other {# people are}} waiting"
+      },
+      "etat": {
+        "pending": "pending",
+        "approved": "approved",
+        "rejected": "rejected"
+      },
+      "echeance": {
+        "loin": "deleted on {date}",
+        "bientot": "deleted on {date}, in {jours, plural, one {# day} other {# days}}",
+        "demain": "deleted tomorrow",
+        "aujourdhui": "deleted today",
+        "passee": "deadline passed"
+      },
+      "actions": {
+        "valider": "Approve",
+        "rejeter": "Reject",
+        "rouvrir": "Reopen"
+      },
+      "vide": {
+        "titre": "No post to review.",
+        "texte": "Posts collected by your LinkedIn sources appear here. Their contacts enter the sequence once you have reviewed the sentence that will name them."
+      },
+      "retenues": {
+        "titre": "People held back",
+        "sansSource": "The message writes a post variable, but the campaign has no source that starts from a post: nobody will enter the sequence.",
+        "inexploitable": "up to {n, plural, one {# person is} other {# people are}} held back: their post's record lacks something the message writes (author, subject, date)."
       }
     }
   },
@@ -1752,10 +1837,18 @@
           "nom": "Profile views per week",
           "usage": "{n} over the last seven days; beyond that, collection that opens profiles stops"
         },
+        "fichesPostParJour": {
+          "nom": "Post sheets per day",
+          "usage": "Catches up post sheets that collection could not fill; each read opens a LinkedIn page"
+        },
+        "fenetreValidationPost": {
+          "nom": "Post review window",
+          "usage": "{n, plural, =0 {No post is awaiting review} one {# post is awaiting your review} other {# posts are awaiting your review}}; past that deadline the post is rejected and the people who reacted to it are deleted"
+        },
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number.",
         "avances": "Advanced settings",
-        "avancesLead": "The three collection caps, editable one by one."
+        "avancesLead": "Collection limits and the post review window, each editable on its own."
       },
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",
@@ -1941,7 +2034,8 @@
   },
   "jobs": {
     "q": {
-      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed."
+      "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed.",
+      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete."
     }
   },
   "motifsPause": {

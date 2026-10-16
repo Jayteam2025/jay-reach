@@ -247,7 +247,10 @@ describe('rejouerActionsLinkedInEnAttente', () => {
     await rejouerActionsLinkedInEnAttente(ctx);
     const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string;
     expect(sql).toContain(`a.channel in ('linkedin_invite', 'linkedin_message')`);
-    expect(sql).toContain(`a.status = 'scheduled'`);
+    // `approved` autant que `scheduled` : une action validée par un humain doit partir, sinon la
+    // file d'attente n'a pas de sortie. `pending_approval` reste dehors.
+    expect(sql).toContain(`a.status in ('scheduled', 'approved')`);
+    expect(sql).not.toContain(`'pending_approval'`);
     expect(sql).toContain('a.dispatched_at is null');
     expect(sql).toContain(`a.created_at < now() - interval '2 minutes'`);
     expect(sql).toContain('org.sending_paused_at is null');

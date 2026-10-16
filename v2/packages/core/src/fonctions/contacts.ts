@@ -600,7 +600,7 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
       await tx.query(
         `update actions /* jr:dnc_actions */
             set status = 'skipped', error = coalesce(error, 'operator_do_not_contact')
-          where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'pending_approval')`,
+          where enrollment_id = any($1::uuid[]) and organization_id = $2 and status in ('scheduled', 'approved', 'pending_approval')`,
         [idsInscriptions, ctx.organisationId],
       );
     }
@@ -948,6 +948,8 @@ async function collecterContactsGlobaux(
       etape: etapeAffichee(r.current_step, r.total_etapes ?? 0),
       score: r.score,
       pourquoi: r.pourquoi,
+      // L'écran global n'a pas la colonne d'explication : elle vit dans le tableau d'une campagne.
+      explication: null,
       inscriptionId: r.enrollment_id,
       motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
       repriseLe: r.statut === 'en_pause' ? r.resume_at : null,

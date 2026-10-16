@@ -617,6 +617,11 @@ export interface ContactCampagne {
   readonly score: number | null;
   /** `signals.title` du signal d'origine (R33, « Pourquoi lui ») — `null` sans signal. */
   readonly pourquoi: string | null;
+  /**
+   * `signals.score_reason` : la phrase du modèle qui a noté la personne. N'existe que pour une personne
+   * RETENUE (une personne écartée voit sa ligne supprimée), donc jamais un motif de rejet. `null` sans signal noté.
+   */
+  readonly explication: string | null;
   /** Dernière inscription du contact dans cette campagne — `null` sans inscription. */
   readonly inscriptionId: string | null;
   /** Motif de pause (T29, R93) — non `null` seulement quand `statut === 'en_pause'` (`motifPauseDe`). */
@@ -1075,12 +1080,16 @@ interface LigneEnvoi {
   sender_id: string | null;
   signal_id: string | null;
   /**
-   * Objet du gabarit de l'étape (`message_templates.subject`), pour un envoi
-   * pas encore parti — `objet` (`a.payload ->> 'subject'`) ne se pose qu'à
-   * l'envoi réussi (`email-salesblink.ts`), donc reste `null` pour tout ce qui
-   * est `scheduled`/`pending_approval`/`approved`/`blocked` (point 5, tour de
+   * Objet du gabarit de l'étape, pour un envoi pas encore parti — `objet`
+   * (`a.payload ->> 'subject'`) ne se pose qu'à l'envoi réussi
+   * (`email-salesblink.ts`), donc reste `null` pour tout ce qui est
+   * `scheduled`/`pending_approval`/`approved`/`blocked` (point 5, tour de
    * correction 5). `null` pour une étape LinkedIn (pas d'objet) ou sans
    * gabarit actif.
+   *
+   * `message_templates.subject`, ou son `name` quand le sujet est NUL sur une
+   * étape email : c'est ce que l'envoi expédie (`subject ?? name`), donc c'est
+   * ce que cet écran doit annoncer.
    */
   etape_sujet: string | null;
   /** `contacts.job_title` — déjà sur la table jointe, sans coût de plus (revue F5, point 2). */
@@ -1126,6 +1135,10 @@ function objetAffiche(r: LigneEnvoi, extraits: ReadonlyMap<string, string>): str
     postal_code: null,
     country: null,
     signal_occurred_at: null,
+    post_author_display_name: null,
+    post_subject: null,
+    post_url: null,
+    post_posted_at: null,
     raw_row: r.raw_row,
   };
   return renderTemplatePartial(r.etape_sujet, construireValeursContact(ligne, extraits));
@@ -1259,7 +1272,16 @@ async function lireEnvoisDuJour(
               a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
               c.first_name, c.last_name, c.job_title, c.source_signal_id as signal_id,
               camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
-              e.contact_id, mt.subject as etape_sujet, lm.raw_row
+              e.contact_id, lm.raw_row,
+              -- L'objet d'un email se replie sur le NOM du gabarit, à l'envoi
+              -- (email-salesblink.ts : subject ?? name) comme à l'aperçu
+              -- (file-du-jour.ts). Lu ici dans le MEME ordre : sans ce repli, la
+              -- colonne « Étape et objet » restait vide pour un gabarit sans objet,
+              -- et le seul écran qui montre ce qui part aujourd'hui ne montrait pas
+              -- l'accroche qui allait sortir. Bornée au canal email et au sujet NUL,
+              -- comme la garde (sqlGabaritPorteLeMotif) : ailleurs le nom ne part
+              -- jamais, et l'afficher en objet serait une invention.
+              case when a.channel = 'email' and mt.subject is null then mt.name else mt.subject end as etape_sujet
          from actions a /* jr:file_du_jour_campagne */
          join enrollments e on e.id = a.enrollment_id
          join campaigns camp on camp.id = e.campaign_id
@@ -1392,6 +1414,7 @@ interface LigneContactCampagne {
   statut: StatutContactCampagne;
   score: number | null;
   pourquoi: string | null;
+  explication: string | null;
   enrollment_id: string | null;
   e_status: string | null;
   stop_reason: string | null;
@@ -1489,7 +1512,7 @@ export async function listerContactsCampagne(
 
   const motif = motifRecherche(recherche);
   const lignesRes = await ctx.ex.query<LigneContactCampagne>(
-    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi,
+    `select signal_id, contact_id, first_name, last_name, job_title, email, entreprise, current_step, statut, score, pourquoi, explication,
             enrollment_id, e_status, stop_reason, resume_at, next_action_at, intitule_poste_liste
        from (
          select
@@ -1500,6 +1523,7 @@ export async function listerContactsCampagne(
            e.current_step,
            s.score,
            s.title as pourquoi,
+           s.score_reason as explication,
            e.enrollment_id, e.status as e_status, e.stop_reason, e.resume_at, e.next_action_at,
            ${CASE_STATUT_DERIVE} as statut,
            -- Point 2 (issue #120) : intitulé de poste de la liste importée, une seule
@@ -1540,6 +1564,7 @@ export async function listerContactsCampagne(
     etape: etapeAffichee(r.current_step, totalEtapes),
     score: r.score,
     pourquoi: r.pourquoi,
+    explication: r.explication,
     inscriptionId: r.enrollment_id,
     motifPause: r.statut === 'en_pause' ? motifPauseDe(r.e_status, r.stop_reason) : null,
     repriseLe: r.statut === 'en_pause' ? r.resume_at : null,

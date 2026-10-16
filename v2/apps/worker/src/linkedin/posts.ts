@@ -14,6 +14,7 @@
  */
 import { ErreurCollecte, ENTETES_VOYAGER, MESSAGES_FRICTION, frictionDeLUrl, frictionDuStatut, urnDActivite } from './engageurs.js';
 import type { ArretCollecte, Budget } from './engageurs.js';
+import type { AuteurDePost } from './fiche-post.js';
 import type { Pilote } from './navigateur.js';
 
 /**
@@ -336,10 +337,10 @@ export async function trouverPostsDePage(
     /** Injectée pour que les tests n'attendent pas réellement. */
     readonly pause?: (ms: number) => Promise<void>;
   },
-): Promise<{ urns: string[]; arret: ArretCollecte }> {
+): Promise<{ urns: string[]; arret: ArretCollecte; auteur: AuteurDePost | null }> {
   const { dejaTraites, budget, surRequete } = options;
   const pause = options.pause ?? pauseReelle;
-  if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { urns: [], arret: 'plafond' };
+  if (budget.postsRestants <= 0 || budget.requetesRestantes <= 0) return { urns: [], arret: 'plafond', auteur: null };
 
   let restantes = budget.requetesRestantes;
   const compter = async (): Promise<void> => {
@@ -363,14 +364,24 @@ export async function trouverPostsDePage(
   await compter();
   await pilote.aller(adresse);
   const frictionArrivee = frictionDeLUrl(await pilote.url());
-  if (frictionArrivee) return { urns: [], arret: frictionArrivee };
+  if (frictionArrivee) return { urns: [], arret: frictionArrivee, auteur: null };
 
   const urnPage = await resoudrePageEntreprise(pilote, urlPage, compter, pause, () => restantes);
 
+  // L'auteur de chaque post de cette page est la page elle-même : connu sans rien lire de plus.
+  const nom = nomPublicDePage(urlPage) ?? '';
+  const auteur: AuteurDePost = {
+    kind: 'page',
+    nom,
+    // Un slug n'est pas un nom lisible : l'affichage reste vide, la garde retiendra le post.
+    nomAffiche: '',
+    nomPublic: nom,
+    url: adresse,
+  };
   const retenus: string[] = [];
   let debut = 0;
   for (let page = 0; page < PAGES_MAX; page += 1) {
-    if (restantes <= 0) return { urns: retenus, arret: 'plafond' };
+    if (restantes <= 0) return { urns: retenus, arret: 'plafond', auteur };
     // Toujours une pause avant d'appeler : enchaîner sans délai est ce qui se repère le mieux.
     await pause(DELAI_RETENTATIVE_MS);
     await compter();
@@ -379,14 +390,14 @@ export async function trouverPostsDePage(
     for (const urn of lot.urns) {
       if (dejaTraites.has(urn) || retenus.includes(urn)) continue;
       retenus.push(urn);
-      if (retenus.length >= budget.postsRestants) return { urns: retenus, arret: 'plafond' };
+      if (retenus.length >= budget.postsRestants) return { urns: retenus, arret: 'plafond', auteur };
     }
     debut += lot.servis;
     // Une page vide ou un total atteint : il n'y a plus rien à parcourir. Le premier cas compte,
     // sinon une page qui ne sert soudain plus rien ferait tourner la boucle jusqu'à PAGES_MAX.
     if (lot.servis === 0 || debut >= lot.total) {
-      return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini' };
+      return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini', auteur };
     }
   }
-  return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini' };
+  return { urns: retenus, arret: retenus.length === 0 ? { type: 'liste_vide' } : 'fini', auteur };
 }

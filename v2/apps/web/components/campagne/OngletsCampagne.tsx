@@ -5,8 +5,8 @@ import { useTranslations } from 'next-intl';
 import { Onglets } from '../ui';
 import type { OngletItem } from '../ui';
 
-/** Segments des six onglets qui suivent la Vue d'ensemble (tâches 10 à 13 : routes pas encore posées, on y lie déjà). */
-const SEGMENTS_ONGLETS = ['contacts', 'queue', 'sources', 'sequence', 'activity', 'settings'] as const;
+/** Segments des sept onglets qui suivent la Vue d'ensemble (tâches 10 à 13 : routes pas encore posées, on y lie déjà). */
+const SEGMENTS_ONGLETS = ['contacts', 'queue', 'sources', 'posts', 'sequence', 'activity', 'settings'] as const;
 
 /**
  * Onglet actif d'après le chemin courant — fonction pure, exportée pour être
@@ -27,6 +27,8 @@ export interface CompteursOngletsCampagne {
   fileDuJour: number;
   /** `undefined` masque le badge (constat recette du 18/09, `compteurOngletSources`) : une campagne à liste n'a pas de « sources » à compter. */
   sources: number | undefined;
+  /** Posts de la campagne qui attendent leur relecture ; `undefined` masque le badge quand il n'y en a aucun. */
+  posts: number | undefined;
 }
 
 export interface OngletsCampagneProps {
@@ -44,6 +46,7 @@ export function OngletsCampagne({ campagneId, compteurs }: OngletsCampagneProps)
     { href: `${base}/contacts`, libelle: t('tabs.contacts'), compteur: compteurs.contacts },
     { href: `${base}/queue`, libelle: t('tabs.queue'), compteur: compteurs.fileDuJour },
     { href: `${base}/sources`, libelle: t('tabs.sources'), compteur: compteurs.sources },
+    { href: `${base}/posts`, libelle: t('tabs.posts'), compteur: compteurs.posts },
     { href: `${base}/sequence`, libelle: t('tabs.sequence') },
     { href: `${base}/activity`, libelle: t('tabs.activity') },
     { href: `${base}/settings`, libelle: t('tabs.settings') },

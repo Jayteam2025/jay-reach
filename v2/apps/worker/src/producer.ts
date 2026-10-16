@@ -18,6 +18,12 @@ import {
   bornerParCampagne,
   compterPostsLinkedInDuJour,
   normaliserPlafond,
+  sqlAchatRetenuParUnPost,
+  sqlCampagneNommeUnPost,
+  sqlEpargneParUnPostARelire,
+  sqlFichePostEnAttente,
+  sqlPostRetientLaPersonne,
+  sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
   fuseauDeLOrganisation,
@@ -184,7 +190,14 @@ export async function ecarterSignauxTropAnciens(
   const personnes = await pool.query<{ id: string; organization_id: string }>(
     `select id, organization_id from signals
       where ${sqlEstSignalDePersonne('signals')} and status = 'new' and score is null
-        and occurred_at < now() - make_interval(days => $1)`,
+        and occurred_at < now() - make_interval(days => $1)
+        -- Une campagne attend la relecture du post qui l'a fait réagir : l'effacer maintenant
+        -- rendrait la validation inutile, elle arriverait sur une personne disparue. Même
+        -- épargne que pour les qualifiées ci-dessous, et elle compte ici aussi : une personne
+        -- collectée sur un post reste nouvelle tant que le scoring ne l'a pas prise (plafond du
+        -- jour, panne), et la fenêtre de décision est tenue de dépasser le délai d'ancienneté
+        -- (schemaEcrireReglage le refuse autrement, fenetreValidationPost le dit sinon).
+        and not ${sqlEpargneParUnPostARelire('signals')}`,
     [maxJours],
   );
   for (const p of personnes.rows) await ecarterSignalDePersonne(pool, p.organization_id, p.id, { juge: false });
@@ -192,6 +205,17 @@ export async function ecarterSignauxTropAnciens(
     `select s.id, s.organization_id from signals s
       where ${sqlEstSignalDePersonne('s')} and s.status = 'qualified'
         and s.occurred_at < now() - make_interval(days => $1)
+        -- CINQUIÈME ÉPARGNE, et la seule qui ne porte pas sur le contact : QUELQU'UN attend la
+        -- relecture du post qui a fait réagir cette personne — une campagne reliée à la source
+        -- d'où ce post vient le nomme. Elle a été collectée le jour où le post a été découvert,
+        -- et la garde d'entrée refuse de l'inscrire tant qu'un humain n'a pas vu le post : sans
+        -- cette épargne, la purge l'effacerait AVANT la fin de la fenêtre, et valider le post
+        -- n'inscrirait plus personne.
+        -- La condition de campagne compte autant que celle sur la fiche : sans elle, on
+        -- garderait plus longtemps le nom et l'intitulé de personnes que PERSONNE n'attend.
+        -- La fenêtre a un terme (expires_at), que rejeterFichesPostExpirees fait respecter :
+        -- l'épargne n'est jamais indéfinie.
+        and not ${sqlEpargneParUnPostARelire('s')}
         and not exists (
           select 1 from contacts ct
            where ct.source_signal_id = s.id
@@ -624,6 +648,14 @@ export async function enqueueEnrichmentContactsConnus(
           -- sequence 100 % LinkedIn ecrit avec l'URN. Troisieme etage de la meme regle (voir
           -- sqlSourceSansEmail) ; ici elle n'empeche rien, elle evite une depense.
           and not ${sqlSourceSansEmail('s.source_id' as FragmentSql)}
+          -- Ni acheter sur un post qu'aucun humain n'a relu : la garde d'entrée refuse de toute
+          -- façon d'inscrire cette personne, donc l'adresse serait payée pour un message qui ne
+          -- partirait jamais — et pour rien du tout si le post est rejeté. Conditionné aux
+          -- sources dont AUCUNE campagne active ne pourrait l'inscrire aujourd'hui
+          -- (sqlAchatRetenuParUnPost) : une campagne qui ne cite pas le post, ou dont la fiche
+          -- résout déjà ce qu'elle écrit, inscrit comme avant et a donc toujours besoin de
+          -- l'adresse. Contrôle autoritaire refait dans enrichirContactConnu, qui dépense.
+          and not ${sqlAchatRetenuParUnPost('s')}
      )
      select organization_id, contact_id from candidats
       where rang <= $1
@@ -722,29 +754,35 @@ export async function enqueueEnrichmentContactsConnus(
  * terminé) ; l'index partiel d'`enrollments` refuse de toute façon une
  * seconde inscription vivante.
  */
-export async function enqueueEnrollments(
-  boss: PgBoss,
-  pool: Pool,
-  opts: { limit?: number } = {},
-): Promise<number> {
-  const limit = opts.limit ?? 50;
-  const res = await pool.query<{
-    organization_id: string;
-    campaign_id: string;
-    contact_id: string;
-    signal_id: string;
-  }>(
-    `select distinct on (ct.id)
-            ct.organization_id, c.id as campaign_id, ct.id as contact_id, s.id as signal_id
-       from contacts ct
+/**
+ * Les paires (contact, campagne) ÉLIGIBLES, avant la garde du post : toutes les conditions
+ * d'entrée sauf celle-là.
+ *
+ * UNE écriture, DEUX lectures : la requête qui enfile les inscriptions, et celle qui compte ce
+ * que la garde retient. Deux copies auraient divergé, et le décompte aurait fini par annoncer
+ * des personnes que la production n'aurait de toute façon pas prises — un chiffre faux est pire
+ * qu'aucun chiffre. Aucun paramètre SQL ici : chaque lecture ajoute les siens.
+ *
+ * UNE FONCTION, ET SURTOUT PAS UNE CONSTANTE DE MODULE. Ce fichier est pris dans un cycle
+ * d'imports (`posts-fiches.ts` lit `AGE_MAX_SIGNAL_JOURS` d'ici), et un cycle ne pardonne que le
+ * travail DIFFÉRÉ : une constante qui appelle `sqlCampagneSansEmail` au chargement explose en
+ * « is not a function » quand le module d'en face n'est pas encore initialisé. Mesuré : la suite
+ * de `post-engagement.test.ts` est tombée dessus à la première écriture de ce correctif. Tout
+ * appel inter-module de ce fichier doit rester dans un corps de fonction.
+ */
+function sqlPairesEligibles(): string {
+  return `       from contacts ct
        join signals s on s.id = ct.source_signal_id
        join campaigns c on c.organization_id = ct.organization_id
         and c.status = 'active'
        -- Le thème peut être rattaché de deux façons : directement sur la
        -- campagne, ou par la table de liaison quand elle en sert plusieurs.
-        and (c.source_id = s.source_id
-             or exists (select 1 from campaign_sources cs
-                         where cs.campaign_id = c.id and cs.source_id = s.source_id))
+       -- UNE écriture (sqlSourceAlimenteLaCampagne), QUATRE lectures : ici, le
+       -- gel de la dépense, l'épargne de purge et l'écran. Quand cette question
+       -- se répondait différemment d'un endroit à l'autre, une campagne reliée
+       -- par le lien historique voyait ses personnes retenues par la garde
+       -- pendant que l'argent de l'enrichissement partait pour elles.
+        and ${sqlSourceAlimenteLaCampagne('c.id', 's.source_id')}
        -- La persona du contact doit être explicitement acceptée.
         and ct.persona_id is not null
         and c.entry_rules -> 'personas' ? ct.persona_id::text
@@ -794,11 +832,117 @@ export async function enqueueEnrollments(
           select 1 from enrollments e
            where e.contact_id = ct.id
              and e.status in ('active', 'paused', 'paused_absence')
-        )
+        )`;
+}
+
+/**
+ * LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST » : une campagne qui nomme le post n'inscrit que
+ * sur une fiche relue par un humain ET qui résout les variables qu'elle écrit.
+ *
+ * Mesuré le 14/10/2026 : nommer le post fait 31,1 % de réponses contre 0 %, et le nommer de
+ * travers défait la campagne. Une campagne qui ne le nomme pas n'est pas touchée : le lot ne
+ * gèle aucune campagne existante.
+ *
+ * Le signal lu est `s`, celui que l'inscription portera (`signal_id`), donc celui que le chemin
+ * d'ENVOI relira : garde et envoi ne peuvent pas être en désaccord sur le post nommé. Contrôle
+ * autoritaire refait dans `enrollContact` ; ce qu'elle retient est COMPTÉ et JOURNALISÉ par
+ * `journaliserRetenuesParLaGarde` ci-dessous.
+ *
+ * Fonction, pas constante, pour la même raison que `sqlPairesEligibles` ci-dessus.
+ */
+function sqlGardeDuPost(): string {
+  return `(not ${sqlCampagneNommeUnPost('c.id')} or not ${sqlPostRetientLaPersonne('c.id', 's')})`;
+}
+
+/**
+ * Dit, campagne par campagne, combien de personnes la garde du post retient et POURQUOI.
+ *
+ * Sans cette trace, une campagne qui retient toute sa population serait indistinguable d'une
+ * campagne sans candidat : le producteur ne rend qu'un total enfilé, et le pré-filtre écarte les
+ * paires avant que `enrollContact` n'ait l'occasion de journaliser quoi que ce soit. C'est le
+ * silence que ce lot existe pour supprimer, et ce dépôt l'a déjà payé plusieurs fois.
+ *
+ * Même population que la requête qui enfile (`sqlPairesEligibles`), garde inversée : ce sont
+ * exactement les personnes que la garde — et elle seule — a écartées. Celles que le plafond du
+ * jour reporte ont déjà leur propre ligne, celles qui n'ont pas la persona ou le score n'entrent
+ * dans aucune des deux.
+ *
+ * Les trois motifs sont ceux que `compterRetenuesParPost` expose à l'écran (tâche 10) : une
+ * personne a le même motif dans toutes ses paires (il ne dépend que de son signal), donc les
+ * trois comptes de personnes distinctes s'additionnent sans doublon.
+ *
+ * Ne lève jamais : une trace manquante ne doit pas empêcher des inscriptions de partir.
+ */
+/**
+ * Paires lues au plus par ce décompte. BORNÉE comme la requête d'enfilage l'est : c'est une trace,
+ * elle tourne à chaque passage du producteur, et une trace ne doit pas pouvoir coûter plus que le
+ * travail qu'elle commente. Vingt fois la limite d'enfilage (50), parce qu'un décompte clipé à
+ * cinquante n'apprendrait plus rien à personne. Quand la borne est atteinte, le journal dit « au
+ * moins » : ce dépôt n'affiche pas un chiffre qu'il ne mesure pas.
+ */
+export const LIMITE_JOURNAL_RETENUES = 1000;
+
+async function journaliserRetenuesParLaGarde(pool: Pool): Promise<void> {
+  try {
+    const res = await pool.query<{
+      campaign_id: string;
+      paires: number;
+      attente: number;
+      sans_post: number;
+      inexploitable: number;
+    }>(
+      `select r.campaign_id, /* jr:enroll_retenues_post */
+              count(*)::int as paires,
+              count(distinct r.contact_id) filter (where r.attente)::int as attente,
+              count(distinct r.contact_id) filter (where r.sans_post)::int as sans_post,
+              count(distinct r.contact_id) filter (where not r.attente and not r.sans_post)::int as inexploitable
+         from (select c.id as campaign_id, ct.id as contact_id,
+                      ${sqlFichePostEnAttente('s')} as attente,
+                      s.linkedin_post_id is null as sans_post
+               ${sqlPairesEligibles()}
+                 and not ${sqlGardeDuPost()}
+                order by ct.id
+                limit $1) r
+        group by r.campaign_id`,
+      [LIMITE_JOURNAL_RETENUES],
+    );
+    const tronque = res.rows.reduce((n, r) => n + r.paires, 0) >= LIMITE_JOURNAL_RETENUES;
+    for (const r of res.rows) {
+      const total = r.attente + r.sans_post + r.inexploitable;
+      if (total === 0) continue;
+      console.warn(
+        `[enroll] campagne ${r.campaign_id} : ${tronque ? 'au moins ' : ''}${total} personne(s) retenue(s) par la validation du post ` +
+          `(${r.attente} en attente de validation, ${r.sans_post} sans post, ${r.inexploitable} fiche inexploitable)`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[enroll] décompte des personnes retenues par la validation du post indisponible (${err instanceof Error ? err.name : 'erreur'})`);
+  }
+}
+
+export async function enqueueEnrollments(
+  boss: PgBoss,
+  pool: Pool,
+  opts: { limit?: number } = {},
+): Promise<number> {
+  const limit = opts.limit ?? 50;
+  const res = await pool.query<{
+    organization_id: string;
+    campaign_id: string;
+    contact_id: string;
+    signal_id: string;
+  }>(
+    `select distinct on (ct.id)
+            ct.organization_id, c.id as campaign_id, ct.id as contact_id, s.id as signal_id
+     ${sqlPairesEligibles()}
+        and ${sqlGardeDuPost()}
       order by ct.id, s.score desc nulls last, c.created_at
       limit $1`,
     [limit],
   );
+  // APRÈS la requête de candidats, et jamais avant : `post-engagement.test.ts` lit la PREMIÈRE
+  // requête émise pour vérifier que la décision regarde bien la séquence de la campagne.
+  await journaliserRetenuesParLaGarde(pool);
 
   const ids = [...new Set(res.rows.map((r) => r.campaign_id))];
   // Une campagne appartient à une seule organisation : `res.rows` en porte déjà

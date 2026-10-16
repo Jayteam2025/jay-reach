@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { lireSequence, apercuEtape, colonnesDeListeCampagne, ErreurIntrouvable, type ApercuEtape } from '@jay-reach/core';
+import { lireSequence, apercuEtape, colonnesDeListeCampagne, variablesDeLaCampagne, ErreurIntrouvable, type ApercuEtape } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
 import { FluxSequence } from '../../../../../components/sequence/FluxSequence';
@@ -18,11 +18,12 @@ export default async function CampagneSequencePage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp, vue, variablesListe] = await Promise.all([
+  const [t, sp, vue, variablesListe, { nature, aSourceDePost }] = await Promise.all([
     getTranslations('campagne.sequence'),
     searchParams,
     lireSequence(ctx, { campagneId: id }),
     colonnesDeListeCampagne(ctx, { campagneId: id }),
+    variablesDeLaCampagne(ctx, { campagneId: id }),
   ]);
 
   const brutAjouter = Array.isArray(sp.ajouter) ? sp.ajouter[0] : sp.ajouter;
@@ -60,11 +61,22 @@ export default async function CampagneSequencePage({
           }}
           apercu={apercu}
           variablesListe={variablesListe}
+          nature={nature}
+          aSourceDePost={aSourceDePost}
         />
       );
     }
   } else if (brutAjouter === '1') {
-    tiroir = <TiroirEtape campagneId={id} etape={null} apercu={null} variablesListe={variablesListe} />;
+    tiroir = (
+      <TiroirEtape
+        campagneId={id}
+        etape={null}
+        apercu={null}
+        variablesListe={variablesListe}
+        nature={nature}
+        aSourceDePost={aSourceDePost}
+      />
+    );
   }
 
   return (

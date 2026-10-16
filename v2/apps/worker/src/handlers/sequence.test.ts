@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import { echeanceEtapeSuivante, actionIdempotencyKey, poserEcheanceApresDepart } from '@jay-reach/core';
 import {
+  enrollContact,
   tickDueEnrollments,
   mettreInscriptionEnPause,
   rattraperEcheancesManquantes,
   chargerContraintesSender,
   compterEntreesDuJour,
   reprendreAbsencesEchues,
+  type EnrollJob,
 } from './sequence.js';
 
 // Restauration systématique après CHAQUE test du fichier (tour de correction 2,
@@ -824,6 +826,13 @@ describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () =>
   });
 });
 
+/**
+ * Le rejeu d'une action bloquée, reconnu par ce qu'il FAIT et non par l'état qu'il écrit : celui-ci
+ * se lit sur le payload (`pending_approval` quand l'accord d'un humain était exigé, `scheduled`
+ * sinon — le tick pose le drapeau au blocage `post_a_relire`).
+ */
+const REJEU_ACTION_ABSENCE = /update actions a\s+--[^]*?set status = case when \(coalesce\(\(a\.payload ->> 'requiresApproval'\)/i;
+
 describe('reprendreAbsencesEchues (F10)', () => {
   const STEP_ID_ABSENCE = 'etape-en-attente';
 
@@ -885,7 +894,9 @@ describe('reprendreAbsencesEchues (F10)', () => {
     // écriture : `deja_envoyee` remplace l'ancien filtre SQL sur
     // `message_id`, désormais une colonne calculée par ligne.
     const LIGNE_BLOQUEE = /select id, \(payload ->> 'message_id'\) is not null as deja_envoyee/i;
-    const REJEU_ACTION = /update actions\s+set status = 'scheduled'/i;
+    // L'état de retour se lit sur le payload (`pending_approval` si l'accord d'un humain était
+    // exigé, `scheduled` sinon) : le motif reconnaît le rejeu, pas l'état qu'il écrit.
+    const REJEU_ACTION = REJEU_ACTION_ABSENCE;
     const JOURNAL = /insert into audit_events/i;
     // Repli (étape supprimée pendant la pause) : ni délai à lire, ni action à
     // rejouer — sans lui, `next_action_at` resterait `null` pour toujours.
@@ -1048,7 +1059,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
 
     await reprendreAbsencesEchues(pool, now);
 
-    const rejeu = appels.find((a) => /update actions\s+set status = 'scheduled'/i.test(a.sql));
+    const rejeu = appels.find((a) => REJEU_ACTION_ABSENCE.test(a.sql));
     expect(rejeu).toBeDefined();
     // Le délai (48h) repart depuis le RETOUR, jamais `now()` : sinon le
     // message partirait le jour même de la reprise, exactement ce que la
@@ -1220,5 +1231,79 @@ describe('reprendreAbsencesEchues (F10)', () => {
     expect(etat().status).toBe('paused_absence');
     expect(appels.some((a) => /update enrollments\s+set status = 'active'/i.test(a.sql))).toBe(false);
     expect(appels.some((a) => /insert into audit_events/i.test(a.sql))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enrollContact — la garde d'entrée du lot « accroche du post » (tâche 8)
+// ---------------------------------------------------------------------------
+
+/** Les trois requêtes que la garde et l'inscription peuvent émettre, par leur marqueur. */
+const CAMPAGNE_NOMME_UN_POST = /jr:campagne_nomme_un_post/i;
+const POST_RETIENT = /jr:post_retient_la_personne/i;
+const PLAFOND_CAMPAGNE = /select daily_cap from campaigns where id = \$1/i;
+const INSERT_ENROLLMENT = /insert into enrollments/i;
+
+const SIGNAL_ID = 'signal-1';
+
+function jobDInscription(overrides: Partial<EnrollJob> = {}): EnrollJob {
+  return { organizationId: ORG_ID, campaignId: CAMPAIGN_ID, contactId: CONTACT_ID, signalId: SIGNAL_ID, ...overrides };
+}
+
+describe('enrollContact — garde d’entrée sur la validation du post (tâche 8)', () => {
+  it('n’inscrit pas, et n’écrit RIEN, quand la campagne nomme le post et que sa fiche n’est pas utilisable', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: POST_RETIENT, repondre: () => ligne([{ retenu: true }]) },
+    ]);
+
+    const avertissements = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const id = await enrollContact(pool, jobDInscription());
+
+    expect(id).toBeNull();
+    // Le pool factice LÈVE sur toute requête non prévue : l'absence d'insertion est donc prouvée
+    // par le fait que le test passe, et pas seulement par l'assertion ci-dessous.
+    expect(appels.some((a) => INSERT_ENROLLMENT.test(a.sql))).toBe(false);
+    // La garde passe AVANT le plafond du jour : une personne retenue ne consomme pas de place.
+    expect(appels.some((a) => PLAFOND_CAMPAGNE.test(a.sql))).toBe(false);
+    expect(avertissements).toHaveBeenCalledWith(expect.stringContaining('inscription retenue'));
+  });
+
+  it('inscrit dès que plus rien ne retient : fiche relue, ou aucune fiche à relire', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: POST_RETIENT, repondre: () => ligne([{ retenu: false }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBe(ENROLLMENT_ID);
+    const insertion = appels.find((a) => INSERT_ENROLLMENT.test(a.sql));
+    expect(insertion?.values).toEqual([ORG_ID, CAMPAIGN_ID, CONTACT_ID, SIGNAL_ID]);
+  });
+
+  it('ne lit même pas la fiche quand la campagne ne nomme aucun post : le lot ne gèle rien d’existant', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: false }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBe(ENROLLMENT_ID);
+    expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
+  });
+
+  // On ne retient que s'il y a quelque chose à relire. Sans signal, il n'existe aucune fiche à
+  // faire relire : retenir la personne la bloquerait POUR TOUJOURS, puisque aucun geste d'écran
+  // ne lève une rétention sans objet. C'est le rendu qui décide — repli, ou variable manquante.
+  it('inscrit sans interroger la base quand l’inscription n’a aucun signal : rien à relire', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: true }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([{ id: ENROLLMENT_ID }]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription({ signalId: null }))).toBe(ENROLLMENT_ID);
+    expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
   });
 });

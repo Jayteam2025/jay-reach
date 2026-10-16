@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ForbiddenError } from '../roles.js';
 import { ErreurEntree } from './contexte.js';
 import type { Executeur } from '../executeur.js';
@@ -464,6 +464,60 @@ describe('fuseau du jour LinkedIn', () => {
 
   it('lireFuseauLinkedIn sans ligne : le defaut de la table (Europe/Paris)', async () => {
     expect(await lireFuseauLinkedIn(faux({}))).toBe('Europe/Paris');
+  });
+});
+
+describe('schemaEcrireReglage — la fenetre de validation des posts doit depasser le delai d anciennete', () => {
+  /**
+   * Point de vigilance 4 du lot « accroche du post ». Les personnes qui ont reagi a un post sont
+   * collectees le jour ou il est decouvert, et la purge d anciennete les efface au bout de
+   * `SIGNAL_MAX_AGE_DAYS` (14 par defaut). Une fenetre egale ou plus courte laisserait l ecran
+   * annoncer une echeance pendant que la purge a deja tout emporte : la branche d epargne
+   * n epargnerait jamais rien, avec l air de fonctionner.
+   */
+  const CLE = 'linkedin_fenetre_validation_post_jours';
+  const ANCIENNETE = 14;
+
+  afterEach(() => {
+    delete process.env.SIGNAL_MAX_AGE_DAYS;
+  });
+
+  it('refuse une valeur egale au delai d anciennete', () => {
+    const r = schemaEcrireReglage.safeParse({ cle: CLE, valeur: ANCIENNETE });
+    expect(r.success).toBe(false);
+  });
+
+  it('refuse une valeur sous le delai, et le message dit pourquoi', () => {
+    const r = schemaEcrireReglage.safeParse({ cle: CLE, valeur: 3 });
+    expect(r.success).toBe(false);
+    const message = r.success ? '' : (r.error.issues[0]?.message ?? '');
+    expect(message).toContain(String(ANCIENNETE));
+    expect(message).toMatch(/anciennet/i);
+    expect(message).toMatch(/effac/i);
+  });
+
+  it('accepte le premier jour au-dessus du delai, et le defaut de 28', () => {
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: ANCIENNETE + 1 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 28 }).success).toBe(true);
+  });
+
+  it('suit SIGNAL_MAX_AGE_DAYS quand la variable est posee : le seuil n est pas la constante 14', () => {
+    process.env.SIGNAL_MAX_AGE_DAYS = '45';
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 28 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 46 }).success).toBe(true);
+  });
+
+  it('une valeur illisible de SIGNAL_MAX_AGE_DAYS retombe sur 14, elle ne desactive pas la garde', () => {
+    process.env.SIGNAL_MAX_AGE_DAYS = 'beaucoup';
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: ANCIENNETE }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: ANCIENNETE + 1 }).success).toBe(true);
+  });
+
+  it('le defaut declare depasse bien le delai d anciennete par defaut', () => {
+    const defaut = CLES_REGLAGES.find((r) => r.cle === CLE);
+    expect(defaut?.defaut).toBe(28);
+    expect(Number(defaut?.defaut)).toBeGreaterThan(ANCIENNETE);
+    expect(defaut?.env).toBe('LINKEDIN_POST_REVIEW_WINDOW_DAYS');
   });
 });
 

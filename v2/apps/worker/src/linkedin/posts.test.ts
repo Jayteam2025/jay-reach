@@ -350,6 +350,23 @@ describe('trouverPostsDePage', () => {
     expect(r.arret).toBe('fini');
   });
 
+  it('porte l auteur connu par construction : la page elle-meme', async () => {
+    const { p } = piloteFactice([html, lot([1], 1, 0)]);
+    const r = await trouverPostsDePage(p, url, {
+      dejaTraites: new Set(),
+      budget: { requetesRestantes: 10, postsRestants: 10 },
+      surRequete: async () => undefined,
+      pause: sansAttendre,
+    });
+    expect(r.auteur).toEqual({
+      kind: 'page',
+      nom: 'ma-cible',
+      nomAffiche: '',
+      nomPublic: 'ma-cible',
+      url: 'https://www.linkedin.com/company/ma-cible/',
+    });
+  });
+
   // Le coeur de T2 : sans cette memoire, un suivi continu recollecte les memes posts a chaque
   // passage et brule le plafond du jour sans ajouter personne.
   it('ne rend jamais un post que cette source a deja traite', async () => {
@@ -428,7 +445,7 @@ describe('trouverPostsDePage', () => {
       surRequete: async () => undefined,
       pause: sansAttendre,
     });
-    expect(r).toEqual({ urns: [], arret: 'plafond' });
+    expect(r).toEqual({ urns: [], arret: 'plafond', auteur: null });
     expect(urls).toHaveLength(0);
   });
 

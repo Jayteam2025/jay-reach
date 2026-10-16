@@ -1,0 +1,182 @@
+import { describe, expect, it } from 'vitest';
+import { creerEnregistreurDeChamp, validerApresEnregistrement } from './enregistreur-champ';
+
+/** Une réponse du serveur que le test libère à la main. */
+function differe() {
+  let resoudre: (v: string | null) => void = () => undefined;
+  const promesse = new Promise<string | null>((r) => {
+    resoudre = r;
+  });
+  return { promesse, resoudre };
+}
+
+describe('l\'enregistrement du sujet', () => {
+  it('un enregistrement refusé en vol puis « Valider » : la validation ne doit pas partir', async () => {
+    let affiche = 'ancien';
+    const reponse = differe();
+    const erreurs: string[] = [];
+    const enr = creerEnregistreurDeChamp({
+      confirmeInitial: 'ancien',
+      lire: () => affiche,
+      envoyer: () => reponse.promesse,
+      surErreur: (m) => erreurs.push(m),
+    });
+    affiche = 'un sujet beaucoup trop long';
+    const surPerteDeFocus = enr.enregistrer();
+    // Le clic sur Valider arrive pendant que le serveur n'a pas encore répondu.
+    const avantValidation = enr.enregistrer();
+    reponse.resoudre('Le sujet doit tenir en 70 caractères.');
+    expect(await surPerteDeFocus).toBe(false);
+    expect(await avantValidation).toBe(false);
+    expect(enr.confirme()).toBe('ancien');
+    expect(erreurs.length).toBeGreaterThan(0);
+  });
+
+  it('un enregistrement accepté en vol autorise la validation, une seule fois envoyé', async () => {
+    let affiche = 'ancien';
+    const reponse = differe();
+    const envois: string[] = [];
+    const enr = creerEnregistreurDeChamp({
+      confirmeInitial: 'ancien',
+      lire: () => affiche,
+      envoyer: (s) => {
+        envois.push(s);
+        return reponse.promesse;
+      },
+      surErreur: () => undefined,
+    });
+    affiche = 'nouveau';
+    const a = enr.enregistrer();
+    const b = enr.enregistrer();
+    reponse.resoudre(null);
+    expect(await a).toBe(true);
+    expect(await b).toBe(true);
+    expect(envois).toEqual(['nouveau']);
+    expect(enr.confirme()).toBe('nouveau');
+  });
+
+  it('un sujet vidé n\'est jamais considéré comme enregistré', async () => {
+    const enr = creerEnregistreurDeChamp({
+      confirmeInitial: 'ancien',
+      lire: () => '',
+      envoyer: async () => null,
+      surErreur: () => undefined,
+    });
+    expect(await enr.enregistrer()).toBe(false);
+  });
+});
+
+describe('un échec par exception est un échec comme un autre', () => {
+  it('perte de focus : l\'action qui jette affiche un message et ne rejette pas', async () => {
+    const erreurs: string[] = [];
+    const enr = creerEnregistreurDeChamp({
+      confirmeInitial: 'ancien',
+      lire: () => 'nouveau',
+      envoyer: async () => {
+        throw new Error('Failed to fetch');
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    await expect(enr.enregistrer()).resolves.toBe(false);
+    expect(erreurs).toEqual(['Failed to fetch']);
+    expect(enr.confirme()).toBe('ancien');
+  });
+});
+
+describe('le clic sur Valider', () => {
+  function monde(envoyer: () => Promise<string | null>) {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    const enr = creerEnregistreurDeChamp({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
+    const valider = () =>
+      validerApresEnregistrement({
+        enregistreurs: [enr],
+        valider: async () => {
+          validations.push('valide');
+          return null;
+        },
+        surErreur: (m) => erreurs.push(m),
+      });
+    return { erreurs, validations, valider };
+  }
+
+  it('ne valide pas quand l\'enregistrement est refusé, et le message est visible', async () => {
+    const m = monde(async () => 'Sujet trop long.');
+    await m.valider();
+    expect(m.validations).toEqual([]);
+    expect(m.erreurs).toEqual(['Sujet trop long.']);
+  });
+
+  it('ne valide pas quand l\'enregistrement jette, et le message est visible', async () => {
+    const m = monde(async () => {
+      throw new Error('Failed to fetch');
+    });
+    await m.valider();
+    expect(m.validations).toEqual([]);
+    expect(m.erreurs).toEqual(['Failed to fetch']);
+  });
+
+  it('valide quand l\'enregistrement a réussi', async () => {
+    const m = monde(async () => null);
+    await m.valider();
+    expect(m.validations).toEqual(['valide']);
+  });
+
+  it('affiche l\'exception de la validation elle-même', async () => {
+    const erreurs: string[] = [];
+    const enr = creerEnregistreurDeChamp({ confirmeInitial: 'a', lire: () => 'a', envoyer: async () => null, surErreur: () => undefined });
+    await validerApresEnregistrement({
+      enregistreurs: [enr],
+      valider: async () => {
+        throw new Error('coupure');
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(erreurs).toEqual(['coupure']);
+  });
+});
+
+/**
+ * Depuis que le nom de l'auteur s'édite lui aussi dans la phrase, « Valider » porte DEUX champs.
+ * Si l'un des deux n'est pas enregistré, le message partirait avec l'ancienne valeur — le même
+ * défaut que celui pour lequel ce fichier existe, par l'autre champ.
+ */
+describe('Valider porte tous les champs de la phrase', () => {
+  function champ(envoyer: () => Promise<string | null>, erreurs: string[]) {
+    return creerEnregistreurDeChamp({ confirmeInitial: 'ancien', lire: () => 'nouveau', envoyer, surErreur: (m) => erreurs.push(m) });
+  }
+
+  it('ne valide pas quand l enregistrement de l AUTEUR échoue, même si le sujet passe', async () => {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    const auteur = champ(async () => 'Le nom de l\'auteur ne peut pas être vide.', erreurs);
+    const sujet = champ(async () => null, erreurs);
+    await validerApresEnregistrement({
+      enregistreurs: [auteur, sujet],
+      valider: async () => {
+        validations.push('valide');
+        return null;
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(validations).toEqual([]);
+    expect(erreurs).toEqual(['Le nom de l\'auteur ne peut pas être vide.']);
+    // Le second champ a bien été tenté : on n'abandonne pas la saisie de l'opérateur au premier refus.
+    expect(sujet.confirme()).toBe('nouveau');
+  });
+
+  it('valide quand les deux champs sont enregistrés', async () => {
+    const erreurs: string[] = [];
+    const validations: string[] = [];
+    await validerApresEnregistrement({
+      enregistreurs: [champ(async () => null, erreurs), champ(async () => null, erreurs)],
+      valider: async () => {
+        validations.push('valide');
+        return null;
+      },
+      surErreur: (m) => erreurs.push(m),
+    });
+    expect(validations).toEqual(['valide']);
+    expect(erreurs).toEqual([]);
+  });
+});

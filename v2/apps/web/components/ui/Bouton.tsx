@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
-export type BoutonVariante = 'principal' | 'secondaire' | 'danger';
+export type BoutonVariante = 'principal' | 'secondaire' | 'discret' | 'danger';
 export type BoutonTaille = 'normal' | 'petit';
 
 export type BoutonProps = {

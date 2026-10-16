@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import {
+  compterPostsEnAttenteDeValidation,
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
   compterVisitesProfilLinkedIn,
@@ -71,6 +72,9 @@ export default async function ReglagesLinkedinPage() {
     plafondRequetes,
     plafondPersonnes,
     plafondVisites,
+    plafondFiches,
+    fenetreValidation,
+    postsEnAttente,
     postsDuJour,
     requetesDeLHeure,
     visitesDeLaSemaine,
@@ -86,6 +90,11 @@ export default async function ReglagesLinkedinPage() {
     lirePlafondLinkedIn(ctx, 'linkedin_requetes_par_heure'),
     lirePlafondLinkedIn(ctx, 'linkedin_personnes_par_passage'),
     lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
+    lirePlafondLinkedIn(ctx, 'linkedin_fiches_post_par_jour'),
+    lirePlafondLinkedIn(ctx, 'linkedin_fenetre_validation_post_jours'),
+    // Le chiffre qui donne son sens au réglage : sans lui, l'opérateur lirait « 28 jours » sans
+    // savoir s'il a quoi que ce soit à relire. Mesuré, jamais estimé.
+    compterPostsEnAttenteDeValidation(ctx.ex, ctx.organisationId),
     compterPostsLinkedInDuJour(ctx, jourCourantDansFuseau(fuseau, maintenant), fuseau),
     compterRequetesLinkedIn(ctx, new Date(maintenant.getTime() - UNE_HEURE_MS)),
     // Sept jours glissants, la même fenêtre que le plafond : l'opérateur doit lire le
@@ -387,6 +396,21 @@ export default async function ReglagesLinkedinPage() {
                   nom: t('plafonds.visitesProfilParSemaine.nom'),
                   usage: t('plafonds.visitesProfilParSemaine.usage', { n: visitesDeLaSemaine }),
                   valeur: plafondVisites,
+                },
+                {
+                  cle: 'linkedin_fiches_post_par_jour',
+                  nom: t('plafonds.fichesPostParJour.nom'),
+                  usage: t('plafonds.fichesPostParJour.usage'),
+                  valeur: plafondFiches,
+                },
+                // Une DURÉE, pas un plafond — mais c'est bien un réglage de la collecte : tant
+                // qu'un post n'est pas validé, les personnes qui y ont réagi n'entrent dans
+                // aucune campagne qui le nomme, et la purge les épargne jusqu'à cette échéance.
+                {
+                  cle: 'linkedin_fenetre_validation_post_jours',
+                  nom: t('plafonds.fenetreValidationPost.nom'),
+                  usage: t('plafonds.fenetreValidationPost.usage', { n: postsEnAttente }),
+                  valeur: fenetreValidation,
                 },
               ]}
               libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}

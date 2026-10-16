@@ -975,6 +975,24 @@ describe('listerContactsCampagne', () => {
     expect(r.lignes[0]).toMatchObject({ score: 91, pourquoi: 'Business developer senior' });
   });
 
+  it('rend l’explication du score (signals.score_reason), nulle sans signal noté', async () => {
+    const base = {
+      contact_id: 'contact-1', first_name: 'Karim', last_name: 'Benali', job_title: 'Head of Sales',
+      email: 'karim@exemple.fr', entreprise: 'Woodpecker Studio', current_step: null, statut: 'a_contacter' as const,
+    };
+    const ctx = faux({
+      ...verifieeDansLOrganisation,
+      'jr:compteurs_contacts_campagne': [{ statut: 'a_contacter', n: 2 }],
+      'jr:lignes_contacts_campagne': [
+        { ...base, signal_id: 'sig-1', score: 91, pourquoi: 'Business developer senior', explication: 'A commenté le post sur le CRM, directeur commercial' },
+        { ...base, signal_id: null, score: null, pourquoi: null, explication: null },
+      ],
+    });
+    const r = await listerContactsCampagne(ctx, { campagneId });
+    expect(r.lignes[0]?.explication).toBe('A commenté le post sur le CRM, directeur commercial');
+    expect(r.lignes[1]?.explication).toBeNull();
+  });
+
   it('un contact inscrit sans signal (R36) a un signalId, un score et un pourquoi nuls', async () => {
     const ctx = faux({
       ...verifieeDansLOrganisation,

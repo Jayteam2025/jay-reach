@@ -19,6 +19,10 @@ function ligne(overrides: Partial<LigneValeursContact> = {}): LigneValeursContac
     postal_code: '44000',
     country: 'France',
     signal_occurred_at: '2026-09-08T10:00:00.000Z',
+    post_author_display_name: 'Ana Test',
+    post_subject: 'le recrutement des commerciaux',
+    post_url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/',
+    post_posted_at: '2026-10-12T08:30:00.000Z',
     ...overrides,
   };
 }
@@ -287,5 +291,25 @@ describe('lireValeursContact', () => {
     });
     const r = await lireValeursContact(ex, 'org-1', 'contact-1', 'camp-1');
     expect(Object.keys(r?.valeurs ?? {}).some((k) => k.startsWith('liste_'))).toBe(false);
+  });
+});
+
+describe('construireValeursContact : variables de post', () => {
+  it('assemble les quatre valeurs, la date comme signal_date', () => {
+    const v = construireValeursContact(ligne());
+    expect(v.post_auteur).toBe('Ana Test');
+    expect(v.post_sujet).toBe('le recrutement des commerciaux');
+    expect(v.post_url).toBe('https://www.linkedin.com/feed/update/urn:li:activity:1/');
+    expect(v.post_date).toBe(new Date('2026-10-12T08:30:00.000Z').toLocaleDateString('fr-FR'));
+  });
+
+  it('sans fiche (tout nul), aucune valeur n’est inventée', () => {
+    const v = construireValeursContact(
+      ligne({ post_author_display_name: null, post_subject: null, post_url: null, post_posted_at: null }),
+    );
+    expect(v.post_auteur).toBeUndefined();
+    expect(v.post_sujet).toBeUndefined();
+    expect(v.post_url).toBeUndefined();
+    expect(v.post_date).toBeUndefined();
   });
 });

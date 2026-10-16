@@ -213,6 +213,8 @@ export default async function CampagneFileDuJourPage({
               ecarter: t('file.actions.discard'),
               reessayer: t('file.actions.retry'),
               chercherEmail: t('file.actions.findEmail'),
+              postARelire: t('file.blockedPostToReview'),
+              relirePost: t('file.actions.reviewPost'),
               coutChercherEmail: t('contacts.actions.enrichCost'),
               aucunePlaceholder: '—',
             }}

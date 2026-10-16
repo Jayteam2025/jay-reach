@@ -12,11 +12,16 @@
 import type { Pool } from 'pg';
 import {
   actionIdempotencyKey,
+  campagneNommeUnPost,
+  envoiRetenuParUnPost,
   composeTick,
+  postRetientLaPersonne,
   ecrireEvenement,
   placesRestantes,
   runGuards,
   resolveSender,
+  approbationExigeeHorsRelecture,
+  sqlEtatApresDeblocage,
   shiftIntoBusinessHours,
   applyLeadTime,
   poserEcheanceDepuisDispatch,
@@ -97,6 +102,30 @@ export async function compterEntreesDuJour(pool: Pool, campaignId: string, organ
  * et le `on conflict do nothing` ci-dessus.
  */
 export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
+  // LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST », contrôle AUTORITAIRE : on n'inscrit personne
+  // sur un post qu'un humain n'a pas relu. Le pré-filtre du producteur pose déjà la même
+  // condition, mais il ne suffit pas — un job déposé autrement (reprise à la main, serveur MCP
+  // #100) arriverait ici sans être passé par lui, et partirait écrire « le post de … sur … »
+  // sur une fiche que personne n'a vue. La garde vit donc dans la fonction qui INSCRIT.
+  //
+  // Le signal jugé est `job.signalId`, celui que l'insertion ci-dessous écrit dans
+  // `enrollments.signal_id` : exactement celui que le chemin d'envoi relira pour résoudre les
+  // variables de post. Sans signal, ou sans fiche rattachée, rien n'est retenu : il n'y a rien à
+  // faire relire, et c'est le rendu qui décidera (repli, ou variable manquante).
+  //
+  // La campagne est passée parce que la garde n'exige QUE les variables de post qu'elle écrit :
+  // une campagne qui ne cite que `{{post_url}}` entre dès la validation du post.
+  //
+  // AVANT le plafond du jour, délibérément : une personne retenue ne doit pas consommer une
+  // place d'entrée que la campagne donnerait à quelqu'un d'envoyable.
+  if (await campagneNommeUnPost(pool, job.campaignId)) {
+    if (await postRetientLaPersonne(pool, job.organizationId, job.campaignId, job.signalId)) {
+      console.warn(
+        `[enroll] campagne ${job.campaignId} : le post du contact ${job.contactId} n'est pas validé (ou sa fiche est incomplète), inscription retenue`,
+      );
+      return null;
+    }
+  }
   // Compter puis insérer n'est pas atomique, mais ça suffit ici : le moteur ne
   // tourne qu'en une seule instance (deploy/vps/README.md), et pg-boss traite
   // cette file un job à la fois dans ce process sans `batchSize`. Si le worker
@@ -355,15 +384,6 @@ async function loadBindings(pool: Pool, contactIds: string[]): Promise<Binding[]
     [contactIds],
   );
   return res.rows.map((r) => ({ contactId: r.contact_id, senderId: r.sender_id, kind: r.sender_kind }));
-}
-
-/** La politique d'approbation de la campagne exige-t-elle ce canal ? */
-function policyRequiresApproval(policy: unknown, channel: TickChannel): boolean {
-  if (!policy || typeof policy !== 'object') return false;
-  const p = policy as { mode?: unknown; channels?: unknown };
-  if (p.mode === 'all') return true;
-  if (Array.isArray(p.channels) && p.channels.includes(channel)) return true;
-  return false;
 }
 
 /**
@@ -900,10 +920,27 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
         echeanceEtapeSuivante(new Date(candidat.resume_at).getTime(), candidat.id, delayHeures ?? 0) ??
         new Date(candidat.resume_at).getTime();
       const cle = actionIdempotencyKey(candidat.id, etapeId);
+      // L'état de retour N'EST PAS toujours `scheduled` : une action bloquée alors que l'accord
+      // d'un humain était exigé doit retourner dans la FILE, pas en partance. Le tick écrit
+      // `requiresApproval` dans le payload au moment du blocage `post_a_relire`
+      // (`apps/worker/src/handlers/sequence.ts`), et les trois chemins qui débloquent une action
+      // lisent le même drapeau — celui-ci, la relance de `validerPost`, et le retour d'absence.
+      // Pour tout autre motif il est absent du payload, donc rien ne change : c'est ce qui rend
+      // cette lecture sûre.
       const rejeu = await pool.query(
-        `update actions
-            set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
-          where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+        `update actions a
+      -- Le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE : c'est un MINIMUM, pas la
+      -- vérité du jour. Une politique passée à all depuis, ou un canal letter, exigent
+      -- l'accord maintenant. On pose donc pending_approval dès que l'un des trois le dit :
+      -- ça ne peut que durcir, jamais laisser partir davantage.
+      -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
+      -- partis, hors de portée d'une mise à jour en masse.)
+            set status = ${sqlEtatApresDeblocage('a', 'camp')},
+                scheduled_for = $3, error = null, block_reason = null
+           from enrollments e
+           join campaigns camp on camp.id = e.campaign_id
+          where a.enrollment_id = e.id
+            and a.idempotency_key = $1 and a.organization_id = $2 and a.status in ('blocked', 'failed')`,
         [cle, candidat.organization_id, new Date(echeanceRejeu).toISOString()],
       );
       etapeRejouee = (rejeu.rowCount ?? 0) > 0;
@@ -1080,10 +1117,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     let missingLocale = false;
     if (step) {
       const ch = step.channel;
+      // Le canal `letter` et la politique viennent de `approbationExigeeHorsRelecture`, miroir
+      // TypeScript de `sqlApprobationExigee` : les deux écritures de la règle sont comparées par
+      // le harnais, ce qui n'était pas possible tant que le terme `letter` vivait ici seul.
       requiresApproval =
-        ch === 'letter' ||
-        (isLinkedIn(ch) && row.lk_mode === 'manual') ||
-        policyRequiresApproval(row.approval_policy, ch);
+        approbationExigeeHorsRelecture(ch, row.approval_policy) ||
+        (isLinkedIn(ch) && row.lk_mode === 'manual');
       // I2 (revue finale du 17/09) : les deux mécanismes se cumulent — l'un OU
       // l'autre suffit à mettre l'action en attente. Court-circuité si une
       // approbation est déjà requise, pour ne pas compter les envois déjà
@@ -1136,6 +1175,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       }
     }
     const suppressed = await hasActiveSuppression(pool, row);
+    // La garde d'accroche, du côté de l'ENVOI. Elle vit ici, avec les autres conditions
+    // d'éligibilité de l'action (suppression, expéditeur), et pas dans le rendu : un post non
+    // relu ne rend rien de vide, il interdit seulement de s'en servir. Posée au tick, elle couvre
+    // les TROIS canaux d'un coup — l'email rejoue le contrôle à l'envoi, parce que lui seul rend
+    // son corps plus tard et peut donc voir une accroche ajoutée après la création de l'action.
+    const postARelire = step ? await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_id) : false;
 
     // Garde-fous d'envoi (T18). Interrogés AVANT `composeTick` : un report ne
     // doit pas faire avancer l'inscription, alors que composer l'avance.
@@ -1233,6 +1278,7 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
       sendable,
       unresolvedVariables,
       missingLocale,
+      postARelire,
     });
 
     // Attribution de l'expéditeur (docs/04), UNIQUEMENT quand un envoi va vraiment
@@ -1283,6 +1329,13 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           : { messageBody }; // courrier : corps rendu localement
       // Blocage variable : on nomme les champs manquants (UI : regroupement).
       if (a.blockReason === 'missing_variable') payload.missingVariables = unresolvedVariables;
+      // Blocage par un post non relu : on garde l'état où l'action SERAIT allée sans lui.
+      // `requiresApproval` est décidé ici, avant `composeTick`, et la branche du post passe avant
+      // celle de l'approbation : sans cette trace, `relacherLesRetenuesDuPost` la relâcherait en
+      // `scheduled` et elle SAUTERAIT la file d'attente humaine. Ce n'est pas qu'une affaire de
+      // courrier : une politique de campagne, ou les trois premiers envois d'un couple
+      // gabarit+version, l'exigent aussi en email (règle non négociable #1).
+      if (a.blockReason === 'post_a_relire') payload.requiresApproval = requiresApproval;
       const ins = await pool.query<{ id: string }>(
         `insert into actions
            (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, dispatch_after, payload, idempotency_key, template_id, sender_id)

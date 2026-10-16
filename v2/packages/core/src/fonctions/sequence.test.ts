@@ -15,6 +15,7 @@ import {
   envoyerTest,
   verserDansBibliotheque,
   colonnesDeListeCampagne,
+  variablesDeLaCampagne,
   reprendreInscription,
 } from './sequence.js';
 
@@ -871,7 +872,13 @@ describe('reprendreInscription', () => {
         'org-1',
         new Date().toISOString(),
       ]);
-      expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
+      // L'état de retour se lit sur le payload : `pending_approval` quand l'accord d'un humain
+      // était exigé (le tick l'écrit au blocage `post_a_relire`), `scheduled` sinon — et ce cas-ci
+      // est un `email_gate`, qui ne porte pas le drapeau, donc il repart planifié.
+      expect(String(appelAction?.[0])).toMatch(/a\.payload ->> 'requiresApproval'/);
+      // Le drapeau est un MINIMUM : la politique courante et le canal `letter` durcissent aussi.
+      expect(String(appelAction?.[0])).toMatch(/camp\.approval_policy ->> 'mode' = 'all'/);
+      expect(String(appelAction?.[0])).toMatch(/else 'scheduled'::action_status end/);
       expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
     } finally {
       vi.useRealTimers();
@@ -1042,5 +1049,39 @@ describe('reprendreInscription', () => {
     const journal = appelsDe(ctx).find((a) => /insert into audit_events/i.test(String(a[0])));
     expect(journal).toBeDefined();
     expect(String((journal?.[1] as unknown[])[5])).toMatch(/déjà parti/i);
+  });
+});
+
+describe('variablesDeLaCampagne', () => {
+  const CAMPAGNE = '11111111-1111-4111-8111-111111111111';
+
+  it('campagne de signal avec une source de post : nature signal, drapeau levé', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: true }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'signal', aSourceDePost: true });
+  });
+
+  it('campagne de signal sans source de post : drapeau baissé', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: false }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'signal', aSourceDePost: false });
+  });
+
+  it('la requête ne retient que les trois sources qui partent d\u2019un post, jamais les mots-clés', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: 's1', locale: 'fr' }], 'sequence_source_de_post': [{ present: false }] });
+    await variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE });
+    const appel = appelsDe(ctx).find((a) => String(a[0]).includes('sequence_source_de_post'));
+    const types = (appel?.[1] as unknown[])[2];
+    expect(types).toEqual(['linkedin_post_engagers', 'linkedin_competitor_posts', 'linkedin_creator_posts']);
+    expect(types).not.toContain('linkedin_keywords');
+    expect(types).not.toContain('linkedin_job_change');
+  });
+
+  it('campagne de liste : nature list', async () => {
+    const ctx = faux({ 'sequence_etape_campagne_lire': [{ name: 'C', source_id: null, locale: 'fr' }] });
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).resolves.toEqual({ nature: 'list', aSourceDePost: false });
+  });
+
+  it('campagne hors organisation : introuvable', async () => {
+    const ctx = faux({});
+    await expect(variablesDeLaCampagne(ctx, { campagneId: CAMPAGNE })).rejects.toBeInstanceOf(ErreurIntrouvable);
   });
 });

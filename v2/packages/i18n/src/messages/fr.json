@@ -4,7 +4,30 @@
   },
   "common": {
     "loading": "Chargement…",
-    "language": "Langue"
+    "language": "Langue",
+    "variables": {
+      "prenom": "Prénom du contact",
+      "salutation": "Formule d'appel : « Bonjour Marie », ou « Bonjour » sans prénom",
+      "nom": "Nom du contact",
+      "poste": "Poste du contact",
+      "entreprise": "Nom de l'entreprise",
+      "ville": "Ville de l'entreprise",
+      "effectif": "Effectif de l'entreprise",
+      "persona_angle": "Angle d'approche de la persona",
+      "signal_date": "Date du signal",
+      "signal_mois": "Mois du signal",
+      "signal_titre": "Titre du signal (l'offre, l'événement)",
+      "signal_zone": "Zone du signal",
+      "lien_offre": "Adresse de l'annonce",
+      "contexte": "Note de contexte de la liste importée",
+      "site": "Site web de l'entreprise",
+      "departement": "Département (deux premiers chiffres du code postal)",
+      "pays": "Pays de l'entreprise",
+      "post_auteur": "Auteur du post auquel la personne a réagi",
+      "post_sujet": "Sujet du post, validé avant d'être cité",
+      "post_url": "Adresse du post",
+      "post_date": "Date de publication du post"
+    }
   },
   "login": {
     "title": "Connexion",
@@ -370,6 +393,7 @@
       "contacts": "Contacts",
       "queue": "File du jour",
       "sources": "Sources",
+      "posts": "Posts",
       "sequence": "Séquence",
       "activity": "Activité",
       "settings": "Réglages"
@@ -434,6 +458,7 @@
         "contact": "Contact",
         "why": "Pourquoi lui",
         "score": "Score",
+        "scoreReason": "Pourquoi ce score",
         "listJobTitle": "Intitulé de poste",
         "email": "Email",
         "step": "Étape",
@@ -561,12 +586,14 @@
         "skipped": "Annulé"
       },
       "pendingDelivery": "livraison en attente",
+      "blockedPostToReview": "Ce message nomme un post que personne n’a relu.",
       "actions": {
         "review": "Relire",
         "postpone": "Reporter",
         "discard": "Écarter",
         "findEmail": "Chercher l'email",
-        "retry": "Réessayer"
+        "retry": "Réessayer",
+        "reviewPost": "Relire le post"
       },
       "empty": {
         "title": "Rien à envoyer aujourd'hui",
@@ -1068,6 +1095,64 @@
         "saveDraft": "Enregistrer en brouillon",
         "createAndLaunch": "Créer et lancer",
         "continue": "Continuer"
+      }
+    },
+    "posts": {
+      "title": "Posts à relire",
+      "description": "Ce qu'on relit ici, c'est la phrase telle qu'elle partira. Le sujet s'écrit dans la phrase, là où il atterrira.",
+      "bar": {
+        "posts": "{n, plural, one {# post attend} other {# posts attendent}} votre relecture",
+        "personnes": "{n, plural, one {jusqu'à # personne n'entre} other {jusqu'à # personnes n'entrent}} pas en séquence tant que leur post n'est pas validé",
+        "rien": "Aucun post n'attend votre relecture.",
+        "sansAccroche": "Cette campagne ne nomme aucun post. Les relire ici ne débloque personne pour elle, mais vaut pour les campagnes qui les nomment.",
+        "toutValider": "Tout valider ({n})",
+        "lotBloque": "Enregistrez ou annulez votre modification avant de tout valider."
+      },
+      "phrase": {
+        "avantAuteur": "Je vous ai vu réagir au post de ",
+        "apresAuteur": " sur ",
+        "sujetInvite": "écrivez le sujet du post",
+        "sujetEtiquette": "Sujet du post de {auteur}",
+        "auteurInvite": "écrivez le nom de l'auteur",
+        "auteurEtiquette": "Nom de l'auteur du post, tel qu'il partira",
+        "manquant": {
+          "post_url": "adresse indisponible",
+          "post_date": "date indisponible"
+        },
+        "manquantAide": "Cette information n'a pas pu être lue sur la page du post. Jay Reach la relira automatiquement ; vous n'avez rien à écrire ici."
+      },
+      "ligne": {
+        "auteurInconnu": "Auteur inconnu",
+        "publie": "publié le {date}",
+        "publieInconnu": "date de publication inconnue",
+        "voir": "Voir le post sur LinkedIn",
+        "attente": "{n, plural, one {jusqu'à # personne attend} other {jusqu'à # personnes attendent}}"
+      },
+      "etat": {
+        "pending": "en attente",
+        "approved": "validé",
+        "rejected": "rejeté"
+      },
+      "echeance": {
+        "loin": "effacées le {date}",
+        "bientot": "effacées le {date}, dans {jours, plural, one {# jour} other {# jours}}",
+        "demain": "effacées demain",
+        "aujourdhui": "effacées aujourd'hui",
+        "passee": "échéance passée"
+      },
+      "actions": {
+        "valider": "Valider",
+        "rejeter": "Rejeter",
+        "rouvrir": "Rouvrir"
+      },
+      "vide": {
+        "titre": "Aucun post à relire.",
+        "texte": "Les posts collectés par vos sources LinkedIn apparaissent ici. Leurs contacts entrent en séquence une fois que vous avez relu la phrase qui les nommera."
+      },
+      "retenues": {
+        "titre": "Personnes retenues",
+        "sansSource": "Le message écrit une variable de post, mais la campagne n'a aucune source qui part d'un post : personne n'entrera en séquence.",
+        "inexploitable": "{n, plural, one {jusqu'à # personne est retenue} other {jusqu'à # personnes sont retenues}} : la fiche de leur post ne porte pas tout ce que le message écrit (auteur, sujet, date)."
       }
     }
   },
@@ -1752,10 +1837,18 @@
           "nom": "Visites de profil par semaine",
           "usage": "{n} sur les sept derniers jours ; au-delà, la collecte qui ouvre des profils s’arrête"
         },
+        "fichesPostParJour": {
+          "nom": "Fiches de post par jour",
+          "usage": "Rattrape les fiches de post que la collecte n’a pas pu remplir ; chaque lecture ouvre une page LinkedIn"
+        },
+        "fenetreValidationPost": {
+          "nom": "Fenêtre de validation d’un post",
+          "usage": "{n, plural, =0 {Aucun post n’attend de validation} one {# post attend votre validation} other {# posts attendent votre validation}} ; passé ce délai, le post est rejeté et les personnes qui y ont réagi sont effacées"
+        },
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
-        "avancesLead": "Les trois plafonds de la collecte, modifiables un par un."
+        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un."
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
@@ -1941,7 +2034,8 @@
   },
   "jobs": {
     "q": {
-      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation."
+      "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation.",
+      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète."
     }
   },
   "motifsPause": {

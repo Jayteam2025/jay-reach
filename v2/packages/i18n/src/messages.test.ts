@@ -53,7 +53,25 @@ const feuilles: Record<Langue, Map<string, string>> = {
   nl: clesFeuilles(catalogues.nl),
 };
 
+/**
+ * Les mots par lesquels chaque langue nomme les DEUX champs que l'opérateur écrit dans la phrase
+ * d'un post. Depuis que l'auteur s'édite comme le sujet, un auteur modifié bloque « Tout valider »
+ * exactement comme un sujet modifié : un libellé qui ne nomme que l'un des deux envoie chercher
+ * une modification là où il n'y en a pas.
+ */
+const MOTS_DES_CHAMPS_DE_POST: Record<Langue, RegExp> = {
+  fr: /sujet|auteur/i,
+  en: /subject|author/i,
+  nl: /onderwerp|auteur/i,
+};
+
 describe('catalogues de traduction fr/en/nl', () => {
+  it.each(LANGUES)('%s : « Tout valider » bloqué ne nomme aucun des deux champs en particulier', (langue) => {
+    const libelle = feuilles[langue].get('campagne.posts.bar.lotBloque') ?? '';
+    expect(libelle).not.toBe('');
+    expect(libelle).not.toMatch(MOTS_DES_CHAMPS_DE_POST[langue]);
+  });
+
   it.each(['en', 'nl'] as const)(
     '%s.json a exactement les mêmes clés feuilles que fr.json',
     (langue) => {

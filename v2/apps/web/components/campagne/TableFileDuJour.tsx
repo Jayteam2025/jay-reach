@@ -66,7 +66,24 @@ export interface TableFileDuJourLibelles {
   chercherEmail: string;
   coutChercherEmail: string;
   aucunePlaceholder: string;
+  /**
+   * Le seul motif de blocage traduit, et le seul que l'opérateur puisse lever lui-même.
+   *
+   * Les autres motifs techniques s'affichent bruts depuis toujours : dette antérieure à ce lot,
+   * qu'on ne traite pas au passage pour ne pas la faire passer pour réglée.
+   */
+  postARelire: string;
+  /** Mène à l'onglet Posts de la campagne, là où la relecture se fait. */
+  relirePost: string;
 }
+
+/**
+ * Le motif de blocage que ce tableau sait dire, et vers lequel il sait mener.
+ *
+ * Écrit UNE fois, lu par la colonne d'état et par celle des actions : les deux doivent parler du
+ * même blocage, sinon l'opérateur lit une explication sans geste, ou un geste sans explication.
+ */
+const MOTIF_POST_A_RELIRE = 'post_a_relire';
 
 /** Ton de puce par état — réutilisé par le tiroir « Relire avant envoi » (`TiroirRelecture`, même statut réel). */
 export const TON_ETAT: Record<EtatEnvoi, PuceTon> = {
@@ -128,11 +145,20 @@ function LigneEnvoiRendue({
           <small className="jr-secondaire jr-detail-ligne avec-marge">{libelles.livraisonEnAttente}</small>
         )}
         {envoi.raisonEchec && (etat === 'failed' || etat === 'blocked') && (
-          <small className="jr-secondaire jr-detail-ligne avec-marge">{envoi.raisonEchec}</small>
+          <small className="jr-secondaire jr-detail-ligne avec-marge">
+            {envoi.raisonEchec === MOTIF_POST_A_RELIRE ? libelles.postARelire : envoi.raisonEchec}
+          </small>
         )}
       </td>
       <td className="jr-cell-actions">
-        {etat === 'blocked' && envoi.raisonEchec === 'not_sendable' && envoi.signalId ? (
+        {etat === 'blocked' && envoi.raisonEchec === MOTIF_POST_A_RELIRE ? (
+          // Le geste à faire, pas seulement le constat : la relecture se fait dans l'onglet
+          // Posts de CETTE campagne, dont l'identifiant est déjà une prop — aucune requête de
+          // plus par ligne pour construire ce lien.
+          <Link href={`/campaigns/${campagneId}/posts`} className="jr-bouton petit">
+            {libelles.relirePost}
+          </Link>
+        ) : etat === 'blocked' && envoi.raisonEchec === 'not_sendable' && envoi.signalId ? (
           <BoutonChercherEmail
             organisationId={organisationId}
             signalId={envoi.signalId}

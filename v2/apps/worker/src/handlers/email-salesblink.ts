@@ -15,6 +15,7 @@
  */
 import type { Pool } from 'pg';
 import {
+  envoiRetenuParUnPost,
   renderTemplate,
   deciderModeEnvoi,
   sortDErreur,
@@ -333,7 +334,11 @@ export async function envoyerEmailSalesBlink(
   // déjà occupé.
   const etatActuel = await pool.query<{ status: string }>(`select status from actions where id = $1`, [actionId]);
   const statut = etatActuel.rows[0]?.status;
-  if (statut !== 'scheduled') {
+  // `approved` AUTANT que `scheduled` : une action validée par un humain doit partir. Sans elle,
+  // la file d'attente n'a pas de sortie côté email — et ce lot la remplit pour la première fois,
+  // puisqu'une action relâchée restitue `pending_approval` quand l'accord était exigé.
+  // `pending_approval` reste refusée : elle attend encore cet accord.
+  if (statut !== 'scheduled' && statut !== 'approved') {
     console.log(`[email-salesblink] action ${actionId} déjà ${statut ?? 'introuvable'} — ignorée`);
     return;
   }
@@ -490,6 +495,16 @@ export async function envoyerEmailSalesBlink(
     // `{{champ}}` littéral envoyé (CLAUDE.md #2).
     await bloquerAction(pool, actionId, 'missing_variable', { missingVariables: manquantes });
     console.warn(`[email-salesblink] action ${actionId} bloquée : variable(s) manquante(s)`);
+    return;
+  }
+  // La garde d'accroche, rejouée ICI et pas seulement au tick : l'email est le seul canal dont
+  // le corps et l'objet sont rendus au moment de l'envoi, à partir du gabarit COURANT. Une
+  // accroche ajoutée à une campagne qui tourne déjà se retrouve donc dans des actions créées
+  // avant elle — et ce qui part nomme alors un post que personne n'a relu. Rien ne « manque »
+  // ici : l'adresse d'un post existe dès la création de sa fiche, d'où un motif à part.
+  if (await envoiRetenuParUnPost(pool, job.organizationId, ligne.campaign_id, ligne.signal_id)) {
+    await bloquerAction(pool, actionId, 'post_a_relire');
+    console.warn(`[email-salesblink] action ${actionId} bloquée : le message nomme un post qui n’est pas relu`);
     return;
   }
   // Une personne collectée sur LinkedIn apprend d'où vient la donnée dès le premier

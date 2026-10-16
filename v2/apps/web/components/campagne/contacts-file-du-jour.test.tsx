@@ -22,6 +22,7 @@ const LIBELLES: TableContactsLibelles = {
   colonneContact: 'Contact',
   colonnePourquoi: 'Pourquoi lui',
   colonneScore: 'Score',
+  colonneExplication: 'Pourquoi ce score',
   colonneEmail: 'Email',
   colonneEtape: 'Étape',
   colonneCampagne: 'Campagne',
@@ -50,6 +51,7 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
     etapeTexte: null,
     score: null,
     pourquoi: null,
+    explication: null,
     inscriptionId: null,
     motifPause: null,
     repriseLe: null,
@@ -62,6 +64,35 @@ function ligne(overrides: Partial<LigneTableContacts> = {}): LigneTableContacts 
 }
 
 describe('TableContacts', () => {
+  it('campagne à sources : la colonne « Pourquoi ce score » montre l’explication', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ score: 88, explication: 'A commenté le post sur le CRM' })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).toContain('Pourquoi ce score');
+    expect(html).toContain('A commenté le post sur le CRM');
+  });
+
+  it('campagne à liste (colonne de poste) : pas de colonne d’explication', () => {
+    const html = renderToStaticMarkup(
+      <TableContacts
+        lignes={[ligne({ explication: 'A commenté le post sur le CRM' })]}
+        colonnes="campagne"
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={LIBELLES}
+        posteListe={{ trouve: true, titre: 'Intitulé de poste' }}
+      />,
+    );
+    expect(html).not.toContain('Pourquoi ce score');
+    expect(html).not.toContain('A commenté le post sur le CRM');
+  });
+
   it('ligne « Sans email » -> bouton « Chercher l’email » avec le coût', () => {
     const html = renderToStaticMarkup(
       <TableContacts
@@ -482,6 +513,8 @@ const FILE_LIBELLES: TableFileDuJourLibelles = {
   chercherEmail: "Chercher l'email",
   coutChercherEmail: '1 crédit',
   aucunePlaceholder: '—',
+  postARelire: 'Ce message nomme un post que personne n’a relu.',
+  relirePost: 'Relire le post',
 };
 
 describe('TableFileDuJour', () => {
@@ -497,6 +530,46 @@ describe('TableFileDuJour', () => {
     expect(html).toContain('Réessayer');
     expect(html).toContain('Écarter');
     expect(html).toContain('boîte refusée (550)');
+  });
+
+  /**
+   * `post_a_relire` est le seul motif de blocage que l'opérateur peut lever lui-même, et le seul
+   * endroit où il le VOIT : le bandeau de l'écran des posts ne compte que les retenues à
+   * l'entrée (`compterRetenuesParPost` exclut les contacts déjà inscrits). Lu brut, c'est un
+   * identifiant technique qui ne dit ni ce qui se passe, ni où aller.
+   */
+  it('un envoi bloqué par un post non relu se dit en français, et mène là où la décision se prend', () => {
+    const html = renderToStaticMarkup(
+      <TableFileDuJour
+        envois={[envoi({ id: 'a1', etatDetaille: 'blocked', raisonEchec: 'post_a_relire', contactId: 'contact-1' })]}
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={FILE_LIBELLES}
+      />,
+    );
+    expect(html).toContain('Ce message nomme un post que personne n’a relu.');
+    expect(html).not.toContain('post_a_relire');
+    // Le geste à faire, pas seulement le constat : `not_sendable` met un bouton qui AGIT, le
+    // nôtre mène à l'onglet où la relecture se fait.
+    expect(html).toContain('Relire le post');
+    expect(html).toContain('/campaigns/camp-1/posts');
+  });
+
+  /**
+   * La BORNE. Les autres motifs techniques s'affichent bruts depuis toujours : c'est une dette
+   * antérieure à ce lot, et la traiter au passage ferait passer pour corrigé ce qui ne l'est pas.
+   */
+  it('les autres motifs techniques restent affichés tels quels : dette antérieure, pas touchée ici', () => {
+    const html = renderToStaticMarkup(
+      <TableFileDuJour
+        envois={[envoi({ id: 'a1', etatDetaille: 'blocked', raisonEchec: 'missing_variable', contactId: 'contact-1' })]}
+        organisationId="org-1"
+        campagneId="camp-1"
+        libelles={FILE_LIBELLES}
+      />,
+    );
+    expect(html).toContain('missing_variable');
+    expect(html).not.toContain('Relire le post');
   });
 });
 

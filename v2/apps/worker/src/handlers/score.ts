@@ -68,6 +68,7 @@ interface CandidateRow {
   title: string | null;
   location: string | null;
   description: string | null;
+  texte_post: string | null;
   occurred_at: string;
   naf_code: string | null;
   opposition: boolean | null;
@@ -242,6 +243,9 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
             coalesce(a.name, s.company_hint) as company,
             s.title, s.location,
             s.raw ->> 'description' as description,
+            -- Le texte du post qui a fait réagir un engageur. Jointure gauche, qui ne filtre rien :
+            -- la condition de sélection reste celle du compteur.
+            lp.text_excerpt as texte_post,
             s.occurred_at, a.naf_code, a.prospecting_opposition as opposition,
             s.kind::text as kind,
             s.source_id,
@@ -250,6 +254,8 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
        from public.signals s
        left join public.accounts a on a.id = s.account_id
        left join public.sources so on so.id = s.source_id
+       left join public.linkedin_posts lp
+         on lp.id = s.linkedin_post_id and lp.organization_id = s.organization_id
        ${JOINTURE_PERSONA}
       where s.organization_id = $1 and s.status = 'new' and s.score is null
         -- Un signal dont la source n'a pas de prompt exploitable doit être
@@ -348,6 +354,7 @@ export async function runScore(input: ScoreSignalsInput): Promise<ScoreSummary> 
       title: c.title ?? '',
       location: c.location ?? undefined,
       description: c.description ?? undefined,
+      texteDePost: c.texte_post ?? undefined,
     }));
     const scores = await input.scorer(prospects, prompt);
     const byId = new Map(scores.map((s) => [s.id, s]));

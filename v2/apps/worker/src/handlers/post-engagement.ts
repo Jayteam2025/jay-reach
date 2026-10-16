@@ -22,6 +22,7 @@ import {
   normaliserUrlPost,
   normaliserUrlProfil,
   type Executeur, sqlEstSignalDePersonne, type KindPersonne, sqlPredicatUniciteDePersonne, jugerIntitule, type ExclusionsIntitule} from '@jay-reach/core';
+import { rattacherSignalAuPost } from '../linkedin/posts-fiches.js';
 import { urlRecherche, type PersonneTrouvee } from '../linkedin/recherche.js';
 
 export type Engageur = {
@@ -141,6 +142,11 @@ export interface IdentitePersonne {
   readonly nom: string;
   readonly intitule: string;
   readonly entreprise: string | null;
+  /**
+   * Fiche du post qui a fait réagir la personne (`linkedin_posts.id`), créée AVANT par l'appelant.
+   * Absente : le signal naît sans rattachement (recherche par mots-clés, passage sans fiche).
+   */
+  readonly linkedinPostId?: string | null;
 }
 
 /** L'identité d'un engageur de post : son URN, et l'adresse du post comme origine. */
@@ -200,8 +206,9 @@ export async function enregistrerEngageur(
   entree: Engageur,
   campagne: { id: string; personaId: string },
   urlPost: string,
+  linkedinPostId: string | null = null,
 ): Promise<IssueEngageur> {
-  return enregistrerPersonne(ctx, identiteDEngageur(entree, urlPost), campagne);
+  return enregistrerPersonne(ctx, { ...identiteDEngageur(entree, urlPost), linkedinPostId }, campagne);
 }
 
 /** Ce qu'un passage de « changement de poste » a constaté sur un contact. */
@@ -454,6 +461,7 @@ export async function enregistrerPersonne(
   );
   const signalId = signal.rows[0]?.id;
   if (!signalId) return 'doublon'; // course : un autre passage vient de l'insérer
+  if (identite.linkedinPostId) await rattacherSignalAuPost(pool, org, signalId, identite.linkedinPostId);
 
   if (contact) {
     await rattacher(signalId);
