@@ -53,6 +53,13 @@ export interface RecordedReply {
   readonly classification: string;
   /** false quand le message était déjà connu : rien n'a été réécrit. */
   readonly isNew: boolean;
+  /**
+   * true quand un corps arrivé après coup a fait passer le fil à `human_reply` ou `auto_left_company` :
+   * ce que l'opérateur doit apprendre (il avait été notifié d'une simple absence). Jamais vrai pour un
+   * message neuf, ni quand la classification ne change pas, ni en rejeu d'une livraison déjà reclassée
+   * (`human_reply` et `auto_left_company` ne sont plus reclassables).
+   */
+  readonly reclasse: boolean;
 }
 
 /**
@@ -393,9 +400,30 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
       // corps via `/inbox`. Classé sur ses seuls en-têtes, le message est `auto_absence` quoi qu'il dise ;
       // sans ce rejeu il le resterait pour toujours (« I am no longer with... » avait fait REPRENDRE la
       // séquence). On ne reclasse que si le corps apporté est non vide là où le stocké était vide.
-      const reclasse =
-        reply.body.trim() !== '' ? await completerCorps(ex, org, deja.rows[0].id, threadId, reply.body, cls) : null;
-      return { threadId, classification: reclasse ?? cls.classification, isNew: false };
+      // Lecture SANS verrou ni transaction : LinkedIn et SalesBlink repassent sur les mêmes messages à
+      // chaque relève, et dans presque tous les cas le corps est déjà là. Seul un corps stocké vide
+      // ouvre la transaction de `completerCorps`.
+      let reclasse: string | null = null;
+      if (reply.body.trim() !== '') {
+        const stocke = await ex.query<{ vide: boolean }>(
+          `select coalesce(btrim(body), '') = '' as vide from thread_messages where id = $1`,
+          [deja.rows[0].id],
+        );
+        if (stocke.rows[0]?.vide === true) {
+          // Un échec ici ne doit pas figer la relève (son curseur n'avance pas sur une erreur, et le
+          // message revient à chaque passage) : le corps reste vide, le prochain passage réessaie.
+          reclasse = await completerCorps(ex, org, deja.rows[0].id, threadId, reply.body, cls).catch((err: unknown) => {
+            console.error(`[record-reply] corps tardif non traité (${err instanceof Error ? err.name : 'erreur'})`);
+            return null;
+          });
+        }
+      }
+      return {
+        threadId,
+        classification: reclasse ?? cls.classification,
+        isNew: false,
+        reclasse: reclasse === 'human_reply' || reclasse === 'auto_left_company',
+      };
     }
   }
 
@@ -423,5 +451,5 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
     return fil;
   });
 
-  return { threadId, classification: cls.classification, isNew: true };
+  return { threadId, classification: cls.classification, isNew: true, reclasse: false };
 }

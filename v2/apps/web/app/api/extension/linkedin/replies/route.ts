@@ -140,6 +140,8 @@ export async function POST(req: Request): Promise<Response> {
       enregistrees += 1;
       await notifyReply(pool, orgId, 'Nouvelle réponse LinkedIn', texte.slice(0, 140));
     } else {
+      // Corps arrivé après coup qui change la lecture : voir `RecordedReply.reclasse`.
+      if (resultat.reclasse) await notifyReply(pool, orgId, 'Nouvelle réponse LinkedIn', texte.slice(0, 140));
       deja += 1;
     }
   }

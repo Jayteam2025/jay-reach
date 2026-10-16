@@ -116,7 +116,7 @@ export async function traiterEvenementEmail(
       headers: ev.headers ?? (ev.sujet ? { subject: ev.sujet } : null),
       receivedAt: new Date(ev.aMs),
     });
-    if (enregistre.isNew) {
+    if (enregistre.isNew || enregistre.reclasse) {
       // Notification même pour une auto-réponse : le fil doit être vu (règle n° 9).
       const excerpt = ev.corps.slice(0, 140);
       await notifyReply(ex, org, 'Nouvelle réponse', excerpt || enregistre.classification);

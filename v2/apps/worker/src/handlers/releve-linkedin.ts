@@ -441,6 +441,9 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
           raw: { source: 'releve_serveur' },
         });
         if (!enregistre.isNew) {
+          // Le corps est arrivé après coup et change la lecture (réponse humaine, départ) : l'opérateur
+          // avait été prévenu d'une simple absence, il doit apprendre la vraie nature du message.
+          if (enregistre.reclasse) await notifier(pool, org, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
           c.dejaEnregistres += 1;
           continue;
         }

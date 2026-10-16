@@ -236,7 +236,7 @@ beforeEach(() => {
   vi.setSystemTime(MAINTENANT);
   mocks.enregistrer.mockReset();
   mocks.notifier.mockReset();
-  mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: true } satisfies RecordedReply);
+  mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: true, reclasse: false } satisfies RecordedReply);
   mocks.notifier.mockResolvedValue(undefined);
   sortie = { log: [], warn: [], error: [] };
   vi.spyOn(console, 'log').mockImplementation((...a) => void sortie.log.push(a.join(' ')));
@@ -639,7 +639,7 @@ describe('les entrants', () => {
   });
 
   it('second passage (isNew: false) : aucune notification, curseur avance', async () => {
-    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: false } satisfies RecordedReply);
+    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: false, reclasse: false } satisfies RecordedReply);
     const w = monde({
       compte: MOI_NU,
       curseur: new Date(AVANT),
@@ -650,6 +650,19 @@ describe('les entrants', () => {
     expect(mocks.enregistrer).toHaveBeenCalledTimes(1);
     expect(mocks.notifier).not.toHaveBeenCalled();
     expect(sortie.log.join('\n')).toContain('"dejaEnregistres":1');
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('message connu dont le corps tardif révèle une réponse humaine (reclasse: true) : une notification, curseur avance', async () => {
+    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: false, reclasse: true } satisfies RecordedReply);
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne' }) },
+      contactsParUrn: { ACoAAjeanne: ['contact-1'] },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.notifier).toHaveBeenCalledTimes(1);
     expect(etatEcrit(w)).toHaveLength(1);
   });
 

@@ -454,8 +454,11 @@ async function reclasser(ctx: Contexte, d: Dependances, appliquer: boolean): Pro
   d.ecrire(`  reclassés : ${r.reclasses}`);
   d.ecrire(`  exclus : ${r.exclus}`);
   d.ecrire(`  envois LinkedIn en file annulés : ${r.envoisAnnules}`);
+  d.ecrire(`  séquences arrêtées : ${r.sequencesArretees}`);
+  d.ecrire(`  notifications : ${r.notifications}`);
+  d.ecrire(`  échecs : ${r.echecs}`);
   if (!appliquer && r.reclasses > 0) d.ecrire('Pour appliquer : « jay-reach linkedin reclasser --appliquer ».');
-  return 0;
+  return r.echecs > 0 ? 1 : 0;
 }
 
 export async function executerCommande(argv: string[], d: Dependances): Promise<number> {

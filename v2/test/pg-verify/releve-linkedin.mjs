@@ -71,6 +71,9 @@
 //      NON PROUVES (declares) : `and organization_id = $2` de la mise a jour de reclasserFil et `t.organization_id = $3` de la lecture de completerCorps : l'identifiant du fil
 //      vient d'une lecture deja filtree par organisation, chacun retire laisse tout vert ; la transaction par fil du rejeu (le rollback d'un fil qui echoue en cours de route
 //      n'est pas joue : un echec reel laisse les fils precedents appliques, ce qui est voulu mais non prouve ici).
+//  16. (tache 10, tour 1) `try/catch` par fil du rejeu — 189, 189b, 189c ; ne compter qu'apres succes (`continue` du catch) — 189 ; le `select` sans verrou du corps stocke
+//      (ouvrir toujours la transaction) — 191 seul ; le `.catch` de completerCorps — 190 seul ; `reclasse` de recordInboundReply — 173, 176c, 190b ;
+//      notification du rejeu — 186, 189 ; compte des sequences — 179, 180 ; son dedoublonnage par contact — 179.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -1304,6 +1307,9 @@ async function reclassementTardif() {
   const ORG_R10 = '00000000-0000-0000-0000-0000000000e1';
   await q(`insert into organizations (id, name, slug) values ($1, 'Org R10', 'org-r10')`, [ORG_R10]);
   const org = ORG_R10;
+  // Un membre : sans lui une notification n'insère aucune ligne et rien ne se compte.
+  await q(`insert into auth.users (id, email) values ($1, 'membre-r10@example.test')`, [id(830)]);
+  await q(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin')`, [org, id(830)]);
   const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp R10', 'active') returning id`, [org])).rows[0].id;
   const AUTO = { 'auto-submitted': 'auto-replied' };
   const contact = (n, email, url = null) => q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, $3, $4)`, [id(n), org, email, url]);
@@ -1315,7 +1321,7 @@ async function reclassementTardif() {
   const corps = async (n) => (await q(`select m.body from thread_messages m join threads t on t.id = m.thread_id where t.contact_id = $1 and m.direction = 'in' order by m.sent_at desc limit 1`, [id(n)])).rows[0]?.body;
   const nSupp = async (n) => (await q(`select count(*)::int as n from suppressions where organization_id = $1 and value ilike $2`, [org, `%${n}%`])).rows[0].n;
   const nEvt = async (n) => (await q(`select count(*)::int as n from audit_events where entity_id = $1 and action = 'contact.excluded_after_reply'`, [id(n)])).rows[0].n;
-  const nNotifs = async () => (await q(`select count(*)::int as n from notifications`)).rows[0].n;
+  const nNotifs = async () => (await q(`select count(*)::int as n from notifications where organization_id = $1`, [org])).rows[0].n;
   // Empreinte de TOUTE la base publique : chaque ligne de chaque table, sans en nommer aucune.
   const empreinte = async () => {
     const tables = (await q(`select tablename from pg_tables where schemaname = 'public' order by tablename`)).rows;
@@ -1335,7 +1341,7 @@ async function reclassementTardif() {
   const p2 = await recordInboundReply(pool, org, { contactId: id(800), channel: 'email', body: 'I am no longer with Pluxee.', headers: AUTO, providerMessageId: 'urn:li:msg_message:p800' });
   const i800 = await insc(800);
   check('173 le corps arrive après coup : le fil devient auto_left_company et la séquence reprise est ARRETEE (contact_left), pas reprise',
-    !p2.isNew && p2.classification === 'auto_left_company' && (await fil(800)) === 'auto_left_company' && i800.s === 'stopped' && i800.stop_reason === 'contact_left', JSON.stringify([p2, await fil(800), i800]));
+    !p2.isNew && p2.reclasse === true && p2.classification === 'auto_left_company' && (await fil(800)) === 'auto_left_company' && i800.s === 'stopped' && i800.stop_reason === 'contact_left', JSON.stringify([p2, await fil(800), i800]));
   check('173b le corps est stocké sur le message existant, sans second message', (await corps(800)) === 'I am no longer with Pluxee.' && (await nMessages(800)) === 1, `${await corps(800)} / ${await nMessages(800)}`);
   check('173c un départ n exclut pas', (await etat(800)) === 'active' && (await nSupp('pluxee')) === 0, await etat(800));
 
@@ -1373,15 +1379,15 @@ async function reclassementTardif() {
     !h2.isNew && (await fil(803)) === 'human_reply' && (await etat(803)) === 'do_not_contact' && (await nSupp('humain')) >= 2 && (await insc(803)).s === 'replied', JSON.stringify([await fil(803), await etat(803), await nSupp('humain'), await insc(803)]));
   const s803 = await nSupp('humain');
   const e803 = await nEvt(803);
-  await recordInboundReply(pool, org, { contactId: id(803), channel: 'email', body: 'Oui, rappelez-moi demain.', providerMessageId: 'urn:li:msg_message:p803' });
-  check('176b la même livraison rejouée : aucun doublon de suppression, aucun second événement', (await nSupp('humain')) === s803 && (await nEvt(803)) === e803 && e803 === 1, `${await nSupp('humain')} / ${await nEvt(803)}`);
-  check('176c aucune notification posée par le reclassement (le message avait déjà été notifié)', (await nNotifs()) === n0, `${n0} -> ${await nNotifs()}`);
+  const h3 = await recordInboundReply(pool, org, { contactId: id(803), channel: 'email', body: 'Oui, rappelez-moi demain.', providerMessageId: 'urn:li:msg_message:p803' });
+  check('176b la même livraison rejouée : reclasse false, aucun doublon de suppression, aucun second événement', !h3.reclasse && (await nSupp('humain')) === s803 && (await nEvt(803)) === e803 && e803 === 1, `${await nSupp('humain')} / ${await nEvt(803)}`);
+  check('176c le corps tardif qui révèle une réponse humaine : reclasse true (les appelants notifient, l opérateur n avait vu qu une absence) ; recordInboundReply lui-même ne notifie pas', h2.reclasse === true && (await nNotifs()) === n0, `${h2.reclasse} / ${n0} -> ${await nNotifs()}`);
 
   // 177. Une human_reply n est jamais déclassée par un corps tardif.
   await contact(804, 'jamais@example.test');
   await recordInboundReply(pool, org, { contactId: id(804), channel: 'email', body: '', providerMessageId: 'urn:li:msg_message:p804' });
-  await recordInboundReply(pool, org, { contactId: id(804), channel: 'email', body: 'I am no longer with Pluxee.', providerMessageId: 'urn:li:msg_message:p804' });
-  check('177 une human_reply (déjà exclue) n est pas déclassée par un corps tardif', (await fil(804)) === 'human_reply' && (await etat(804)) === 'do_not_contact', `${await fil(804)} / ${await etat(804)}`);
+  const r804 = await recordInboundReply(pool, org, { contactId: id(804), channel: 'email', body: 'I am no longer with Pluxee.', providerMessageId: 'urn:li:msg_message:p804' });
+  check('177 une human_reply (déjà exclue) n est pas déclassée par un corps tardif, et n alerte pas', r804.reclasse === false && (await fil(804)) === 'human_reply' && (await etat(804)) === 'do_not_contact', `${await fil(804)} / ${await etat(804)}`);
 
   // 178. Un message qui n est pas le dernier du fil porte son corps, mais pas la classification du fil.
   await contact(805, 'ancien@example.test');
@@ -1410,6 +1416,7 @@ async function reclassementTardif() {
   await poser(815, 'r-humain-deja@example.test', 'human_reply', 'I am no longer with Pluxee.', null);
   // Deux fils, un seul contact : exclu une fois.
   await poser(816, 'r-deux@example.test', 'auto_absence', 'Bonjour, ça m intéresse.', null);
+  await inscrire(816);
   await q(`insert into threads (organization_id, contact_id, channel, classification, is_read) values ($1, $2, 'linkedin_message', 'auto_absence', false)`, [org, id(816)]);
   await q(`insert into thread_messages (thread_id, direction, body, sent_at) select id, 'in', 'Oui, avec plaisir.', now() - interval '1 hour' from threads where contact_id = $1 and channel = 'linkedin_message'`, [id(816)]);
   // Deux envois en file pour 811 (un message, une réponse d opérateur qui ne s annule jamais) : un seul sera annulé.
@@ -1422,7 +1429,7 @@ async function reclassementTardif() {
   const base = await empreinte();
   const notifs0 = await nNotifs();
   const blanc = await rejouerClassement(pool, org);
-  check('179 à blanc (défaut) : le compte-rendu annonce ce qui serait fait', JSON.stringify(blanc) === JSON.stringify({ relus: 9, reclasses: 5, exclus: 2, envoisAnnules: 1 }), JSON.stringify(blanc));
+  check('179 à blanc (défaut) : le compte-rendu annonce ce qui serait fait', JSON.stringify(blanc) === JSON.stringify({ relus: 9, reclasses: 5, exclus: 2, envoisAnnules: 1, sequencesArretees: 3, notifications: 5, echecs: 0 }), JSON.stringify(blanc));
   check('179b à blanc : l état COMPLET de la base (toutes les tables) est identique avant et après', (await empreinte()) === base);
   const reel = await rejouerClassement(pool, org, { appliquer: true });
   check('180 appliqué : le même compte-rendu que le mode à blanc', JSON.stringify(reel) === JSON.stringify(blanc), JSON.stringify(reel));
@@ -1436,18 +1443,60 @@ async function reclassementTardif() {
   check('183 contact déjà do_not_contact : reclassé, mais pas réécrit (aucune suppression de plus, aucun événement)', (await fil(814)) === 'human_reply' && (await nSupp('r-deja')) === 1 && (await nEvt(814)) === 0, `${await nSupp('r-deja')} / ${await nEvt(814)}`);
   check('184 contact à deux fils : exclu une fois (un événement, une suppression email)', (await fil(816)) === 'human_reply' && (await fil(816, 'linkedin_message')) === 'human_reply' && (await nEvt(816)) === 1 && (await nSupp('r-deux')) === 1, `${await nEvt(816)} / ${await nSupp('r-deux')}`);
   check('185 l autre organisation n est pas touchée', (await q(`select classification::text as c from threads where id = $1`, [fA])).rows[0].c === 'auto_absence' && (await etat(820)) === 'active');
-  check('186 aucune notification posée par le rejeu', (await nNotifs()) === notifs0, `${notifs0} -> ${await nNotifs()}`);
+  check('186 appliqué : exactement les 5 notifications annoncées (un membre), et le mode à blanc n en avait posé aucune (179b)', (await nNotifs()) === notifs0 + 5, `${notifs0} -> ${await nNotifs()}`);
 
   // Rejeu rejoué : plus rien à faire, et l état ne bouge pas.
   const apres = await empreinte();
   const second = await rejouerClassement(pool, org, { appliquer: true });
-  check('187 le rejeu joué deux fois : le second ne relit que les absences légitimes, ne reclasse rien, ne change rien', JSON.stringify(second) === JSON.stringify({ relus: 4, reclasses: 0, exclus: 0, envoisAnnules: 0 }) && (await empreinte()) === apres, JSON.stringify(second));
+  check('187 le rejeu joué deux fois : le second ne relit que les absences légitimes, ne reclasse rien, ne change rien', JSON.stringify(second) === JSON.stringify({ relus: 4, reclasses: 0, exclus: 0, envoisAnnules: 0, sequencesArretees: 0, notifications: 0, echecs: 0 }) && (await empreinte()) === apres, JSON.stringify(second));
   // Cas d un rejeu interrompu : le fil est resté auto_absence alors que le contact est déjà exclu.
   await q(`update threads set classification = 'auto_absence' where organization_id = $1 and contact_id = $2`, [org, id(811)]);
   const s811 = await nSupp('r-humain'), e811 = await nEvt(811);
   const tiers = await rejouerClassement(pool, org, { appliquer: true });
   check('188 contact déjà exclu par un passage précédent : reclassé, jamais exclu une seconde fois (suppressions et événements inchangés)',
-    JSON.stringify(tiers) === JSON.stringify({ relus: 5, reclasses: 1, exclus: 0, envoisAnnules: 0 }) && (await nSupp('r-humain')) === s811 && (await nEvt(811)) === e811, JSON.stringify([tiers, await nSupp('r-humain'), await nEvt(811)]));
+    JSON.stringify(tiers) === JSON.stringify({ relus: 5, reclasses: 1, exclus: 0, envoisAnnules: 0, sequencesArretees: 0, notifications: 1, echecs: 0 }) && (await nSupp('r-humain')) === s811 && (await nEvt(811)) === e811, JSON.stringify([tiers, await nSupp('r-humain'), await nEvt(811)]));
+  // 189. Un fil empoisonné (le plus ancien) n'emporte ni les compteurs ni les fils suivants.
+  const poseAncien = async (n, email, corpsMsg) => {
+    const f = await poser(n, email, 'auto_absence', corpsMsg, null);
+    await q(`update threads set created_at = $2::timestamptz where id = $1`, [f, n === 840 ? '2000-01-01' : '2000-01-02']);
+    return f;
+  };
+  const fPoison = await poseAncien(840, 'poison@example.test', 'Oui merci.');
+  await poseAncien(841, 'suivant@example.test', 'Oui, volontiers.');
+  await q(`create or replace function jr_t10_poison_fil() returns trigger language plpgsql as $f$ begin if new.id = '${fPoison}' then raise exception 'fil empoisonne'; end if; return new; end $f$`);
+  await q(`create trigger jr_t10_poison_fil before update on threads for each row execute function jr_t10_poison_fil()`);
+  const nN = await nNotifs();
+  const pz = await rejouerClassement(pool, org, { appliquer: true });
+  check('189 un fil empoisonné en tête : un échec compté, le suivant aboutit (reclassé, exclu, notifié), les compteurs ne sont pas perdus',
+    pz.echecs === 1 && pz.reclasses === 1 && pz.exclus === 1 && pz.notifications === 1 && (await fil(841)) === 'human_reply' && (await etat(841)) === 'do_not_contact' && (await nNotifs()) === nN + 1,
+    JSON.stringify(pz));
+  check('189b le fil empoisonné est intact (sa transaction est défaite : classe, contact, aucune notification)', (await fil(840)) === 'auto_absence' && (await etat(840)) === 'active' && (await nSupp('poison@')) === 0);
+  await q(`drop trigger jr_t10_poison_fil on threads`);
+  const pz2 = await rejouerClassement(pool, org, { appliquer: true });
+  check('189c le poison levé, le passage suivant rattrape le fil resté en arrière', pz2.echecs === 0 && pz2.reclasses === 1 && (await fil(840)) === 'human_reply', JSON.stringify(pz2));
+
+  // 190. Panne sur le chemin du corps tardif : la relève (recordInboundReply) ne lève pas, le corps reste à rattraper.
+  await contact(842, 'panne@example.test');
+  await inscrire(842);
+  await recordInboundReply(pool, org, { contactId: id(842), channel: 'email', body: '', headers: AUTO, providerMessageId: 'urn:li:msg_message:p842' });
+  await q(`create or replace function jr_t10_poison_corps() returns trigger language plpgsql as $f$ begin if new.body = 'corps empoisonne' then raise exception 'ecriture refusee'; end if; return new; end $f$`);
+  await q(`create trigger jr_t10_poison_corps before update on thread_messages for each row execute function jr_t10_poison_corps()`);
+  let r842 = null;
+  const e842 = await erreur((async () => { r842 = await recordInboundReply(pool, org, { contactId: id(842), channel: 'email', body: 'corps empoisonne', headers: AUTO, providerMessageId: 'urn:li:msg_message:p842' }); })());
+  check('190 une panne à l écriture du corps tardif ne fait pas lever la relève : isNew false, reclasse false, corps toujours vide', e842 === null && r842?.isNew === false && r842?.reclasse === false && (await corps(842)) === '', JSON.stringify([e842?.message, r842, await corps(842)]));
+  await q(`drop trigger jr_t10_poison_corps on thread_messages`);
+  const r842b = await recordInboundReply(pool, org, { contactId: id(842), channel: 'email', body: 'I am no longer with Pluxee.', headers: AUTO, providerMessageId: 'urn:li:msg_message:p842' });
+  check('190b la panne passée, le passage suivant rattrape le corps et reclasse', r842b.reclasse === true && (await fil(842)) === 'auto_left_company', JSON.stringify(r842b));
+
+  // 191. Un message connu au corps déjà stocké (99 % des relèves) n ouvre AUCUNE transaction ; le témoin : un corps vide en ouvre une.
+  let connexions = 0;
+  const compte = { query: (...a) => pool.query(...a), connect: () => { connexions += 1; return pool.connect(); } };
+  await recordInboundReply(compte, org, { contactId: id(802), channel: 'email', body: 'Je suis en conges, de retour le 20.', headers: AUTO, providerMessageId: 'urn:li:msg_message:p802' });
+  check('191 message connu, corps déjà stocké : aucune connexion louée, aucune transaction', connexions === 0, String(connexions));
+  await contact(843, 'temoin@example.test');
+  await recordInboundReply(pool, org, { contactId: id(843), channel: 'email', body: '', headers: AUTO, providerMessageId: 'urn:li:msg_message:p843' });
+  await recordInboundReply(compte, org, { contactId: id(843), channel: 'email', body: 'Out of office until 12/11.', headers: AUTO, providerMessageId: 'urn:li:msg_message:p843' });
+  check('191b témoin : un corps stocké vide, lui, ouvre bien sa transaction (le compteur sait voir)', connexions === 1, String(connexions));
 }
 
 try {
