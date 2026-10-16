@@ -170,6 +170,7 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
   for (const conv of conversations) {
     if (!estObjet(conv)) {
       conversationsIllisibles += 1;
+      lues += 1; // illisible = dérive possible, donc comptée dans le volume lu
       continue;
     }
     const activite = nombre(conv.lastActivityAt);
@@ -227,7 +228,14 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
   // expéditeur illisible). Seuil de 3 : compromis assumé. Avec une seule conversation lue, une
   // conversation légitimement sans message ferait lever à tort ; la relève est un sondage répété,
   // une vraie dérive se reverra au passage suivant.
-  if (lues >= 3 && entrants.length === 0 && sansMessage + expediteursIllisibles === lues) {
+  // La dérive peut survenir à n'importe quel étage (conversation, message, expéditeur, identifiant du
+  // message) : tous les compteurs de dérive entrent dans la règle, sinon un champ renommé à l'étage
+  // non couvert donnerait une boîte qui paraît vide, en permanence puisque le curseur n'avance pas.
+  // `entrants.length === 0` est redondant aujourd'hui (un entrant n'est jamais compté parmi ces cas) ;
+  // on le garde : il dit l'intention, et protège si un futur compteur était alimenté en même temps
+  // qu'un entrant valide. Ne pas le retirer en croyant simplifier.
+  const derives = sansMessage + expediteursIllisibles + conversationsIllisibles + entrantsIllisibles;
+  if (lues >= 3 && entrants.length === 0 && derives === lues) {
     throw new ErreurMessagerie('LinkedIn a changé la forme de ses conversations : aucune n’a pu être lue.');
   }
 

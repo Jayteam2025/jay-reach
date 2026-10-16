@@ -285,6 +285,26 @@ describe('analyserConversations', () => {
       expect(() => analyser([sansMessage('1'), expediteurInconnu('2'), sansMessage('3')])).toThrow(ErreurMessagerie);
     });
 
+    const sansIdentifiant = (id: string) => {
+      const c = conv({ id, texte: 'SECRET-PRIVE' });
+      delete (message(c) as { entityUrn?: string }).entityUrn;
+      return c;
+    };
+
+    it('lève quand trois conversations ont toutes un message entrant sans entityUrn', () => {
+      expect(() => analyser([sansIdentifiant('1'), sansIdentifiant('2'), sansIdentifiant('3')])).toThrow(ErreurMessagerie);
+    });
+
+    it('lève quand trois éléments de la liste ne sont pas des objets', () => {
+      expect(() => analyser(['a', 'b', 'c'])).toThrow(ErreurMessagerie);
+    });
+
+    it('trois messages sans entityUrn mais un message valide : ne lève pas', () => {
+      const r = analyser([sansIdentifiant('1'), sansIdentifiant('2'), sansIdentifiant('3'), conv({ id: 'ok' })]);
+      expect(r.entrants).toHaveLength(1);
+      expect(r.entrantsIllisibles).toBe(3);
+    });
+
     it('ne cite pas la charge dans le message', () => {
       expect(() => analyser([sansMessage('1'), sansMessage('2'), sansMessage('3')])).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining('SECRET-PRIVE') }),
