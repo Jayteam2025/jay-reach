@@ -117,6 +117,11 @@
 //      valider un post ferait partir une action bloquée pour une variable manquante.
 //  60. posts.ts : retirer `and s.linkedin_post_id = $2::uuid` de la relance — 37f rougit :
 //      valider un post réveillerait les personnes qui en attendent un AUTRE, encore en attente.
+//  61. sequence.ts : retirer `payload.requiresApproval` du blocage `post_a_relire`, OU
+//      posts.ts : relâcher en `scheduled` sans lire ce drapeau — 37h rougit dans les deux cas :
+//      une action qui attendait l'accord d'un humain saute la file d'attente.
+//  62. posts.ts : filtrer `listerPostsDeCampagne` sur `review_status = 'pending'` — 35h rougit :
+//      le lien de la File du jour mènerait à une liste qui a écarté le post à rouvrir.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -1505,7 +1510,19 @@ async function decompteLisible() {
   // La personne SANS aucune fiche n'est plus retenue (voir `rienARelireNeRetientPas`), donc le
   // décompte n'a plus de catégorie pour elle : un compteur qui annonce une rétention qui n'a pas
   // lieu est le défaut d'en face, et ce dépôt l'a déjà payé.
-  check('23b. celles sans aucun post ne sont plus une catégorie du décompte', r.sansPost === undefined, JSON.stringify(r));
+  //
+  // L'assertion porte sur LA PERSONNE, pas sur l'absence d'un champ : `r.sansPost === undefined`
+  // était vrai par construction depuis que le champ a disparu du type, donc vert même si le
+  // décompte recomptait n'importe quoi. On vérifie d'abord qu'elle est bien dans la population
+  // comptée — sans ça, « elle n'est comptée nulle part » serait vrai d'une personne absente.
+  const orphelineComptable = (await q(
+    `select 1 from contacts ct join signals s on s.id = ct.source_signal_id
+      where ct.id = $1 and s.linkedin_post_id is null
+        and not exists (select 1 from enrollments e
+                         where e.contact_id = ct.id and e.status in ('active', 'paused', 'paused_absence'))`,
+    [orpheline.contact_id])).rowCount;
+  check('23b. la personne sans aucun post est dans la population, et n\'entre dans aucun compteur',
+    orphelineComptable === 1 && r.postInexploitable === 1 && r.enAttenteDeValidation === 1, JSON.stringify(r));
   check('23c. et celles dont la fiche est inexploitable', r.postInexploitable === 1, JSON.stringify(r));
 
   // Chaque compteur suit bien SA personne : on corrige une fiche à la fois, et un seul bouge.
@@ -2305,6 +2322,22 @@ async function rienARelireNeRetientPas() {
   check('35f. et personne n\'entre tant qu\'elle n\'est pas relue',
     (await inscritsDe(n.org)).length === 0, JSON.stringify(await inscritsDe(n.org)));
 
+  // LA LISTE NE FILTRE RIEN. Une fiche peut atteindre son échéance pendant qu'une inscription
+  // est retenue : `rejeterFichesPostExpirees` la passe `rejected`, et `validerPost` la refuse
+  // alors — seul « Rouvrir » puis valider la relâche. Ce chemin existe et l'écran le dit ; ce
+  // qu'il faut vérifier, c'est que le lien de la File du jour mène bien à CE post-là. Si la
+  // liste l'excluait, l'opérateur arriverait sur un écran vide sans comprendre.
+  const l = await monde();
+  await etapeAvecCorps(l, ACCROCHE_URL, { canal: 'email' });
+  const rejete = await engageurDUnPost(l, 123, { etat: 'pending' });
+  const echu = await engageurDUnPost(l, 124, { etat: 'pending' });
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = any($1::uuid[])`, [[rejete.fiche, echu.fiche]]);
+  await rejeterFichesPostExpirees(pool);
+  const listes = await listerPostsDeCampagne(l.ctx, { campagneId: l.campagne });
+  check('35h. un post rejeté ou échu reste listé : le lien de la File du jour mène bien à lui',
+    listes.some((x) => x.id === rejete.fiche) && listes.some((x) => x.id === echu.fiche),
+    JSON.stringify(listes.map((x) => [x.id, x.etat])));
+
   // LA BORNE : le chemin du NOM du gabarit reste fermé. Une fiche existe, donc on retient.
   const z = await monde();
   await etapeAvecCorps(z, CORPS_MUET, { canal: 'email', nom: ACCROCHE_DANS_LE_NOM });
@@ -2443,6 +2476,29 @@ async function validerRelanceLesRetenues() {
   await rejouerActionsEmailEnAttente({ pool, boss });
   check('37d. le balayage de rejeu l\'enfile : l\'envoi part pour de bon',
     (await q(`select 1 from pgboss.job where name = 'actions.dispatch' and data->>'actionId' = $1`, [avant.id])).rowCount === 1);
+
+  // L'APPROBATION. `requiresApproval` est calculé AVANT `composeTick`, et la branche du post
+  // passe AVANT celle de l'approbation : une action qui aurait dû attendre l'accord d'un humain
+  // part donc en `blocked post_a_relire`. La relâcher en `scheduled` lui ferait SAUTER la file,
+  // et ce n'est pas qu'une affaire de courrier — une politique de campagne, ou les trois
+  // premiers envois d'un couple gabarit+version, l'exigent aussi en email.
+  const ap = await monde();
+  await q(`update campaigns set approval_policy = '{"mode":"all"}'::jsonb where id = $1`, [ap.campagne]);
+  const gabaritAp = await etapeAvecCorps(ap, SANS_ACCROCHE, { canal: 'email' });
+  const pap = await engageurDUnPost(ap, 125, { etat: 'pending' });
+  await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [pap.contact_id, `bob125-${Date.now()}@exemple.invalid`]);
+  await expediteurEmail(ap.org, `exp125-${Date.now()}@exemple.invalid`);
+  await tourDInscription(ap.org);
+  await q(`update message_templates set body = $2 where id = $1`, [gabaritAp, ACCROCHE_URL]);
+  await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [ap.org]);
+  await tickDueEnrollments(pool, new Date());
+  const avantAp = (await q(`select id, status, block_reason from actions where organization_id = $1`, [ap.org])).rows[0];
+  check('37g. une action qui exigeait l\'accord d\'un humain est bien bloquée par le post',
+    avantAp?.status === 'blocked' && avantAp?.block_reason === 'post_a_relire', JSON.stringify(avantAp));
+  await validerPost(ap.ctx, { postId: pap.fiche, campagneId: ap.campagne });
+  const apresAp = (await q(`select status, block_reason from actions where id = $1`, [avantAp.id])).rows[0];
+  check('37h. relâchée, elle retourne dans la FILE D\'ATTENTE, pas en partance',
+    apresAp?.status === 'pending_approval' && apresAp?.block_reason === null, JSON.stringify(apresAp));
 
   // LA SECONDE BORNE : l'autre personne attend un AUTRE post, encore en attente. Elle reste
   // retenue — sinon valider un post ferait partir des messages qui en nomment un autre.
