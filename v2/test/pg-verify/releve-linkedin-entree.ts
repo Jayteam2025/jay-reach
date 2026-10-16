@@ -3,3 +3,4 @@
 export { enqueueReleveLinkedIn, ecrireEtat, lireEtat, rattacher, traiterReleveLinkedIn, contactsSansUrn, REQUETES_PAR_RELEVE } from '../../apps/worker/src/handlers/releve-linkedin.js';
 export { compterRequetesLinkedIn, lirePlafondLinkedIn, tracerRequeteMessagerie } from '@jay-reach/core';
 export { urlConversations } from '../../apps/worker/src/linkedin/messagerie.js';
+export { enregistrerMessageSortant } from '@jay-reach/core';

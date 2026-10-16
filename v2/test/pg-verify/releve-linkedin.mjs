@@ -15,11 +15,17 @@
 //      ne plus dater les adresses ecartees (marquerIrresolus avant le filtre) — 76 ;
 //   8. (tests unitaires) `.slice(0, nombre)`, le budget, la trace avant l'appel, le filtre `normaliserUrlProfil`,
 //      l'arret sur refus de session, la capture d'un echec individuel : chacun fait rougir au moins un test.
+//   9. (tache 6) enregistrer-message-sortant : retirer `assurerFil` au profit d'un insert direct dans
+//      threads — 80 (reutilisation) ou 85 rougit ; poser `is_read = false`/`classification` a la mise a jour
+//      du fil — 83 et 84 rougissent ; retirer `update threads set last_message_at` — 82 ; `etat: 'en_cours'`
+//      qui pose sent_at — 87. SURVIT (defense en profondeur, non gardee) : retirer `and organization_id = $2`
+//      de la mise a jour de `last_message_at`, car l'id du fil vient deja de `assurerFil`, borne a l'organisation.
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
   contactsSansUrn,
+  enregistrerMessageSortant,
   ecrireEtat,
   lirePlafondLinkedIn,
   enqueueReleveLinkedIn,
@@ -405,9 +411,79 @@ async function resolutionDesUrn() {
   check('77 isolement : la date ne touche aucun contact de l autre organisation', (await tentee(108)) === false);
 }
 
+// Tâche 6 : le message sortant entre dans le fil. Le SQL est celui de production (`assurerFil` + insertion).
+async function messageSortant() {
+  const ex = pool;
+  const contact = (n, org) =>
+    q(`insert into contacts (id, organization_id, email) values ($1, $2, $3)`, [id(n), org, `sortant${n}@example.test`]);
+  await contact(200, ORG_A); // aucun fil
+  await contact(201, ORG_A); // fil portant deja une reponse classee, non lue
+  await contact(202, ORG_A); // fil email : ne doit pas etre confondu avec le fil LinkedIn
+  await contact(203, ORG_B);
+  const fils = (n, org) =>
+    q(`select id, channel, is_read, classification, handled_at, last_message_at from threads where contact_id = $1 and organization_id = $2 order by channel`, [id(n), org]);
+  const base = { organizationId: ORG_A, channel: 'linkedin_message', etat: 'envoye' };
+
+  const f1 = await enregistrerMessageSortant(ex, { ...base, contactId: id(200), body: 'Bonjour 200', raw: { queue_id: 'q-200' } });
+  const t1 = await fils(200, ORG_A);
+  const m1 = await q(`select direction, body, provider_message_id, sent_at, raw from thread_messages where thread_id = $1`, [f1]);
+  check('78 un message sortant cree le fil LinkedIn du contact, lu, sans classification',
+    t1.rows.length === 1 && t1.rows[0].id === f1 && t1.rows[0].channel === 'linkedin_message' && t1.rows[0].is_read === true && t1.rows[0].classification === 'unclassified', JSON.stringify(t1.rows));
+  check('79 le message est stocke en sortant, avec son corps, sa date d envoi et ses metadonnees',
+    m1.rows.length === 1 && m1.rows[0].direction === 'out' && m1.rows[0].body === 'Bonjour 200' && m1.rows[0].sent_at !== null && m1.rows[0].raw.queue_id === 'q-200', JSON.stringify(m1.rows));
+
+  const f2 = await enregistrerMessageSortant(ex, { ...base, contactId: id(200), body: 'Relance 200' });
+  const t2 = await fils(200, ORG_A);
+  check('80 un second message reutilise le meme fil, il n en cree pas un deuxieme', f2 === f1 && t2.rows.length === 1, JSON.stringify(t2.rows));
+  const m2 = await q(`select count(*)::int as n from thread_messages where thread_id = $1`, [f1]);
+  check('81 les deux messages sont dans le fil', m2.rows[0].n === 2);
+
+  // Fil existant portant une reponse : classee human_reply, non lue, traitee.
+  const fil = (await q(
+    `insert into threads (organization_id, contact_id, channel, classification, is_read, handled_at, last_message_at)
+     values ($1, $2, 'linkedin_message', 'human_reply', false, now() - interval '2 days', now() - interval '3 days') returning id`,
+    [ORG_A, id(201)],
+  )).rows[0].id;
+  await q(`insert into thread_messages (thread_id, direction, body, sent_at) values ($1, 'in', 'Oui, interessé', now() - interval '3 days')`, [fil]);
+  const avant = (await fils(201, ORG_A)).rows[0];
+  const f3 = await enregistrerMessageSortant(ex, { ...base, contactId: id(201), body: 'Merci, je vous appelle' });
+  const apres = (await fils(201, ORG_A)).rows[0];
+  check('82 le dernier message du fil existant est mis a jour', f3 === fil && new Date(apres.last_message_at) > new Date(avant.last_message_at), JSON.stringify([avant.last_message_at, apres.last_message_at]));
+  check('83 la classification du fil existant n est pas ecrasee', apres.classification === 'human_reply', apres.classification);
+  check('84 l etat de lecture et le traitement du fil existant ne bougent pas : la reponse attend toujours l operateur',
+    apres.is_read === false && String(apres.handled_at) === String(avant.handled_at) && apres.handled_at !== null, JSON.stringify(apres));
+
+  // Le canal compte : un fil email du meme contact n est ni reutilise ni touche.
+  const email = (await q(`insert into threads (organization_id, contact_id, channel, is_read) values ($1, $2, 'email', false) returning id`, [ORG_A, id(202)])).rows[0].id;
+  const f4 = await enregistrerMessageSortant(ex, { ...base, contactId: id(202), body: 'Bonjour 202' });
+  const t4 = await fils(202, ORG_A);
+  check('85 un fil email du meme contact n est pas reutilise : un fil LinkedIn distinct est cree',
+    f4 !== email && t4.rows.length === 2 && t4.rows.find((r) => r.id === email).is_read === false, JSON.stringify(t4.rows));
+
+  // « en cours d envoi » : la meme ecriture, sans date d envoi, marquee.
+  const f5 = await enregistrerMessageSortant(ex, { ...base, contactId: id(200), body: 'Reponse saisie', etat: 'en_cours', raw: { queue_id: 'q-x' } });
+  const m5 = (await q(`select sent_at, raw, direction from thread_messages where thread_id = $1 and body = 'Reponse saisie'`, [f5])).rows[0];
+  check('87 un message en cours d envoi n a pas de date d envoi et porte son etat, en sortant',
+    f5 === f1 && m5.sent_at === null && m5.raw.etat === 'en_cours' && m5.raw.queue_id === 'q-x' && m5.direction === 'out', JSON.stringify(m5));
+  const m6 = (await q(`select raw from thread_messages where thread_id = $1 and body = 'Bonjour 200'`, [f1])).rows[0];
+  check('88 un message envoye ne porte pas l etat en_cours', m6.raw.etat === undefined, JSON.stringify(m6.raw));
+
+  // Isolement : un contact d une autre organisation ne se rattache pas depuis A (contact et fils separes).
+  await enregistrerMessageSortant(ex, { ...base, organizationId: ORG_B, contactId: id(203), body: 'Bonjour B' });
+  const mB = await q(`select organization_id from threads where contact_id = $1`, [id(203)]);
+  const nA = (await q(`select count(*)::int as n from threads where organization_id = $1 and contact_id = $2`, [ORG_A, id(203)])).rows[0].n;
+  check('89 le fil est cree dans l organisation du message, jamais dans une autre', mB.rows.length === 1 && mB.rows[0].organization_id === ORG_B && nA === 0);
+  // Mise a jour du dernier message : bornee a l organisation (un id de fil d une autre org n est pas touche).
+  const avantB = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
+  await q(`select pg_sleep(0.01)`);
+  await enregistrerMessageSortant(ex, { ...base, organizationId: ORG_B, contactId: id(203), body: 'Encore B' });
+  const apresB = (await q(`select last_message_at from threads where id = $1`, [fil])).rows[0].last_message_at;
+  check('90 isolement : l ecriture d une organisation ne touche pas le fil d une autre', String(avantB) === String(apresB));
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

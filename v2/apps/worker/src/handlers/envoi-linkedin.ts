@@ -35,6 +35,7 @@ import type { Pool } from 'pg';
 import {
   bloquerSessionLinkedIn,
   compterRequetesLinkedIn,
+  enregistrerMessageSortant,
   enregistrerResultat,
   jourCourantDansFuseau,
   enregistrerCompteLinkedIn,
@@ -246,6 +247,24 @@ async function executer(
     action.kind === 'invite'
       ? await envoyerInvitation(p, urn, null)
       : await envoyerMessage(p, urn, texte);
+  if (resultat.ok && action.kind === 'message' && action.contactId) {
+    // Le message est parti : le fil en garde la trace, pour que la réponse y arrive avec sa moitié
+    // sortante. Un échec d'écriture ne doit pas faire échouer l'envoi (et surtout pas le classer
+    // « indéterminé » en remontant dans `executer`) : perdre la trace du fil est désagréable,
+    // perdre l'envoi est irréversible.
+    try {
+      await enregistrerMessageSortant(d.pool, {
+        organizationId: organisationId,
+        contactId: action.contactId,
+        channel: 'linkedin_message',
+        body: texte,
+        etat: 'envoye',
+        raw: { queue_id: action.id },
+      });
+    } catch (err) {
+      console.warn(`[envoi-linkedin] message absent du fil (${nomDe(err)})`);
+    }
+  }
   return resultat.ok ? { type: 'envoye' } : { type: 'refus', code: resultat.code };
 }
 
