@@ -90,6 +90,8 @@ const LONGUEUR_EXTRAIT = 140;
 const ENTETES = { ...ENTETES_VOYAGER, 'x-li-lang': 'fr_FR' };
 
 const TITRE_NOTIFICATION = 'Nouvelle réponse LinkedIn';
+/** Corps de la notification d'une réponse sans texte (pièce jointe seule) : jamais la classification brute, qui est un code technique. */
+export const CORPS_REPONSE_SANS_TEXTE = 'Réponse sans texte (pièce jointe ou message vide).';
 
 /** Une erreur dont le NOM dit la panne : le message ne cite jamais de charge utile. */
 function erreurNommee(type: string, message: string): Error {
@@ -115,13 +117,16 @@ export async function lireEtat(pool: Pool, organizationId: string): Promise<Etat
 
 /** Pose le compte connecté ; le curseur, lui, ne bouge que s'il est fourni. */
 export async function ecrireEtat(pool: Pool, organizationId: string, compteUrn: string, curseur: Date | null): Promise<void> {
-  await pool.query(
+  const res = await pool.query(
     `update linkedin_server_sessions /* jr:linkedin_releve_etat_ecrire */
         set releve_compte_urn = $2,
             releve_curseur_at = coalesce($3::timestamptz, releve_curseur_at)
       where organization_id = $1`,
     [organizationId, compteUrn, curseur],
   );
+  // La ligne de session a disparu en cours de passage : le curseur ne peut plus avancer, et un passage
+  // qui se croirait réussi rejouerait les mêmes messages sans que rien ne le dise.
+  if (res.rowCount === 0) throw erreurNommee('SessionDisparue', 'La session LinkedIn a disparu pendant la relève : le curseur n’a pas pu être posé.');
 }
 
 /** `url_ambigue` : plusieurs contacts portent cette URL, et ce peuvent être des personnes différentes. */
@@ -323,7 +328,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
           continue;
         }
         c.nouveaux += 1;
-        await notifier(pool, org, extrait(m.texte) || enregistre.classification);
+        await notifier(pool, org, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
       } catch (err) {
         // Un cas qui échoue n'éteint pas les autres : seul le type sort (le message d'une erreur de base
         // peut porter une chaîne de connexion, et jamais un contenu de message).

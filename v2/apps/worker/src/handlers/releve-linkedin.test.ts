@@ -7,7 +7,7 @@
  * n'appelle LinkedIn.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QUEUES } from '@jay-reach/core';
+import { QUEUES, type RecordedReply } from '@jay-reach/core';
 import type { Pilote } from '../linkedin/navigateur.js';
 import { compteursDuReleve, urlConversations, type Releve } from '../linkedin/messagerie.js';
 
@@ -19,6 +19,7 @@ vi.mock('@jay-reach/core', async (importOriginal) => {
 });
 
 import {
+  CORPS_REPONSE_SANS_TEXTE,
   DUREE_VERROU_RELEVE_MS,
   enqueueReleveLinkedIn,
   MARGE_CURSEUR_MS,
@@ -102,6 +103,8 @@ function monde(opts: {
   requetesDeLHeure?: number;
   /** L'ecriture de l'URN du contact echoue. */
   urnEchoue?: boolean;
+  /** La ligne de session n'existe plus au moment d'ecrire le curseur. */
+  sessionDisparue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -148,7 +151,7 @@ function monde(opts: {
     if (tag === 'linkedin_releve_etat_ecrire') {
       const curseur = params[2] instanceof Date ? params[2].toISOString() : String(params[2]);
       w.journal.push(`etat compte=${String(params[1])} curseur=${curseur}`);
-      return rep([]);
+      return opts.sessionDisparue ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 };
     }
     if (tag === 'releve_rattacher_urn') {
       const variantes = params[1] as string[];
@@ -203,7 +206,7 @@ beforeEach(() => {
   vi.setSystemTime(MAINTENANT);
   mocks.enregistrer.mockReset();
   mocks.notifier.mockReset();
-  mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'reponse_humaine', isNew: true });
+  mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: true } satisfies RecordedReply);
   mocks.notifier.mockResolvedValue(undefined);
   sortie = { log: [], warn: [], error: [] };
   vi.spyOn(console, 'log').mockImplementation((...a) => void sortie.log.push(a.join(' ')));
@@ -383,6 +386,17 @@ describe('le curseur', () => {
     expect(etatEcrit(w)).toEqual([`etat compte=${MOI} curseur=${recent.toISOString()}`]);
   });
 
+  it('la session disparue en cours de passage : l ecriture du curseur ne passe pas inapercue', async () => {
+    const w = monde({ sessionDisparue: true, compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).rejects.toMatchObject({ name: 'SessionDisparue' });
+    expect(w.journal.at(-1)).toBe(`verrou releve-${ORG} 0`);
+  });
+
+  it('meme garde sur le changement de compte', async () => {
+    const w = monde({ sessionDisparue: true, compte: 'ACoAAancien', curseur: new Date(AVANT) });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).rejects.toMatchObject({ name: 'SessionDisparue' });
+  });
+
   it('ErreurMessagerie (forme illisible) : erreur propagee, curseur fige, verrou rendu, navigateur ferme', async () => {
     const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: { data: {} } } });
     await expect(traiterReleveLinkedIn(deps(w), JOB)).rejects.toMatchObject({ name: 'IllisibleMessagerie' });
@@ -439,7 +453,7 @@ describe('les entrants', () => {
     expect(mocks.notifier.mock.calls[0]![3]).toBe('é'.repeat(140));
   });
 
-  it('une reponse sans texte (piece jointe seule) notifie quand meme, sur la classification', async () => {
+  it('une reponse sans texte (piece jointe seule) notifie quand meme, avec un corps lisible et non la classification technique', async () => {
     const w = monde({
       compte: MOI_NU,
       curseur: new Date(AVANT),
@@ -447,7 +461,7 @@ describe('les entrants', () => {
       contactsParUrn: { ACoAAjeanne: ['contact-1'] },
     });
     await traiterReleveLinkedIn(deps(w), JOB);
-    expect(mocks.notifier).toHaveBeenCalledWith(w.pool, ORG, 'Nouvelle réponse LinkedIn', 'reponse_humaine');
+    expect(mocks.notifier).toHaveBeenCalledWith(w.pool, ORG, 'Nouvelle réponse LinkedIn', CORPS_REPONSE_SANS_TEXTE);
   });
 
   it('rattachement de repli par l URL de profil : 353 contacts n ont que leur URL', async () => {
@@ -595,7 +609,7 @@ describe('les entrants', () => {
   });
 
   it('second passage (isNew: false) : aucune notification, curseur avance', async () => {
-    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'reponse_humaine', isNew: false });
+    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: false } satisfies RecordedReply);
     const w = monde({
       compte: MOI_NU,
       curseur: new Date(AVANT),

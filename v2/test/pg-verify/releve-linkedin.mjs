@@ -146,7 +146,8 @@ async function etat() {
   check('30b un curseur nul ne touche PAS le curseur (changement de compte), le compte change', e2.curseur?.getTime() === t.getTime() && e2.compteUrn === 'urn:li:fsd_profile:ACoAAautre', JSON.stringify(e2));
   const org = await erreur(ecrireEtat(pool, ORG_B, 'x', new Date()));
   const autre = await q(`select count(*)::int n from linkedin_server_sessions where organization_id = $1`, [ORG_B]);
-  check('31 ecrire l etat d une organisation sans session n en cree pas', org === null && autre.rows[0].n === 0);
+  check('31 ecrire l etat d une organisation sans session ne cree rien ET leve : le passage ne se croit pas reussi',
+    org !== null && org.name === 'SessionDisparue' && autre.rows[0].n === 0, String(org?.message));
   await q(`update linkedin_server_sessions set releve_curseur_at = null, releve_compte_urn = null where organization_id = $1`, [ORG_A]);
 }
 
