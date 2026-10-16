@@ -257,7 +257,9 @@ async function executer(
     try {
       // Une réponse de l'opérateur est DÉJÀ dans le fil (`en_cours`, écrite à la saisie) : on la date
       // sur place, on n'en insère pas une seconde. Si elle manque (fil purgé), on écrit comme pour
-      // une action de séquence plutôt que de perdre la trace.
+      // une action de séquence plutôt que de perdre la trace. Si la base est indisponible À CET
+      // INSTANT, l'exception est avalée plus bas et le message reste `en_cours` : la ligne passera
+      // `sent`, et le balayage (`balayerReponsesSansSort`) le datera au tick suivant.
       const datee =
         action.origine === 'reponse' && (await marquerReponseEnvoyee(d.pool, organisationId, action.id));
       if (!datee) {
@@ -528,7 +530,8 @@ async function arreterSequence(
 ): Promise<void> {
   // Une réponse de l'opérateur n'a ni action ni inscription à arrêter : sans ceci son échec ne
   // préviendrait personne. Idempotent, et sans effet sur une ligne de séquence. Un échec ici ne doit
-  // pas empêcher l'arrêt de la séquence qui suit.
+  // pas empêcher l'arrêt de la séquence qui suit ; le message resté `en_cours` est réglé par le balayage
+  // (`reparerLignesCoincees`, rejoué à chaque tick) puisque sa ligne de file est désormais `failed`.
   try {
     await signalerEchecReponse(d.pool, ctx.organisationId, queueId, code, message);
   } catch (err) {

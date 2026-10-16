@@ -43,6 +43,17 @@ describe('enfilerReponseLinkedIn', () => {
     expect(JSON.parse(String(m.values[2]))).toMatchObject({ etat: 'en_cours', queue_id: 'ligne-1' });
   });
 
+  it("sans adresse, déduit celle du contact de son identifiant de membre reconnu ; un identifiant quelconque refuse", async () => {
+    const { ex, appels } = fabrique({ ...FIL, linkedin_url: null, linkedin_provider_id: 'ACoAAdeduit' });
+    await enfilerReponseLinkedIn(ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' });
+    const ins = appels.find((x) => x.text.trim().startsWith('insert into linkedin_action_queue'))!;
+    expect(ins.values[2]).toBe('https://www.linkedin.com/in/ACoAAdeduit');
+    const mauvais = fabrique({ ...FIL, linkedin_url: null, linkedin_provider_id: 'pas un membre' });
+    await expect(enfilerReponseLinkedIn(mauvais.ex, 'org-1', { threadId: 'fil-1', corps: 'Bonjour' })).rejects.toBeInstanceOf(
+      ErreurReponseImpossible,
+    );
+  });
+
   it.each([
     ['fil introuvable', null, 'Bonjour'],
     ['fil email', { ...FIL, channel: 'email' }, 'Bonjour'],

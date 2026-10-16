@@ -107,6 +107,7 @@ function poolAvecEtat(
         return rep(gardees.map((x) => ({ organization_id: x.id })));
       }
       if (/jr:linkedin_envoi_en_cours/.test(sql)) return rep([{ recentes: '0', perimees: '0' }]);
+      if (/jr:linkedin_reponse_sans_sort/.test(sql)) return rep([{ existe: false }]);
       if (/jr:linkedin_candidates_par_type/.test(sql)) return rep([{ id: 'file-1', kind: 'invite' }]);
       if (/from organization_settings/.test(sql)) {
         return rep(valeurs[1] === 'linkedin_requetes_par_heure' ? [{ value: 60 }] : [{ value: 100 }]);

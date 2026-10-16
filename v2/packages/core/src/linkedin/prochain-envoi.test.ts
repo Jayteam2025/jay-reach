@@ -55,6 +55,7 @@ function creerExecuteur(depart: Partial<Etat> = {}): Executeur {
       if (/jr:linkedin_envoi_en_cours/.test(sql)) {
         return rep([{ recentes: String(etat.enCoursRecentes), perimees: String(etat.enCoursPerimees) }]) as never;
       }
+      if (/jr:linkedin_reponse_sans_sort/.test(sql)) return rep([{ existe: false }]) as never;
       if (/jr:linkedin_candidates_par_type/.test(sql)) return rep(etat.enAttente ? [{ id: 'file-1', kind: etat.kind }] : []) as never;
       if (/from organization_settings/i.test(sql)) {
         const cle = values[1];

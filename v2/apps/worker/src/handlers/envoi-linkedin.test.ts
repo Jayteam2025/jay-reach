@@ -117,6 +117,8 @@ function monde(opts: {
   tentativesEpuisees?: boolean;
   /** L'écriture de l'URN du contact échoue. */
   urnEchoue?: boolean;
+  /** La datation du message d'une réponse échoue (base indisponible à cet instant). */
+  reponseDateeEchoue?: boolean;
   /** L'écriture du fil (lecture ou création) échoue. */
   filEchoue?: boolean;
 }): Monde {
@@ -172,6 +174,7 @@ function monde(opts: {
       return rep([]);
     }
     if (t.includes('jr:linkedin_reponse_envoyee')) {
+      if (opts.reponseDateeEchoue) throw new Error('base indisponible');
       w.journal.push(`reponse_datee queue=${params[1]}`);
       return rep([{}]);
     }
@@ -539,6 +542,17 @@ describe('un envoi qui réussit', () => {
     avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(w.journal).toContain('reponse_datee queue=q-1');
+    expect(w.journal.some((j) => j.startsWith('fil_message'))).toBe(false);
+  });
+
+  it('une réponse partie dont la datation du message échoue reste enregistrée sent, sans second message (le balayage la datera)', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+      reponseDateeEchoue: true,
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
     expect(w.journal.some((j) => j.startsWith('fil_message'))).toBe(false);
   });
 

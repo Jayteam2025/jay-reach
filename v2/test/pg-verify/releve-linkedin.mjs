@@ -47,10 +47,14 @@
 //      son controle de canal — 154 ; son `update threads set is_read` — 137 ; `etat: 'en_cours'` du sortant — 137 et la suite ; la boucle de
 //      reparerLignesCoincees — 147 ; le signalement de arreterSequence du worker — 146 ; le routage de repondreAuFil — fait tomber la section
 //      entiere (exception, jamais un controle nomme) ; `scheduled_for = now()` — 136 ; l'adresse du contact — 136.
+//  13. (tache 9, tour 1) `dernier envoi` de chargerStatsRythme : y remettre `origine = 'sequence'` — 152 seul (la reponse DOIT compter, sans attendre : 152c) ;
+//      signaler sans transaction — 156, 156b, 157a, 157b, 157, 157c (la notification qui leve laisse un message en echec sans notification) ; `a_verifier` toujours
+//      `echec` — 147, 159, 160 ; balayage des lignes `sent` — 158 ; des lignes `failed` — 147, 157, 157c, 157d, 160, 161 ; la sonde du producteur — 157b ; le balayage dans
+//      reparerLignesCoincees — 147, 157, 158, 160, 161 ; le signalement direct de arreterSequence — 146, 159 ; l'enfilement sans transaction — 155 ; la deduction de
+//      l'adresse — 162, sa reconnaissance de membre — 163.
 //      NON PROUVE au harnais (declare, tache 9) : le mot `method` explicite de l'insertion de enfilerReponseLinkedIn (la valeur par defaut de la
-//      colonne est deja 'serveur', retirer la ligne ne change rien) ; l'atomicite ligne + message (`dansUneTransaction`, rollback prouve par
-//      l'executeur factice seulement : aucune injection de panne ici) ; l'appel de marquerReponseEnvoyee dans `executer` du worker (`executer` n'est
-//      pas exporte : prouve par envoi-linkedin.test.ts, pas ici).
+//      colonne est deja 'serveur', retirer la ligne ne change rien) ; l'appel de marquerReponseEnvoyee dans `executer` du worker (`executer` n'est
+//      pas exporte : prouve par envoi-linkedin.test.ts, pas ici, et son echec par le balayage 158).
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -81,6 +85,7 @@ import {
   ErreurReponseImpossible,
   reparerLignesCoincees,
   regler,
+  prochainEnvoiLinkedIn,
 } from './_releve-linkedin-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -949,7 +954,10 @@ async function reponseManuelle() {
   const statut = (await q(`select status from contacts where id = $1`, [id(600)])).rows[0].status;
   const fil = (await q(`select id, is_read from threads where organization_id = $1 and contact_id = $2 and channel = 'linkedin_message'`, [ORG_R, id(600)])).rows[0];
   check('136a fixture : le contact qui a repondu est do_not_contact et son fil LinkedIn est non lu', statut === 'do_not_contact' && fil.is_read === false, JSON.stringify([statut, fil]));
-  const r = await repondreAuFil(pool, ORG_R, { threadId: fil.id, corps: 'Merci pour votre retour !' }, transports);
+  let r;
+  const e136 = await erreur((async () => { r = await repondreAuFil(pool, ORG_R, { threadId: fil.id, corps: 'Merci pour votre retour !' }, transports); })());
+  check('136 pre : repondreAuFil ne leve pas', e136 === null, e136?.message);
+  if (e136) return;
   const l = (await q(`select id, kind, status, origine, message_body, method, contact_id, linkedin_url, scheduled_for <= now() as due from linkedin_action_queue where id = $1`, [r.messageId])).rows[0];
   check('136 repondreAuFil sur un fil LinkedIn enfile une ligne message, origine reponse, pending, serveur, due, vers le contact (aucun transport appele)',
     r.transport === 'linkedin' && l.kind === 'message' && l.status === 'pending' && l.origine === 'reponse' && l.method === 'serveur'
@@ -1025,8 +1033,8 @@ async function reponseManuelle() {
   const n2 = await notifs();
   await reparerLignesCoincees(pool, ORG_R, MARDI);
   const s604 = await sortants(f604);
-  check('147 une reponse coincee en processing passe failed / resultat_indetermine, son message en echec, membres notifies',
-    (await q(`select status from linkedin_action_queue where id = $1`, [e604.ligneId])).rows[0].status === 'failed' && s604[0].raw.etat === 'echec' && (await notifs()) === n2 + 1, JSON.stringify([s604, await notifs()]));
+  check('147 une reponse coincee en processing passe failed / resultat_indetermine, son message a_verifier (pas echec : peut-etre livre), membres notifies',
+    (await q(`select status from linkedin_action_queue where id = $1`, [e604.ligneId])).rows[0].status === 'failed' && s604[0].raw.etat === 'a_verifier' && (await notifs()) === n2 + 1, JSON.stringify([s604, await notifs()]));
   await vider();
 
   // 148 a 150. Passe devant, hors fenetre, hors plafond : chaque propriete a sa paire (la fixture SAURAIT attraper la faute).
@@ -1049,7 +1057,6 @@ async function reponseManuelle() {
   const repH = await ligne(611, 'message', { origine: 'reponse', quand: AVANT });
   const horsRep = await reclamerProchaineAction(pool, ORG_R, DIMANCHE);
   check('150 hors fenetre horaire, une reponse de l operateur part', horsRep.action?.id === repH, JSON.stringify(horsRep));
-  await q(`update linkedin_action_queue set status = 'sent', sent_at = $2 where id = $1`, [repH, '2026-09-15T09:59:30.000Z']); // 30 s avant MARDI
   await vider();
 
   // 151 / 152. Une reponse envoyee ne compte ni dans le plafond hebdomadaire ni dans l'intervalle de la sequence.
@@ -1068,7 +1075,17 @@ async function reponseManuelle() {
   await ligne(611, 'message', { origine: 'reponse', status: 'sent', sentAt: '2026-09-15T09:59:30.000Z' });
   const suiv2 = await ligne(612, 'message', { quand: AVANT });
   const c2 = await reclamerProchaineAction(pool, ORG_R, MARDI);
-  check('152 une reponse partie 30 s plus tot ne retarde pas la sequence (intervalle)', c2.action?.id === suiv2, JSON.stringify(c2));
+  check('152 une reponse partie 30 s plus tot COMPTE comme dernier envoi : la sequence suivante est retenue (too_soon), sinon une rafale part derriere elle', c2.action === null && c2.motif === 'too_soon', JSON.stringify([c2, suiv2]));
+  await vider();
+  await ligne(610, 'message', { origine: 'reponse', quand: AVANT });
+  await ligne(611, 'message', { origine: 'sequence', status: 'sent', sentAt: '2026-09-15T09:59:30.000Z' });
+  const c2c = await reclamerProchaineAction(pool, ORG_R, MARDI);
+  check('152c et la reponse, elle, n attend pas l intervalle : envoi de sequence 30 s plus tot, la reponse est reclamee', c2c.action?.origine === 'reponse', JSON.stringify(c2c));
+  await vider();
+  await ligne(611, 'message', { origine: 'reponse', status: 'sent', sentAt: '2026-09-15T08:00:00.000Z' });
+  const sansAttente = await ligne(612, 'message', { quand: AVANT });
+  const c2d = await reclamerProchaineAction(pool, ORG_R, MARDI);
+  check('152d paire : la meme reponse envoyee 2 h plus tot (hors intervalle) ne retient plus la sequence', c2d.action?.id === sansAttente, JSON.stringify(c2d));
   await vider();
   await ligne(610, 'message', { status: 'sent', sentAt: '2026-09-15T09:59:30.000Z' });
   await ligne(612, 'message', { quand: AVANT });
@@ -1084,6 +1101,108 @@ async function reponseManuelle() {
   const fMail = (await q(`insert into threads (organization_id, contact_id, channel, is_read) values ($1, $2, 'email', false) returning id`, [ORG_R, id(602)])).rows[0].id;
   const e2 = await erreur(enfilerReponseLinkedIn(pool, ORG_R, { threadId: fMail, corps: 'Bonjour' }));
   check('154 un fil email n est jamais enfile cote LinkedIn', e2 instanceof ErreurReponseImpossible && (await q(`select count(*) as n from linkedin_action_queue where organization_id = $1`, [ORG_R])).rows[0].n === '0', e2?.message);
+
+  // 155 a 163. Une reponse ne se perd jamais en silence.
+  const declencheur = async (table, nom) => {
+    await q(`create or replace function jr_t9_refuse() returns trigger language plpgsql as $f$ begin raise exception 'panne injectee'; end $f$`);
+    await q(`create trigger ${nom} before insert on ${table} for each row execute function jr_t9_refuse()`);
+    return () => q(`drop trigger ${nom} on ${table}`);
+  };
+  const nFile = async () => Number((await q(`select count(*) as n from linkedin_action_queue where organization_id = $1`, [ORG_R])).rows[0].n);
+  await vider();
+
+  // 155. Atomicite : si le message ne peut pas etre ecrit dans le fil, AUCUNE ligne ne reste en file.
+  const leve = await declencheur('thread_messages', 'jr_t9_tm');
+  const eAtomique = await erreur(enfilerReponseLinkedIn(pool, ORG_R, { threadId: f602, corps: 'Bonjour atomique' }));
+  await leve();
+  check('155 le message du fil ne s ecrit pas (panne injectee) : l enfilement leve et AUCUNE ligne ne subsiste en file', eAtomique !== null && (await nFile()) === 0, JSON.stringify([eAtomique?.message, await nFile()]));
+
+  // 156. Atomicite du signalement : si la notification leve, le message reste en_cours (il pourra etre rattrape), pas echec.
+  const e156 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f602, corps: 'Bonjour 156' });
+  const n156 = await notifs();
+  const leve156 = await declencheur('notifications', 'jr_t9_nt');
+  const eSig = await erreur(signalerEchecReponse(pool, ORG_R, e156.ligneId, 'cannot_message', 'refus'));
+  await leve156();
+  const apres156 = (await sortants(f602)).filter((m) => m.raw.queue_id === e156.ligneId);
+  check('156 la notification leve : le signalement leve, le message reste en_cours (jamais echec sans notification)', eSig !== null && apres156[0].raw.etat === 'en_cours' && (await notifs()) === n156, JSON.stringify([eSig?.message, apres156]));
+  const retente = await signalerEchecReponse(pool, ORG_R, e156.ligneId, 'cannot_message', 'refus');
+  check('156b la retentative aboutit : message en echec ET membres notifies', retente === true && (await notifs()) === n156 + 1, JSON.stringify([retente, await notifs()]));
+  await vider();
+
+  // 157. L'echec du signalement direct est avale par le worker : le filet (balayage) doit regler le message, et le producteur le voir.
+  const e157 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f603, corps: 'Bonjour 157' });
+  await q(`update linkedin_action_queue set scheduled_for = $2 where id = $1`, [e157.ligneId, AVANT]);
+  const rec157 = await reclamerProchaineAction(pool, ORG_R, MARDI);
+  const leve157 = await declencheur('notifications', 'jr_t9_nt2');
+  await regler(d, { ex: pool, organisationId: ORG_R, utilisateurId: null, role: null }, rec157.action, { type: 'refus', code: 'cannot_message' });
+  await leve157();
+  const m157 = (await sortants(f603)).filter((m) => m.raw.queue_id === e157.ligneId);
+  const l157 = (await q(`select status from linkedin_action_queue where id = $1`, [e157.ligneId])).rows[0].status;
+  check('157a pre : signalement direct en panne : ligne failed, message resteen_cours'.replace('resteen_cours', 'reste en_cours'), l157 === 'failed' && m157[0].raw.etat === 'en_cours', JSON.stringify([l157, m157]));
+  const prod = await prochainEnvoiLinkedIn(pool, ORG_R, MARDI);
+  check('157b le producteur voit ce message sans sort : un job est planifie (raison reparation) meme file vide', prod.quand !== null && prod.raison === 'reparation', JSON.stringify(prod));
+  const n157 = await notifs();
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const m157b = (await sortants(f603)).filter((m) => m.raw.queue_id === e157.ligneId);
+  check('157 le filet regle le message : etat echec, membres notifies, une seule fois (le rejeu ne notifie plus)',
+    m157b[0].raw.etat === 'echec' && (await notifs()) === n157 + 1, JSON.stringify([m157b, await notifs()]));
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  check('157c le rejeu du filet est sans effet', (await notifs()) === n157 + 1, String(await notifs()));
+  const prod2 = await prochainEnvoiLinkedIn(pool, ORG_R, MARDI);
+  check('157d une fois regle, le producteur ne voit plus de reparation', prod2.raison !== 'reparation', JSON.stringify(prod2));
+  await vider();
+
+  // 158. La reponse EST partie (ligne sent) mais la datation directe a echoue : le filet date le message, UNE seule ligne.
+  const e158 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f604, corps: 'Bonjour 158' });
+  await q(`update linkedin_action_queue set status = 'sent', sent_at = '2026-09-15T09:00:00.000Z' where id = $1`, [e158.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const m158 = (await sortants(f604)).filter((m) => m.raw.queue_id === e158.ligneId);
+  check('158 ligne sent et message en_cours : le filet date le message (date de l envoi), sans cle etat, une seule ligne',
+    m158.length === 1 && new Date(m158[0].sent_at).toISOString() === '2026-09-15T09:00:00.000Z' && !('etat' in m158[0].raw), JSON.stringify(m158));
+  await vider();
+
+  // 159. Resultat indetermine : le message est « a_verifier », JAMAIS « echec » (il est peut-etre livre).
+  const e159 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f602, corps: 'Bonjour 159' });
+  await q(`update linkedin_action_queue set scheduled_for = $2 where id = $1`, [e159.ligneId, AVANT]);
+  const rec159 = await reclamerProchaineAction(pool, ORG_R, MARDI);
+  const n159 = await notifs();
+  await regler(d, { ex: pool, organisationId: ORG_R, utilisateurId: null, role: null }, rec159.action, { type: 'indetermine' });
+  const m159 = (await sortants(f602)).filter((m) => m.raw.queue_id === e159.ligneId);
+  check('159 un resultat indetermine (regler du worker) : message a_verifier (pas echec), notification emise',
+    m159[0].raw.etat === 'a_verifier' && m159[0].raw.code === 'resultat_indetermine' && (await notifs()) === n159 + 1, JSON.stringify([m159, await notifs()]));
+  await vider();
+
+  // 160. Meme distinction par le filet : une ligne failed / resultat_indetermine dont le signalement n'a pas eu lieu.
+  const e160 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f603, corps: 'Bonjour 160' });
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'resultat_indetermine' where id = $1`, [e160.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const m160 = (await sortants(f603)).filter((m) => m.raw.queue_id === e160.ligneId);
+  check('160 le filet distingue aussi : failed / resultat_indetermine -> a_verifier', m160[0].raw.etat === 'a_verifier', JSON.stringify(m160));
+  await vider();
+
+  // 161. Un refus ordinaire reste « echec » (la paire de 159 et 160).
+  const e161 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f604, corps: 'Bonjour 161' });
+  await q(`update linkedin_action_queue set status = 'failed', error_code = 'cannot_message' where id = $1`, [e161.ligneId]);
+  await reparerLignesCoincees(pool, ORG_R, MARDI);
+  const m161 = (await sortants(f604)).filter((m) => m.raw.queue_id === e161.ligneId);
+  check('161 paire : failed / cannot_message -> echec', m161[0].raw.etat === 'echec', JSON.stringify(m161));
+  await vider();
+
+  // 162 / 163. Contact sans adresse : deduite de l'identifiant de membre RECONNU, refusee sinon.
+  const sansUrl = async (n, provider) => {
+    await q(`insert into contacts (id, organization_id, email, linkedin_url, linkedin_provider_id) values ($1, $2, $3, null, $4)`, [id(n), ORG_R, `r${n}@example.test`, provider]);
+    return (await q(`insert into threads (organization_id, contact_id, channel, is_read) values ($1, $2, 'linkedin_message', false) returning id`, [ORG_R, id(n)])).rows[0].id;
+  };
+  const f700 = await sansUrl(700, 'ACoAAreplid700');
+  let e162;
+  const x162 = await erreur((async () => { e162 = await enfilerReponseLinkedIn(pool, ORG_R, { threadId: f700, corps: 'Bonjour 700' }); })());
+  const u162 = e162 ? (await q(`select linkedin_url from linkedin_action_queue where id = $1`, [e162.ligneId])).rows[0].linkedin_url : x162?.message;
+  check('162 contact sans adresse mais avec un identifiant de membre reconnu : l adresse est deduite', u162 === 'https://www.linkedin.com/in/ACoAAreplid700', u162);
+  const f701 = await sansUrl(701, 'pas un membre');
+  const avant163 = await nFile();
+  const e163 = await erreur(enfilerReponseLinkedIn(pool, ORG_R, { threadId: f701, corps: 'Bonjour 701' }));
+  check('163 identifiant non reconnu : refus, aucune adresse fabriquee, rien enfile', e163 instanceof ErreurReponseImpossible && (await nFile()) === avant163, e163?.message);
+  await vider();
 }
 
 try {

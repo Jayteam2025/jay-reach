@@ -13,7 +13,7 @@ import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { cloreDepartReel } from '../sequencer/echeance.js';
 import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
-import { signalerEchecReponse } from './reponse-manuelle.js';
+import { balayerReponsesSansSort, existeReponseSansSort } from './reponse-manuelle.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
 import {
   decideCanSend,
@@ -125,7 +125,7 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
   );
   const last = await ex.query<{ sent_at: string | Date }>(
     `select sent_at from linkedin_action_queue
-     where organization_id = $1 and status = 'sent' and origine = 'sequence' /* jr:linkedin_rythme_sans_reponses */
+     where organization_id = $1 and status = 'sent' /* jr:linkedin_dernier_envoi_toutes_origines */
      order by sent_at desc limit 1`,
     [orgId],
   );
@@ -223,20 +223,21 @@ export async function reparerLignesCoincees(ex: Executeur, organisationId: strin
          and method <> 'serveur'`,
     [organisationId, stuckCutoff],
   );
-  const coincees = await ex.query<{ id: string; origine: OrigineAction }>(
+  await ex.query(
     `update linkedin_action_queue /* jr:linkedin_coincees_serveur */
          set status = 'failed', error_code = 'resultat_indetermine',
              error_message = $3, updated_at = now()
        where organization_id = $1 and status = 'processing' and processing_started_at < $2
-         and method = 'serveur'
-     returning id, origine`,
+         and method = 'serveur'`,
     [organisationId, stuckCutoff, MESSAGE_RESULTAT_INDETERMINE],
   );
   // Une réponse de l'opérateur n'a ni action ni inscription : rien d'autre ne préviendrait personne.
-  for (const l of coincees.rows) {
-    if (l.origine === 'reponse') {
-      await signalerEchecReponse(ex, organisationId, l.id, 'resultat_indetermine', MESSAGE_RESULTAT_INDETERMINE);
-    }
+  // Le balayage règle aussi bien les lignes que l'on vient de coincer que celles dont le signalement
+  // direct a échoué. Un échec du filet ne doit pas empêcher d'envoyer : il sera rejoué au tick suivant.
+  try {
+    await balayerReponsesSansSort(ex, organisationId);
+  } catch (err) {
+    console.error(`[linkedin] balayage des réponses à retenter (${err instanceof Error ? err.name : 'erreur'})`);
   }
 }
 
@@ -752,6 +753,11 @@ export async function prochainEnvoiLinkedIn(
     return { quand: null, motif: 'action_en_cours' };
   }
   if (Number(enVol.rows[0]?.perimees ?? 0) > 0) {
+    return { quand: maintenant, motif: null, raison: 'reparation' };
+  }
+
+  // Une réponse de l'opérateur dont le sort n'est pas écrit : seul le handler la règle (balayage).
+  if (await existeReponseSansSort(ex, organisationId)) {
     return { quand: maintenant, motif: null, raison: 'reparation' };
   }
 
