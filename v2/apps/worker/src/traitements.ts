@@ -804,7 +804,11 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
           limit 1
        ) q on true
       where a.channel in ('linkedin_invite', 'linkedin_message')
-        and a.status = 'scheduled'
+        -- approved AUTANT que scheduled, comme les deux autres balayages : une action approuvée
+        -- par un humain n'était lue par AUCUN des trois, et le balayage des actions jamais
+        -- enfilées l'exclut en plus par son not exists sur la file. Ouvrir deux sorties sur
+        -- trois fabriquait un blocage définitif et muet, créé par notre propre élargissement.
+        and a.status in ('scheduled', 'approved')
         and e.status = 'active'
         and camp.status = 'active'
         and org.sending_paused_at is null
@@ -849,7 +853,7 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
           `update actions
               set status = 'blocked', block_reason = $2,
                   payload = coalesce(payload, '{}'::jsonb) || jsonb_build_object('missingVariables', $3::jsonb)
-            where id = $1 and organization_id = $4 and status = 'scheduled' /* jr:linkedin_rejeu_bloque */`,
+            where id = $1 and organization_id = $4 and status in ('scheduled', 'approved') /* jr:linkedin_rejeu_bloque */`,
           [row.action_id, raisonBlocage, JSON.stringify(corps.variablesManquantes), row.organization_id],
         );
         continue;
@@ -862,7 +866,7 @@ export async function rejouerActionsLinkedInReprises(ctx: Pick<Contexte, 'pool'>
       if (await envoiRetenuParUnPost(pool, row.organization_id, row.campaign_id, row.signal_inscription)) {
         await pool.query(
           `update actions set status = 'blocked', block_reason = 'post_a_relire'
-            where id = $1 and organization_id = $2 and status = 'scheduled' /* jr:linkedin_rejeu_reprise_post */`,
+            where id = $1 and organization_id = $2 and status in ('scheduled', 'approved') /* jr:linkedin_rejeu_reprise_post */`,
           [row.action_id, row.organization_id],
         );
         console.warn(`[tick] reprise de l'action LinkedIn ${row.action_id} bloquée : le message nomme un post qui n'est pas relu`);
