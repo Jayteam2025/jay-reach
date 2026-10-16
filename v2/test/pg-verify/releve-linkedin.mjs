@@ -47,6 +47,7 @@ import {
   nePlusContacter,
   poserExclusion,
   enrollContact,
+  inscrireContact,
 } from './_releve-linkedin-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -554,9 +555,9 @@ async function exclusionSurReponse() {
     fausse.length === 0 && toutes302.length === 1 && toutes302[0].scope === 'email' && (await etat(302)) === 'do_not_contact', JSON.stringify([fausse, toutes302]));
 
   // Meme chose avec une adresse qui n'est pas un profil.
-  await contact(303, null, 'https://exemple.test/in/quelquun', 'ACoAAfaux303');
+  await contact(303, null, 'https://exemple.test/in/quelquun', 'pas-un-urn-303');
   await recordInboundReply(pool, org, { contactId: id(303), channel: 'linkedin_message', body: humaine });
-  const n303 = (await q(`select count(*)::int as n from suppressions where organization_id = $1 and (value ilike '%quelquun%' or value ilike '%acoaafaux303%')`, [org])).rows[0].n;
+  const n303 = (await q(`select count(*)::int as n from suppressions where organization_id = $1 and (value ilike '%quelquun%' or value ilike '%pas-un-urn-303%')`, [org])).rows[0].n;
   check('99 une adresse qui n est pas un profil LinkedIn ne devient pas une opposition (et le contact est tout de meme exclu)',
     n303 === 0 && (await etat(303)) === 'do_not_contact', `${n303} suppression(s)`);
 
@@ -612,6 +613,45 @@ async function exclusionSurReponse() {
   await recordInboundReply(pool, org, { contactId: id(309), channel: 'email', body: humaine });
   const insc309 = (await q(`select status::text as s from enrollments where contact_id = $1`, [id(309)])).rows[0].s;
   check('105 la reponse humaine ferme l inscription vivante ET exclut', insc309 === 'replied' && (await etat(309)) === 'do_not_contact', insc309);
+
+
+  // Les deux graphies : un identifiant de membre reconnu ajoute l'adresse deduite ; un identifiant FullEnrich non.
+  await contact(311, 'membre@example.test', 'https://www.linkedin.com/in/membre-reel', 'ACoAAmembre311');
+  await contact(312, 'fullenrich@example.test', 'https://www.linkedin.com/in/fullenrich-reel', '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b');
+  await recordInboundReply(pool, org, { contactId: id(311), channel: 'linkedin_message', body: humaine });
+  await recordInboundReply(pool, org, { contactId: id(312), channel: 'linkedin_message', body: humaine });
+  const l311 = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%membre-reel%' or value ilike '%acoaamembre311%') order by value`, [org])).rows.map((r) => r.value);
+  const l312 = (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and (value ilike '%fullenrich-reel%' or value ilike '%3f2b8c1e%') order by value`, [org])).rows.map((r) => r.value);
+  check('108 identifiant de membre reconnu : DEUX oppositions LinkedIn distinctes (adresse reelle et forme deduite)',
+    l311.length === 2 && l311.includes('https://www.linkedin.com/in/membre-reel') && l311.includes('https://www.linkedin.com/in/ACoAAmembre311'), JSON.stringify(l311));
+  check('109 identifiant FullEnrich : UNE seule opposition, celle de l adresse reelle, rien de fabrique',
+    JSON.stringify(l312) === JSON.stringify(['https://www.linkedin.com/in/fullenrich-reel']), JSON.stringify(l312));
+
+  // La trace : un evenement automatique, distinct de l'action manuelle, sans acteur ; pas de second sur un rejeu.
+  const ev = (await q(`select action, actor_id, diff from audit_events where organization_id = $1 and entity_id = $2 and action like 'contact.%'`, [org, id(305)])).rows;
+  check('110 la reponse humaine laisse UN evenement contact.excluded_after_reply, sans acteur, marque automatique (et pas celui de l operateur) apres le rejeu 101',
+    ev.length === 1 && ev[0].action === 'contact.excluded_after_reply' && ev[0].actor_id === null && ev[0].diff.automatique === true, JSON.stringify(ev));
+  const evAbsent = (await q(`select count(*)::int as n from audit_events where organization_id = $1 and entity_id = $2 and action = 'contact.excluded_after_reply'`, [org, id(301)])).rows[0].n;
+  check('110b auto_absence (la paire) : aucun evenement d exclusion', evAbsent === 0, String(evAbsent));
+
+  // Non-regression : une absence AVEC inscription vivante la met toujours en pause avec sa date de reprise.
+  await contact(313, 'absent-inscrit@example.test', 'https://www.linkedin.com/in/absent-inscrit');
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status) values ($1, $2, $3, 'active')`, [org, campC, id(313)]);
+  const ra2 = await recordInboundReply(pool, org, { contactId: id(313), channel: 'email', body: absence });
+  const e313 = (await q(`select status::text as s, resume_at, next_action_at from enrollments where contact_id = $1`, [id(313)])).rows[0];
+  check('111 auto_absence avec inscription vivante : paused_absence avec date de reprise future, contact actif, aucune suppression',
+    ra2.classification === 'auto_absence' && e313.s === 'paused_absence' && e313.resume_at !== null && new Date(e313.resume_at) > new Date()
+      && String(e313.resume_at) === String(e313.next_action_at) && (await etat(313)) === 'active' && (await supp('email', 'absent-inscrit@example.test')).length === 0,
+    JSON.stringify(e313));
+
+  // Le motif du refus d'inscription : exclu, deja inscrit, accepte.
+  const campD = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Campagne D', 'active') returning id`, [org])).rows[0].id;
+  const job = (n) => ({ organizationId: org, campaignId: campD, contactId: id(n), signalId: null });
+  const mExclu = await inscrireContact(pool, job(311));
+  const mAccepte = await inscrireContact(pool, job(304));
+  const mDeja = await inscrireContact(pool, job(304));
+  check('112 inscrireContact dit pourquoi : contact_exclu, puis un id, puis deja_inscrit',
+    mExclu.refus === 'contact_exclu' && typeof mAccepte.id === 'string' && mDeja.refus === 'deja_inscrit', JSON.stringify([mExclu, mAccepte, mDeja]));
 
   // Non-regression de nePlusContacter apres le partage du corps SQL : toujours manual / operator_do_not_contact,
   // et toujours les DEUX graphies (adresse du contact + forme deduite de l'URN).

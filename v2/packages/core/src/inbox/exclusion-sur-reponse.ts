@@ -18,7 +18,9 @@
  * dédoublonne par `where not exists`, ce qui rend le tout rejouable (tâche 10 : rejeu du classement).
  */
 import type { Executeur } from '../executeur.js';
-import { normaliserUrlProfil } from '../fonctions/sources.js';
+import { lienProfilDeduit, normaliserUrlProfil } from '../fonctions/sources.js';
+import { normaliserUrnLinkedIn } from '../linkedin/identite.js';
+import { ecrireEvenement } from '../journal.js';
 
 export interface ExclusionAPoser {
   readonly email: string | null;
@@ -78,34 +80,56 @@ export async function poserExclusion(
 /**
  * Exclusion posée par une réponse humaine reçue.
  *
- * L'adresse LinkedIn est celle du contact, `contacts.linkedin_url`, quand c'est une adresse de
- * profil valide. JAMAIS une adresse déduite de `linkedin_provider_id` : quand cet identifiant n'en
- * est pas un (353 contacts sur 590 portaient un identifiant FullEnrich), la déduction fabrique une
- * adresse qui n'existe pas, et l'opposition poserait sur un profil inexistant : elle ne protégerait
- * personne alors que toute la promesse est « plus jamais contacté ». Sans adresse reconnue, on ne
- * pose rien côté LinkedIn.
+ * DEUX graphies de l'adresse LinkedIn au plus, comme la collecte les connaît :
+ * - celle du contact, `contacts.linkedin_url`, quand c'est une adresse de profil valide ;
+ * - celle fabriquée depuis `linkedin_provider_id` (`/in/ACoAA…`), que la collecte produit quand
+ *   elle n'a pas d'adresse publique, MAIS seulement quand cet identifiant est reconnu comme un
+ *   identifiant de membre (`normaliserUrnLinkedIn`). Quand il n'en est pas un (353 contacts sur 590
+ *   portaient un identifiant FullEnrich), la déduction fabrique une adresse qui n'existe pas et
+ *   l'opposition ne protégerait personne : on ne pose alors RIEN d'autre que l'adresse réelle.
  *
  * Pas d'`exiger(ctx, 'operator')` : rien n'est déclenché par un utilisateur. Pas de transaction
  * ouverte ici non plus : l'appelant (`recordInboundReply`) tient déjà la sienne, pour qu'un échec
  * ne laisse pas une réponse enregistrée sans exclusion.
+ *
+ * Laisse une trace (`contact.excluded_after_reply`), distincte de l'action manuelle : l'exclusion est
+ * irréversible et aucun écran ne la défait. Écrite seulement quand quelque chose change (rejouée sur
+ * un contact déjà exclu, elle ne double pas l'événement). Son échec n'est PAS avalé : dans une
+ * transaction, une écriture qui échoue l'a déjà abandonnée, et une exclusion sans trace ne doit pas exister.
  */
 export async function exclureApresReponse(
   ex: Executeur,
   org: string,
   contactId: string,
 ): Promise<{ email: number; linkedin: number }> {
-  const res = await ex.query<{ email: string | null; linkedin_url: string | null }>(
-    `select email, linkedin_url from contacts /* jr:exclusion_reponse_contact */ where id = $1 and organization_id = $2`,
+  const res = await ex.query<{ email: string | null; linkedin_url: string | null; linkedin_provider_id: string | null; status: string }>(
+    `select email, linkedin_url, linkedin_provider_id, status::text as status from contacts /* jr:exclusion_reponse_contact */ where id = $1 and organization_id = $2`,
     [contactId, org],
   );
   const contact = res.rows[0];
   if (!contact) return { email: 0, linkedin: 0 };
 
-  const adresse = contact.linkedin_url ? normaliserUrlProfil(contact.linkedin_url) : null;
-  return poserExclusion(ex, org, contactId, {
+  const adresses: string[] = [];
+  const reelle = contact.linkedin_url ? normaliserUrlProfil(contact.linkedin_url) : null;
+  if (reelle) adresses.push(reelle);
+  const membre = contact.linkedin_provider_id ? normaliserUrnLinkedIn(contact.linkedin_provider_id) : null;
+  if (membre) adresses.push(lienProfilDeduit(membre));
+
+  const posees = await poserExclusion(ex, org, contactId, {
     email: contact.email,
-    adressesLinkedin: adresse ? [adresse] : [],
+    adressesLinkedin: adresses,
     motif: 'reponse_recue',
     origine: 'api',
   });
+  if (contact.status !== 'do_not_contact' || posees.email + posees.linkedin > 0) {
+    await ecrireEvenement(ex, {
+      organisationId: org,
+      entityType: 'contact',
+      entityId: contactId,
+      action: 'contact.excluded_after_reply',
+      diff: { libelle: 'Contact exclu automatiquement : une réponse humaine a été reçue.', automatique: true, motif: 'reponse_recue' },
+      actorId: null,
+    });
+  }
+  return posees;
 }

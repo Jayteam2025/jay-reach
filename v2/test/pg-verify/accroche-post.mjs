@@ -1412,6 +1412,20 @@ async function gardeDEntree() {
   check('17m. et elle entre dès que la date est là, sans exiger ni auteur ni sujet', typeof (await enrollContact(pool, jobZ)) === 'string');
 }
 
+async function contactExcluNeRevientPas() {
+  console.log('\n# un contact exclu (reponse humaine, ne plus contacter) n\'est plus jamais propose a l\'inscription');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const exclu = await engageurDUnPost(m, 31, { etat: 'approved' });
+  const jumeau = await engageurDUnPost(m, 32, { etat: 'approved' });
+  await q(`update contacts set status = 'do_not_contact' where id = $1`, [exclu.contact_id]);
+  const deposes = await tourDInscription(m.org);
+  // La paire : meme campagne, meme etat de fiche, seul le statut du contact differe.
+  check('T7-a. le jumeau non exclu est propose et inscrit', deposes.some((j) => j.contactId === jumeau.contact_id) && (await inscritsDe(m.org)).includes(jumeau.contact_id));
+  check('T7-b. le contact exclu n\'est PAS propose : aucun job d\'inscription, aucune inscription',
+    !deposes.some((j) => j.contactId === exclu.contact_id) && !(await inscritsDe(m.org)).includes(exclu.contact_id), JSON.stringify(deposes));
+}
+
 async function campagneSansAccrocheNonGelee() {
   console.log('\n# une campagne qui ne nomme pas le post n\'est pas gelée');
   const m = await monde();
@@ -3181,7 +3195,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

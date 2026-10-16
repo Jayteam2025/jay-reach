@@ -63,6 +63,8 @@ export type ActionJournal =
   // repris dans `listerActivite` (campagnes.ts).
   | 'contact.note_added'
   | 'contact.marked_do_not_contact'
+  // Exclusion AUTOMATIQUE posée par une réponse humaine (`inbox/exclusion-sur-reponse.ts`), sans acteur.
+  | 'contact.excluded_after_reply'
   // Pause d'envoi globale de l'organisation (tâche 23, `fonctions/moteur.ts`,
   // `basculerPauseEnvoi`) — distincte de `campaign_paused` (une seule
   // campagne) : celle-ci coupe tous les canaux de toutes les campagnes.

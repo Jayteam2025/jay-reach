@@ -43,7 +43,7 @@ import {
   enrichirContactConnu,
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
-import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { inscrireContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
 import { rejeterFichesPostExpirees } from './linkedin/posts-fiches.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
@@ -468,11 +468,19 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
 
 export async function traiterEnroll(ctx: Contexte, data: EnrollJob): Promise<void> {
   const { pool, boss } = ctx;
-  const id = await enrollContact(pool, data);
-  if (!id) {
-    console.log(`[enroll] contact ${data.contactId} déjà inscrit — ignoré`);
+  const resultat = await inscrireContact(pool, data);
+  if (!('id' in resultat)) {
+    const dit: Record<typeof resultat.refus, string> = {
+      contact_exclu: 'contact exclu (réponse reçue ou « ne plus contacter ») — ignoré',
+      deja_inscrit: 'déjà inscrit — ignoré',
+      plafond_du_jour: 'plafond du jour atteint — reporté (déjà journalisé)',
+      post_non_valide: 'post non validé — retenu (déjà journalisé)',
+      non_inscrit: 'aucune inscription créée — ignoré',
+    };
+    console.log(`[enroll] contact ${data.contactId} ${dit[resultat.refus]}`);
     return;
   }
+  const id = resultat.id;
   await boss.insert([
     { name: 'sequence.tick', id: deterministicUuid('tick', id, currentBucket(TICK_INTERVAL_MS)), data: {} },
   ]);

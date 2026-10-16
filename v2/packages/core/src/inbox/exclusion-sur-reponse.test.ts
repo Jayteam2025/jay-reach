@@ -9,7 +9,7 @@ interface Appel {
 }
 
 /** Exécuteur factice : un contact, et chaque insertion de suppression compte pour une ligne. */
-function creerExecuteur(contact: { email: string | null; linkedin_url: string | null } | null): {
+function creerExecuteur(contact: { email: string | null; linkedin_url: string | null; linkedin_provider_id?: string | null; status?: string } | null): {
   ex: Executeur;
   appels: Appel[];
 } {
@@ -18,7 +18,7 @@ function creerExecuteur(contact: { email: string | null; linkedin_url: string | 
     async query<T>(text: string, values: unknown[] = []) {
       appels.push({ text, values });
       if (text.includes('jr:exclusion_reponse_contact')) {
-        return { rows: (contact ? [contact] : []) as T[], rowCount: contact ? 1 : 0 };
+        return { rows: (contact ? [{ linkedin_provider_id: null, status: 'active', ...contact }] : []) as T[], rowCount: contact ? 1 : 0 };
       }
       if (text.includes('insert into suppressions')) return { rows: [] as T[], rowCount: 1 };
       return { rows: [] as T[], rowCount: 0 };
@@ -65,11 +65,50 @@ describe('exclureApresReponse', () => {
     expect(suppressions(appels, 'email')).toHaveLength(0);
   });
 
-  it('ne lit jamais linkedin_provider_id : aucune adresse n’est déduite d’un identifiant', async () => {
-    const { ex, appels } = creerExecuteur({ email: null, linkedin_url: null });
+  it('un identifiant de membre reconnu ajoute la graphie déduite : deux oppositions LinkedIn distinctes', async () => {
+    const { ex, appels } = creerExecuteur({ email: null, linkedin_url: 'https://www.linkedin.com/in/jeanne-dupont', linkedin_provider_id: 'ACoAAbcdef123' });
+    expect(await exclureApresReponse(ex, 'org-1', 'contact-1')).toEqual({ email: 0, linkedin: 2 });
+    expect(suppressions(appels, 'linkedin').map((a) => a.values[1])).toEqual([
+      'https://www.linkedin.com/in/jeanne-dupont',
+      'https://www.linkedin.com/in/ACoAAbcdef123',
+    ]);
+  });
+
+  it('un identifiant de membre reconnu sans adresse publique : la graphie déduite seule', async () => {
+    const { ex, appels } = creerExecuteur({ email: null, linkedin_url: null, linkedin_provider_id: 'ACoAAbcdef123' });
     await exclureApresReponse(ex, 'org-1', 'contact-1');
-    expect(appels.every((a) => !a.text.includes('linkedin_provider_id'))).toBe(true);
+    expect(suppressions(appels, 'linkedin').map((a) => a.values[1])).toEqual(['https://www.linkedin.com/in/ACoAAbcdef123']);
+  });
+
+  it('un identifiant FullEnrich (UUID) ne fabrique AUCUNE adresse : seule l’adresse réelle est opposée', async () => {
+    const { ex, appels } = creerExecuteur({
+      email: null,
+      linkedin_url: 'https://www.linkedin.com/in/jeanne-dupont',
+      linkedin_provider_id: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b',
+    });
+    expect(await exclureApresReponse(ex, 'org-1', 'contact-1')).toEqual({ email: 0, linkedin: 1 });
+    expect(suppressions(appels, 'linkedin').map((a) => a.values[1])).toEqual(['https://www.linkedin.com/in/jeanne-dupont']);
+  });
+
+  it('un identifiant non reconnu et aucune adresse : rien côté LinkedIn', async () => {
+    const { ex, appels } = creerExecuteur({ email: null, linkedin_url: null, linkedin_provider_id: 'undefined' });
+    await exclureApresReponse(ex, 'org-1', 'contact-1');
     expect(suppressions(appels, 'linkedin')).toHaveLength(0);
+  });
+
+  it('écrit un événement distinct de l’action manuelle, sans acteur, marqué automatique', async () => {
+    const { ex, appels } = creerExecuteur({ email: 'a@exemple.test', linkedin_url: null });
+    await exclureApresReponse(ex, 'org-1', 'contact-1');
+    const ev = appels.find((a) => a.text.includes('insert into audit_events'));
+    expect(ev).toBeDefined();
+    expect(ev!.values.slice(0, 5)).toEqual(['org-1', null, 'contact', 'contact-1', 'contact.excluded_after_reply']);
+    expect(JSON.parse(ev!.values[5] as string)).toMatchObject({ automatique: true, motif: 'reponse_recue' });
+  });
+
+  it('un contact déjà exclu et dont rien ne change : pas de second événement', async () => {
+    const { ex, appels } = creerExecuteur({ email: null, linkedin_url: null, status: 'do_not_contact' });
+    await exclureApresReponse(ex, 'org-1', 'contact-1');
+    expect(appels.some((a) => a.text.includes('insert into audit_events'))).toBe(false);
   });
 
   it('un contact introuvable dans l’organisation : rien n’est écrit', async () => {
