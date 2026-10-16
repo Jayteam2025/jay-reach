@@ -35,6 +35,12 @@ export type Releve = {
   readonly unAUnSansIndice: number;
   /** Conversations traitées sans `lastActivityAt` : le curseur n'a pas pu les écarter. */
   readonly sansHorodatage: number;
+  /** Conversations un-à-un lues dont `messages.elements[0]` est absent. */
+  readonly sansMessage: number;
+  /** Conversations lues dont l'expéditeur du dernier message n'est pas un identifiant de membre lisible. */
+  readonly expediteursIllisibles: number;
+  /** Éléments de la liste qui ne sont même pas un objet. */
+  readonly conversationsIllisibles: number;
   /** Messages entrants écartés faute d'identifiant ou de date exploitables : jamais un échec du passage. */
   readonly entrantsIllisibles: number;
 };
@@ -45,6 +51,9 @@ export function compteursDuReleve(r: Releve): Readonly<Record<Exclude<keyof Rele
     ecartesNonUnAUn: r.ecartesNonUnAUn,
     ecartesAnterieuresAuCurseur: r.ecartesAnterieuresAuCurseur,
     unAUnSansIndice: r.unAUnSansIndice,
+    sansMessage: r.sansMessage,
+    expediteursIllisibles: r.expediteursIllisibles,
+    conversationsIllisibles: r.conversationsIllisibles,
     sansHorodatage: r.sansHorodatage,
     entrantsIllisibles: r.entrantsIllisibles,
   };
@@ -151,10 +160,16 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
   let unAUnSansIndice = 0;
   let sansHorodatage = 0;
   let entrantsIllisibles = 0;
+  let sansMessage = 0;
+  let expediteursIllisibles = 0;
+  let conversationsIllisibles = 0;
+  // Conversations qui ont franchi le curseur ET le filtre « groupe » : la base de la garde de volume.
+  // Ce n'est pas `conversations.length`, qui compte aussi les anciennes et les groupes.
+  let lues = 0;
 
   for (const conv of conversations) {
     if (!estObjet(conv)) {
-      ecartesNonUnAUn += 1;
+      conversationsIllisibles += 1;
       continue;
     }
     const activite = nombre(conv.lastActivityAt);
@@ -172,16 +187,20 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
       continue;
     }
     if (type === 'sans_indice') unAUnSansIndice += 1;
+    lues += 1;
 
     const elements = estObjet(conv.messages) ? conv.messages.elements : undefined;
     const message = Array.isArray(elements) ? elements[0] : undefined;
-    if (!estObjet(message)) continue; // conversation un-à-un sans message : rien à relever
+    if (!estObjet(message)) {
+      sansMessage += 1;
+      continue;
+    }
 
     const hostUrn = estObjet(message.sender) ? message.sender.hostIdentityUrn : undefined;
     const expediteur = typeof hostUrn === 'string' ? normaliserUrnLinkedIn(hostUrn) : null;
     if (expediteur === null) {
       // Expéditeur qui n'est pas un membre (système, organisation) : jamais une réponse humaine.
-      ecartesNonUnAUn += 1;
+      expediteursIllisibles += 1;
       continue;
     }
     if (expediteur === moi) continue; // notre propre message
@@ -195,9 +214,22 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
       entrantsIllisibles += 1;
       continue;
     }
+    // Un texte vide est rendu tel quel : une pièce jointe seule reste une réponse humaine, et l'ancienne
+    // extension la perdait. Aval : l'en-tête et le contenu décident, pas ce filtre.
     const texte = estObjet(message.body) && typeof message.body.text === 'string' ? message.body.text : '';
     entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, expediteurUrl: urlDeLExpediteur(conv, expediteur), texte, recuLe: new Date(quand) });
   }
 
-  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansHorodatage, entrantsIllisibles };
+  // Garde de volume. Une dérive de forme (`messages` renommé, format de `hostIdentityUrn` changé) ne
+  // lève rien plus haut : chaque conversation serait sautée et la relève rendrait vide, tous les
+  // compteurs à zéro, indistinguable d'une boîte vide. On lève quand au moins 3 conversations ont été
+  // lues, qu'aucun entrant n'en sort, et que TOUTES relèvent de la dérive (sans message, ou
+  // expéditeur illisible). Seuil de 3 : compromis assumé. Avec une seule conversation lue, une
+  // conversation légitimement sans message ferait lever à tort ; la relève est un sondage répété,
+  // une vraie dérive se reverra au passage suivant.
+  if (lues >= 3 && entrants.length === 0 && sansMessage + expediteursIllisibles === lues) {
+    throw new ErreurMessagerie('LinkedIn a changé la forme de ses conversations : aucune n’a pu être lue.');
+  }
+
+  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansMessage, expediteursIllisibles, conversationsIllisibles, sansHorodatage, entrantsIllisibles };
 }
