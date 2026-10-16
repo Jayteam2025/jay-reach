@@ -125,7 +125,7 @@ function lireMotif(corps: string): { message: string; code: string } {
 const PLAFOND = /quota|limit|restrict/i;
 
 /** Slug après `/in/`, ou `null` : l'URL n'est pas une page de profil LinkedIn. */
-function extraireIdentifiant(brute: string): string | null {
+export function extraireIdentifiant(brute: string): string | null {
   let u: URL;
   try {
     u = new URL(brute.trim());

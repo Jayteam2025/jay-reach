@@ -41,6 +41,7 @@ import {
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
+  memoriserUrnDuContact,
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
   prochainEnvoiLinkedIn,
@@ -207,6 +208,7 @@ function piloteTrace(pilote: Pilote, tracer: () => Promise<void>, avantPost: () 
 /** Lit l'action jusqu'à son enregistrement. `phase` dit si un POST a pu partir. */
 async function executer(
   d: DependancesEnvoi,
+  organisationId: string,
   action: ActionReclamee,
   p: Pilote,
 ): Promise<Issue> {
@@ -223,6 +225,17 @@ async function executer(
   } catch (err) {
     if (err instanceof ErreurEnvoi) return { type: 'refus', code: err.code };
     throw err;
+  }
+
+  // L'URN est payé : on le garde. Sans lui, un message entrant (qui ne porte que l'URN de son
+  // expéditeur) n'est rattachable à personne. Un échec d'écriture ne doit ni empêcher ni retarder
+  // l'envoi : au pire l'URN sera mémorisé à l'envoi suivant.
+  if (action.contactId) {
+    try {
+      await memoriserUrnDuContact(d.pool, organisationId, action.contactId, urn);
+    } catch (err) {
+      console.warn(`[envoi-linkedin] urn non memorise (${nomDe(err)})`);
+    }
   }
 
   // Allure humaine entre la lecture du profil et l'envoi. La phase ne bascule pas ici :
@@ -350,7 +363,7 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     );
     let issue: Issue;
     try {
-      issue = await executer(d, action, p);
+      issue = await executer(d, job.organizationId, action, p);
     } catch (err) {
       console.error(`[envoi-linkedin] appel interrompu (${nomDe(err)})`);
       issue = classer(phase.courante);

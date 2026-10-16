@@ -32,6 +32,8 @@ export interface ActionReclamee {
   readonly kind: 'invite' | 'message';
   readonly linkedinUrl: string;
   readonly messageBody: string | null;
+  /** Le contact visé ; absent ou `null` pour une ligne que l'extension a créée sans contact. */
+  readonly contactId?: string | null;
 }
 
 /** Le type d'une action de la file : le rythme se juge PAR type (invitation ou message). */
@@ -388,7 +390,8 @@ export async function reclamerProchaineAction(
          set status = 'processing', processing_started_at = $2,
              attempts = attempts + 1, updated_at = now()
        where id = $1 and status = 'pending'
-       returning id, kind, linkedin_url as "linkedinUrl", message_body as "messageBody"`,
+       returning id, kind, linkedin_url as "linkedinUrl", message_body as "messageBody",
+                 contact_id as "contactId"`,
     [id, now.toISOString()],
   );
   const row = claimed.rows[0];
@@ -396,7 +399,13 @@ export async function reclamerProchaineAction(
     return { action: null, motif: 'race_retry' };
   }
   return {
-    action: { id: row.id, kind: row.kind, linkedinUrl: row.linkedinUrl, messageBody: row.messageBody },
+    action: {
+      id: row.id,
+      kind: row.kind,
+      linkedinUrl: row.linkedinUrl,
+      messageBody: row.messageBody,
+      contactId: row.contactId ?? null,
+    },
     motif: null,
   };
 }

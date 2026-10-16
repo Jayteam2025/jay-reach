@@ -115,6 +115,8 @@ function monde(opts: {
   etapeSupprimee?: boolean;
   /** `remettreActionEnAttente` rend `failed` : les tentatives de lecture sont épuisées. */
   tentativesEpuisees?: boolean;
+  /** L'écriture de l'URN du contact échoue. */
+  urnEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -161,6 +163,11 @@ function monde(opts: {
       w.traces += 1;
       w.journal.push('trace');
       return rep([{}]);
+    }
+    if (t.includes('jr:contact_memoriser_urn')) {
+      w.journal.push(`urn_contact org=${params[1]} contact=${params[0]} urn=${params[2]}`);
+      if (opts.urnEchoue) throw new Error('base indisponible');
+      return rep([]);
     }
     if (t.includes('jr:linkedin_action_remettre')) {
       w.journal.push('remise');
@@ -476,6 +483,30 @@ describe('un envoi qui réussit', () => {
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(envoyees(w)).toEqual([`requete ${URL_MESSAGE}`]);
     expect(w.statutsAuxRequetes).toEqual(['processing']);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+  });
+
+  it('un envoi mémorise l URN du contact, sous sa forme nue, pour son organisation', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    avec(w, { ...ACTION_INVITATION, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain(`urn_contact org=${ORG} contact=contact-1 urn=ACoAAdestinataire`);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+  });
+
+  it('une action sans contact n écrit aucun URN', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal.some((j) => j.startsWith('urn_contact'))).toBe(false);
+  });
+
+  it('un URN qu on ne peut pas écrire ne retarde ni n empêche l envoi', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } },
+      urnEchoue: true,
+    });
+    avec(w, { ...ACTION_INVITATION, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
   });
 
