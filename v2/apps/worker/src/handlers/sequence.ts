@@ -167,7 +167,11 @@ async function tenterInscription(pool: Pool, job: EnrollJob): Promise<ResultatIn
   return id ? { id } : { refus: 'non_inscrit' };
 }
 
-/** Forme historique : l'identifiant de l'inscription, ou `null` sans distinguer le motif. */
+/**
+ * Forme historique : l'identifiant de l'inscription, ou `null` sans distinguer le motif. Plus aucun appelant de
+ * production (le producteur passe par `inscrireContact`, qui rend le motif) : elle reste comme façade des tests et
+ * des harnais pg-verify, une quarantaine d'appels qui n'ont pas besoin du motif.
+ */
 export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
   const r = await tenterInscription(pool, job);
   return 'id' in r ? r.id : null;

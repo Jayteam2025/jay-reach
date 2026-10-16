@@ -1534,9 +1534,14 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
       [listId, contactId, JSON.stringify(row.raw)],
     );
 
+    // Un contact EXCLU (réponse reçue, « ne plus contacter ») qu'un fichier réimporte n'entre dans aucune campagne :
+    // la garde est dans l'insertion, comme dans `enrollContact` (une lecture avant laisserait une fenêtre).
     await ctx.ex.query(
       `insert into enrollments (organization_id, campaign_id, contact_id, list_id, status, current_step, next_action_at, started_at) /* jr:sources_csv_inscrire */
-       values ($1, $2, $3, $4, 'active', 0, now(), now())
+       select $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'active', 0, now(), now()
+      where not exists (
+         select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
+       )
        on conflict (contact_id) where status in ('active','paused','paused_absence') do nothing`,
       [ctx.organisationId, campagneId, contactId, listId],
     );
@@ -1713,6 +1718,9 @@ export async function ajouterDepuisListe(
        from list_members lm /* jr:sources_liste_candidats */
        join contacts c on c.id = lm.contact_id
       where lm.list_id = $1 and c.organization_id = $3
+        -- $2 (la campagne) n'est lu que par le filtre « déjà contactés » : sans cette ligne, Postgres refuse la requête
+        -- (« could not determine data type of parameter $2 ») dès que ce filtre est absent, c'est-à-dire par défaut.
+        and $2::uuid is not null
         and c.status = 'active'
         ${filtreEmail}
         ${filtreDejaContacte}`,
@@ -1721,9 +1729,13 @@ export async function ajouterDepuisListe(
 
   let ajoutes = 0;
   for (const c of candidats.rows) {
+    // Garde dans l'insertion même : le statut lu par `candidats` peut avoir changé depuis (une réponse arrive).
     const res = await ctx.ex.query(
       `insert into enrollments (organization_id, campaign_id, contact_id, list_id, status, current_step, next_action_at, started_at) /* jr:sources_liste_inscrire */
-       values ($1, $2, $3, $4, 'active', 0, now(), now())
+       select $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'active', 0, now(), now()
+      where not exists (
+         select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
+       )
        on conflict (contact_id) where status in ('active','paused','paused_absence') do nothing`,
       [ctx.organisationId, campagneId, c.id, listId],
     );
