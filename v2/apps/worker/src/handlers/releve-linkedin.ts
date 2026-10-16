@@ -284,6 +284,9 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     if (rep.statut < 200 || rep.statut >= 300) {
       throw erreurNommee('StatutInattendu', `La messagerie LinkedIn a répondu ${rep.statut} : la relève est suspendue.`);
     }
+    // `identite.urn` (forme brute), pas `moi` : `normaliserUrnLinkedIn` n'est pas idempotente, `analyserConversations`
+    // normalise elle-même. Équivalent pour toutes les formes d'identifiant actuelles (aucun test ne peut les
+    // distinguer) ; la garde est préventive, pour qu'une future famille d'identifiants ne tue pas la relève.
     const releve = analyserConversations(rep.corps, identite.urn, depuis);
 
     const c: Compteurs = {
