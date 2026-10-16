@@ -287,6 +287,17 @@ export function sqlFichePostEnAttente(signal: string): string {
  * sa fiche est rejetée et ne sera jamais rouverte. C'est borné par la fenêtre réglable, qui est
  * exactement la promesse faite à l'écran — et c'est le prix de cette promesse, pas un oubli.
  *
+ * LE RÉSIDU, assumé et écrit ici pour qu'on ne le redécouvre pas comme un bug. `produire`
+ * enchaîne expiration de fiches, puis purge d'ancienneté, puis enfilage des inscriptions
+ * (`apps/worker/src/traitements.ts`). Valider dans les toutes dernières minutes de la fenêtre ne
+ * sert donc à rien : au cycle suivant, l'expiration passe la fiche `rejected` ET la sort de sa
+ * fenêtre, l'épargne tombe, et la purge efface avant que l'enfilage n'ait vu la personne.
+ *
+ * Pourquoi on n'inverse PAS purge et enfilage : cet ordre vaut pour tout le moteur, pas seulement
+ * pour les posts, et le toucher déplacerait le risque sur des chemins que ce lot ne couvre pas.
+ * Le défaut qu'on vient de fermer valait quatorze jours sur vingt-huit ; celui-ci vaut quelques
+ * minutes au bout de vingt-huit jours. L'échange est net, et c'est une décision, pas un oubli.
+ *
  * @param signal alias SQL du signal (`s`)
  */
 export function sqlFichePostDansSaFenetre(signal: string): string {
