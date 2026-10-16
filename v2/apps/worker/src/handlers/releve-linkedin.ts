@@ -12,9 +12,14 @@
  *
  * Les règles qui comptent :
  *  - **Le curseur n'avance qu'après un passage ENTIÈREMENT réussi.** Un cas individuel qui échoue
- *    (écriture d'une réponse, notification) n'interrompt pas les autres : tous sont traités, le
+ *    (écriture d'une réponse) n'interrompt pas les autres : tous sont traités, le
  *    curseur reste figé, l'erreur est levée à la fin. Les messages déjà enregistrés au passage
  *    suivant rendent `isNew: false` : ni doublon, ni seconde notification.
+ *  - **Une notification n'est jamais perdue** : chaque réponse relevée naît avec `raw.notifiee = false`, et
+ *    `notifierReponseEntrante` pose la marque et notifie dans une même transaction. Un échec ne fige pas le
+ *    curseur : `balayerReponsesNonNotifiees` (début de passage, avant même la session, et fin de passage si
+ *    un échec vient d'avoir lieu) reprend tout message resté `false`.
+ *  - **Plage horaire seulement, pas les jours** : la relève tourne sept jours sur sept.
  *  - **Le compte connecté est relu à CHAQUE passage.** S'il a changé, nos propres messages sortants
  *    passeraient pour des réponses entrantes, donc des exclusions sur nos propres contacts : on ne
  *    traite rien, on ne touche pas au curseur, on pose le nouveau compte.
@@ -32,6 +37,8 @@
  */
 import type { Pool } from 'pg';
 import {
+  dansUneTransaction,
+  enregistrerCompteLinkedIn,
   heureLocale,
   isWithinWindow,
   lireHeuresEnvoiLinkedIn,
@@ -88,8 +95,6 @@ const NOMBRE_CONVERSATIONS = 20;
  * qui en résulte est absorbé par l'identifiant de message (`isNew: false`).
  */
 export const MARGE_CURSEUR_MS = 5 * 60_000;
-/** Tentatives d'enregistrement d'une notification : un échec d'écriture après `isNew` ne se rejoue pas au passage suivant. */
-const TENTATIVES_NOTIFICATION = 3;
 const LONGUEUR_EXTRAIT = 140;
 /** Résolutions d'URN par passage : la valeur de l'ancienne extension. */
 export const URN_RESOLUES_PAR_PASSAGE = 3;
@@ -299,6 +304,8 @@ type Compteurs = {
   ambigus: number;
   /** Entrants dont l'enregistrement ou la notification a échoué : le curseur ne bouge pas. */
   echecs: number;
+  /** Notifications qui ont échoué ce passage : reprises par le balayage, jamais perdues. */
+  notificationsEnAttente: number;
 };
 
 export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLinkedInJob): Promise<void> {
@@ -310,19 +317,26 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     console.warn('[releve-linkedin] canal LinkedIn non autorisé sur cette instance');
     return;
   }
+  // Le filet des notifications ne demande ni session, ni plage, ni navigateur : une notification déjà due
+  // ne doit attendre aucun de ces trois-là.
+  await balayerReponsesNonNotifiees(pool, org);
+
   const session = await lireSessionLinkedIn(ctx);
   if (!session || session.etat !== 'active') {
     console.warn('[releve-linkedin] session LinkedIn absente ou bloquée');
     return;
   }
 
-  // Même plage que l'envoi : une relève à trois heures du matin est la signature d'une machine. Le curseur
-  // ne bouge pas, le premier passage de la plage rattrape tout. La lecture exige un rôle que le worker n'a
-  // pas : c'est une lecture de service, bornée à l'organisation par la requête.
+  // Même plage HORAIRE que l'envoi : une relève à trois heures du matin est la signature d'une machine. Mais PAS
+  // les mêmes JOURS : `send_days` (lundi au vendredi) borne l'envoi de séquence, et une réponse reçue le samedi à
+  // 10 h ne doit pas attendre le lundi 9 h (jusqu'à 63 heures) : le délai avant que l'opérateur l'apprenne est la
+  // mesure du produit. La relève tourne sept jours sur sept. Le curseur ne bouge pas hors plage, le premier
+  // passage de la plage rattrape tout. La lecture exige un rôle que le worker n'a pas : c'est une lecture de
+  // service, bornée à l'organisation par la requête.
   const maintenant = new Date();
   const heures = await lireHeuresEnvoiLinkedIn({ ...ctx, role: 'viewer' });
-  const { hour, isoDay } = heureLocale(maintenant, heures.fuseau);
-  if (!heures.jours.includes(isoDay) || !isWithinWindow(hour, heures.debutHeure, heures.finHeure)) {
+  const { hour } = heureLocale(maintenant, heures.fuseau);
+  if (!isWithinWindow(hour, heures.debutHeure, heures.finHeure)) {
     console.log('[releve-linkedin] hors de la plage horaire, passage suivant');
     return;
   }
@@ -381,6 +395,13 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
       throw new ErreurMessagerie('Le compte LinkedIn connecté n’a pas pu être lu : la relève est suspendue.');
     }
 
+    // La date affichée dans Réglages › LinkedIn (`account_seen_at`) : l'information est en main toutes les
+    // trente minutes, on ne la laisse pas figée à la date du dernier envoi. Un confort d'affichage : un échec
+    // d'écriture ne fait pas tomber la relève.
+    await enregistrerCompteLinkedIn(ctx, identite).catch((err: unknown) => {
+      console.error(`[releve-linkedin] compte connecté non enregistré (${nomDe(err)})`);
+    });
+
     const etat = await lireEtat(pool, org);
     const ancien = etat.compteUrn === null ? null : normaliserUrnLinkedIn(etat.compteUrn);
     if (ancien !== null && ancien !== moi) {
@@ -412,6 +433,7 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
       urlAmbigues: 0,
       ambigus: 0,
       echecs: 0,
+      notificationsEnAttente: 0,
     };
     // Les plus anciens d'abord : le fil se remplit dans l'ordre où l'échange a eu lieu.
     const entrants = [...releve.entrants].sort((a, b) => a.recuLe.getTime() - b.recuLe.getTime());
@@ -438,17 +460,26 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
           body: m.texte,
           providerMessageId: m.messageUrn,
           receivedAt: m.recuLe,
-          raw: { source: 'releve_serveur' },
+          // `notifiee: false` est écrit DANS la transaction qui enregistre le message : un message sans marque
+          // n'existe pas, et celui qui porte `false` sera retrouvé par le balayage tant qu'il n'est pas notifié.
+          raw: { source: 'releve_serveur', notifiee: false },
         });
         if (!enregistre.isNew) {
           // Le corps est arrivé après coup et change la lecture (réponse humaine, départ) : l'opérateur
-          // avait été prévenu d'une simple absence, il doit apprendre la vraie nature du message.
-          if (enregistre.reclasse) await notifier(pool, org, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
+          // avait été prévenu d'une simple absence, il doit apprendre la vraie nature du message. Ce chemin
+          // n'est pas couvert par le balayage (le message porte déjà `notifiee: true`) : voir l'inventaire
+          // du harnais.
+          if (enregistre.reclasse) await notifyReply(pool, org, TITRE_NOTIFICATION, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
           c.dejaEnregistres += 1;
           continue;
         }
         c.nouveaux += 1;
-        await notifier(pool, org, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
+        // Un échec de notification n'est PAS un échec du message : il est en base, marqué non notifié, et le
+        // balayage (fin de ce passage, puis chaque passage) le reprend. Figer le curseur n'y changerait rien.
+        await notifierReponseEntrante(pool, org, m.messageUrn, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE).catch((err: unknown) => {
+          c.notificationsEnAttente += 1;
+          console.error(`[releve-linkedin] notification différée au balayage (${nomDe(err)})`);
+        });
       } catch (err) {
         // Un cas qui échoue n'éteint pas les autres : seul le type sort (le message d'une erreur de base
         // peut porter une chaîne de connexion, et jamais un contenu de message).
@@ -456,6 +487,9 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
         console.error(`[releve-linkedin] un message n’a pas pu être traité (${nomDe(err)})`);
       }
     }
+
+    // Seconde chance IMMÉDIATE pour les notifications qui viennent d'échouer, avant l'écriture du curseur.
+    if (c.notificationsEnAttente > 0) await balayerReponsesNonNotifiees(pool, org);
 
     // Le journal du passage : tous les compteurs, aucun contenu.
     console.log(`[releve-linkedin] passage ${JSON.stringify({ ...c, ...compteursDuReleve(releve) })}`);
@@ -482,16 +516,63 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
   }
 }
 
-/** Notifie, avec reprise : une réponse enregistrée mais jamais notifiée ne se rejoue pas (`isNew` sera faux), et ne doit pas passer inaperçue. */
-async function notifier(pool: Pool, org: string, corps: string): Promise<void> {
-  for (let essai = 1; ; essai += 1) {
-    try {
-      await notifyReply(pool, org, TITRE_NOTIFICATION, corps);
-      return;
-    } catch (err) {
-      if (essai >= TENTATIVES_NOTIFICATION) throw err;
+/**
+ * Notifie UNE réponse entrante et la marque notifiée, dans UNE transaction. La marque est prise d'abord
+ * (`update ... where raw ->> 'notifiee' = 'false'`, qui verrouille la ligne), puis la notification part :
+ * si l'une des deux échoue, les deux sont défaites et le message reste à notifier, si les deux passent il
+ * ne l'est plus. Ni doublon (deux balayages concurrents : le second attend le verrou puis ne trouve plus
+ * la marque), ni perte. Rend `false` quand il n'y avait rien à notifier (marque absente ou déjà levée).
+ */
+export async function notifierReponseEntrante(pool: Pool, org: string, providerMessageId: string, corps: string): Promise<boolean> {
+  return dansUneTransaction(pool, async (tx) => {
+    const res = await tx.query(
+      `update thread_messages m /* jr:releve_reponse_notifiee */
+          set raw = coalesce(m.raw, '{}'::jsonb) || '{"notifiee": true}'::jsonb
+         from threads t
+        where t.id = m.thread_id and t.organization_id = $1
+          and m.direction = 'in' and m.provider_message_id = $2 and m.raw ->> 'notifiee' = 'false'`,
+      [org, providerMessageId],
+    );
+    if ((res.rowCount ?? 0) === 0) return false;
+    await notifyReply(tx, org, TITRE_NOTIFICATION, corps);
+    return true;
+  });
+}
+
+/** Réponses notifiées par balayage, au plus, à chaque passage : un arriéré se résorbe sur plusieurs passages. */
+const NOTIFICATIONS_PAR_BALAYAGE = 50;
+
+/**
+ * Le filet des entrants, symétrique de `balayerReponsesSansSort` pour les sortants : toute réponse relevée
+ * dont la notification n'est pas partie (marque `notifiee: false`) est notifiée ici. Sans lui, un échec de
+ * notification après l'enregistrement était définitif : au passage suivant le message est connu (`isNew:
+ * false`), rien ne notifie, le curseur avance. Ne lève JAMAIS (un balayage qui échoue ne doit emporter ni la
+ * relève ni le curseur) ; rend le nombre de réponses notifiées. Borné à l'organisation, idempotent.
+ */
+export async function balayerReponsesNonNotifiees(pool: Pool, org: string): Promise<number> {
+  let faites = 0;
+  try {
+    const res = await pool.query<{ provider_message_id: string; body: string | null }>(
+      `select m.provider_message_id, m.body /* jr:releve_reponses_non_notifiees */
+         from thread_messages m join threads t on t.id = m.thread_id
+        where t.organization_id = $1 and m.direction = 'in' and m.raw ->> 'notifiee' = 'false'
+          and m.provider_message_id is not null
+        order by m.sent_at nulls last, m.id
+        limit $2`,
+      [org, NOTIFICATIONS_PAR_BALAYAGE],
+    );
+    for (const l of res.rows) {
+      try {
+        if (await notifierReponseEntrante(pool, org, l.provider_message_id, extrait(l.body ?? '') || CORPS_REPONSE_SANS_TEXTE)) faites += 1;
+      } catch (err) {
+        console.error(`[releve-linkedin] notification toujours impossible (${nomDe(err)})`);
+      }
     }
+  } catch (err) {
+    console.error(`[releve-linkedin] balayage des notifications impossible (${nomDe(err)})`);
   }
+  if (faites > 0) console.log(`[releve-linkedin] ${faites} notification(s) reprise(s) par le balayage`);
+  return faites;
 }
 
 /** Les dépendances réelles. L'import du navigateur est dynamique : `puppeteer-core` n'est chargé que si une relève part. */

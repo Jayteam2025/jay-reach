@@ -33,9 +33,27 @@ alter table public.linkedin_requetes
   );
 
 -- 2. Curseur de relève
+-- Mémoire de l'état d'AVANT : la colonne est-elle créée par CETTE exécution ? Le contrôle final « le curseur
+-- n'est pas pré-rempli » n'a de sens que dans ce cas. Une réapplication (les migrations v2 s'appliquent à la
+-- main, sans être tracées) trouve des curseurs légitimement posés par la relève, et ne doit pas échouer.
+drop table if exists pg_temp._releve_curseur_neuf;
+create temp table _releve_curseur_neuf as
+  select not exists (
+    select 1 from pg_attribute
+     where attrelid = 'public.linkedin_server_sessions'::regclass
+       and attname = 'releve_curseur_at' and not attisdropped
+  ) as neuf;
+
 alter table public.linkedin_server_sessions
   add column if not exists releve_curseur_at timestamptz,
   add column if not exists releve_compte_urn text;
+-- `releve_compte_urn` n'est PAS un doublon de `account_urn` (migration 20261008180000) : `account_urn` est le
+-- dernier compte VU par n'importe qui (un envoi, la relève), `releve_compte_urn` le compte auquel le CURSEUR
+-- appartient. Un envoi qui passe sous un autre compte met `account_urn` à jour sans toucher le curseur ; la relève
+-- compare avec sa propre mémoire, sinon ses messages sortants passeraient pour des réponses. Même forme dans les
+-- deux (l'identifiant brut de `/me`).
+comment on column public.linkedin_server_sessions.releve_compte_urn is
+  'Compte LinkedIn auquel appartient releve_curseur_at (relève des réponses). Distinct de account_urn, dernier compte vu par un envoi ou la relève.';
 
 -- 3. Origine d'une action en file
 alter table public.linkedin_action_queue
@@ -110,9 +128,11 @@ begin
          and attname in ('releve_curseur_at', 'releve_compte_urn') and not attisdropped) <> 2 then
     raise exception 'colonnes de relève absentes de linkedin_server_sessions';
   end if;
-  if exists (select 1 from public.linkedin_server_sessions where releve_curseur_at is not null) then
+  if (select neuf from pg_temp._releve_curseur_neuf)
+     and exists (select 1 from public.linkedin_server_sessions where releve_curseur_at is not null) then
     raise exception 'le curseur de relève ne doit pas être pré-rempli';
   end if;
+  drop table if exists pg_temp._releve_curseur_neuf;
 
   if not exists (
     select 1 from pg_attribute

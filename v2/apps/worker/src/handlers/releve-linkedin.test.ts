@@ -116,6 +116,10 @@ function monde(opts: {
   candidatsEchoue?: boolean;
   /** L'ecriture de la date d'echec definitif echoue. */
   tenteeEchoue?: boolean;
+  /** Reponses relevees dont la notification n'est pas partie (marque `notifiee: false`), rendues au balayage. */
+  nonNotifiees?: { provider_message_id: string; body: string | null }[];
+  /** La lecture du balayage echoue. */
+  balayageEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -174,6 +178,15 @@ function monde(opts: {
       const curseur = params[2] instanceof Date ? params[2].toISOString() : String(params[2]);
       w.journal.push(`etat compte=${String(params[1])} curseur=${curseur}`);
       return opts.sessionDisparue ? { rows: [], rowCount: 0 } : { rows: [], rowCount: 1 };
+    }
+    if (tag === 'releve_reponse_notifiee') {
+      w.journal.push(`marque ${String(params[1])}`);
+      return { rows: [], rowCount: 1 };
+    }
+    if (tag === 'releve_reponses_non_notifiees') {
+      w.journal.push('balayage');
+      if (opts.balayageEchoue) throw new Error('base indisponible');
+      return rep(opts.nonNotifiees ?? []);
     }
     if (tag === 'releve_rattacher_urn') {
       const variantes = params[1] as string[];
@@ -263,13 +276,12 @@ describe('garde, plage horaire et verrou', () => {
     expect(w.ouvrir).not.toHaveBeenCalled();
   });
 
-  it('hors de la plage horaire (samedi), ni verrou ni navigateur, curseur inchange', async () => {
+  it('un samedi dans la plage horaire : la releve a lieu (elle ignore send_days, contrairement a l envoi)', async () => {
     vi.setSystemTime(new Date('2026-10-17T09:00:00Z'));
-    const w = monde({});
+    const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
     await traiterReleveLinkedIn(deps(w), JOB);
-    expect(w.journal.some((l) => l.startsWith('verrou'))).toBe(false);
-    expect(w.ouvrir).not.toHaveBeenCalled();
-    expect(etatEcrit(w)).toEqual([]);
+    expect(w.ouvrir).toHaveBeenCalledTimes(1);
+    expect(etatEcrit(w)).toHaveLength(1);
   });
 
   it('hors de la plage horaire (3 h du matin un mardi), rien non plus', async () => {
@@ -466,10 +478,10 @@ describe('les entrants', () => {
       body: texte,
       providerMessageId: 'urn:li:msg_message:m1',
       receivedAt: new Date(APRES),
-      raw: { source: 'releve_serveur' },
+      raw: { source: 'releve_serveur', notifiee: false },
     });
     expect(mocks.notifier).toHaveBeenCalledTimes(1);
-    expect(mocks.notifier).toHaveBeenCalledWith(w.pool, ORG, 'Nouvelle réponse LinkedIn', texte);
+    expect(mocks.notifier).toHaveBeenCalledWith(expect.anything(), ORG, 'Nouvelle réponse LinkedIn', texte);
   });
 
   it('le corps de la notification est tronque a 140 caracteres', async () => {
@@ -491,7 +503,7 @@ describe('les entrants', () => {
       contactsParUrn: { ACoAAjeanne: ['contact-1'] },
     });
     await traiterReleveLinkedIn(deps(w), JOB);
-    expect(mocks.notifier).toHaveBeenCalledWith(w.pool, ORG, 'Nouvelle réponse LinkedIn', CORPS_REPONSE_SANS_TEXTE);
+    expect(mocks.notifier).toHaveBeenCalledWith(expect.anything(), ORG, 'Nouvelle réponse LinkedIn', CORPS_REPONSE_SANS_TEXTE);
   });
 
   it('rattachement de repli par l URL de profil : 353 contacts n ont que leur URL', async () => {
@@ -721,21 +733,32 @@ describe('un cas individuel ne bloque jamais les autres', () => {
     expect(etatEcrit(w)).toEqual([]);
   });
 
-  it('une notification qui echoue deux fois est retentee : la reponse enregistree ne se rejoue pas, elle ne doit pas se perdre', async () => {
+  it('une notification qui echoue ne fige pas le curseur et ne leve pas : le message reste a notifier, le balayage de fin de passage le reprend', async () => {
     const w = deuxMessages();
-    mocks.notifier.mockRejectedValueOnce(new Error('x')).mockRejectedValueOnce(new Error('x')).mockResolvedValue(undefined);
+    w.requetesSql.length = 0;
+    mocks.notifier.mockRejectedValueOnce(new Error('postgres://u:mdp@hote injoignable')).mockResolvedValue(undefined);
     await traiterReleveLinkedIn(deps(w), JOB);
-    expect(mocks.notifier).toHaveBeenCalledTimes(4); // 3 essais pour le premier message, 1 pour le second
+    expect(mocks.notifier).toHaveBeenCalledTimes(2); // le premier echoue, le second passe ; pas de rafale de reprises
     expect(etatEcrit(w)).toHaveLength(1);
+    // Un balayage en debut de passage, un second APRES l'echec : il rend la main au filet.
+    expect(w.journal.filter((l) => l === 'balayage')).toHaveLength(2);
+    expect([...sortie.error, ...sortie.log, ...sortie.warn].join('\n')).not.toContain('mdp');
   });
 
-  it('une notification qui echoue trois fois fige le curseur et leve, mais le message suivant est traite', async () => {
-    const w = deuxMessages();
-    mocks.notifier.mockRejectedValueOnce(new Error('x')).mockRejectedValueOnce(new Error('x')).mockRejectedValueOnce(new Error('x')).mockResolvedValue(undefined);
-    await expect(traiterReleveLinkedIn(deps(w), JOB)).rejects.toMatchObject({ name: 'ReleveIncomplete' });
-    expect(mocks.enregistrer).toHaveBeenCalledTimes(2);
-    expect(mocks.notifier).toHaveBeenCalledTimes(4);
-    expect(etatEcrit(w)).toEqual([]);
+  it('le balayage de fin de passage notifie ce qui est reste a notifier', async () => {
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne' }) },
+      contactsParUrn: { ACoAAjeanne: ['c1'] },
+      nonNotifiees: [{ provider_message_id: 'urn:li:msg_message:m1', body: 'Bonjour, oui' }],
+    });
+    // 1 : balayage de debut (passe) ; 2 : notification du message du passage (echoue) ; 3 : balayage de fin (passe).
+    mocks.notifier.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('x')).mockResolvedValue(undefined);
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.notifier).toHaveBeenCalledTimes(3);
+    expect(mocks.notifier).toHaveBeenLastCalledWith(expect.anything(), ORG, 'Nouvelle réponse LinkedIn', 'Bonjour, oui');
+    expect(w.journal.filter((l) => l === 'balayage')).toHaveLength(2);
   });
 
   it('un entrant illisible dans la charge utile ne fige pas le curseur : il est compte, les autres passent', async () => {
@@ -754,6 +777,54 @@ describe('un cas individuel ne bloque jamais les autres', () => {
     expect(mocks.enregistrer).toHaveBeenCalledTimes(1);
     expect(sortie.log.join('\n')).toContain('"entrantsIllisibles":1');
     expect(etatEcrit(w)).toHaveLength(1);
+  });
+});
+
+describe('le filet des notifications (les entrants jamais notifies)', () => {
+  const enAttente = [{ provider_message_id: 'urn:li:msg_message:m9', body: 'Reponse restee sans notification' }];
+
+  it('une reponse non notifiee d un passage precedent est notifiee des le debut, curseur et conversations inchanges', async () => {
+    const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() }, nonNotifiees: enAttente });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.notifier).toHaveBeenCalledTimes(1);
+    expect(mocks.notifier).toHaveBeenCalledWith(expect.anything(), ORG, 'Nouvelle réponse LinkedIn', 'Reponse restee sans notification');
+    expect(w.journal).toContain('marque urn:li:msg_message:m9');
+  });
+
+  it('le balayage ne depend ni de la session, ni de la plage horaire, ni du navigateur', async () => {
+    vi.setSystemTime(new Date('2026-10-13T01:00:00Z'));
+    const w = monde({ session: null, nonNotifiees: enAttente });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.notifier).toHaveBeenCalledTimes(1);
+    expect(w.ouvrir).not.toHaveBeenCalled();
+  });
+
+  it('un corps vide se notifie avec le texte lisible, jamais un corps vide', async () => {
+    const w = monde({ session: null, nonNotifiees: [{ provider_message_id: 'urn:li:msg_message:m9', body: null }] });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(mocks.notifier.mock.calls[0]![3]).toBe(CORPS_REPONSE_SANS_TEXTE);
+  });
+
+  it('une notification qui echoue au balayage n arrete pas les suivantes, et ne leve pas', async () => {
+    const w = monde({
+      session: null,
+      nonNotifiees: [...enAttente, { provider_message_id: 'urn:li:msg_message:m10', body: 'Deuxieme' }],
+    });
+    mocks.notifier.mockRejectedValueOnce(new Error('x')).mockResolvedValue(undefined);
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(mocks.notifier).toHaveBeenCalledTimes(2);
+  });
+
+  it('une lecture du balayage qui echoue n emporte pas la releve', async () => {
+    const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() }, balayageEchoue: true });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('la releve enregistre le compte connecte (account_seen_at) a chaque passage', async () => {
+    const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.requetesSql.filter((r) => r.tag === 'linkedin_session_compte')).toHaveLength(1);
   });
 });
 
