@@ -139,13 +139,21 @@
       "sequenceArretee": "sequence stopped at the reply",
       "repondDepuis": "replied from {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Replying from Jay Reach only exists for email threads.",
+        "canalNonEmail": "Replying from Jay Reach does not exist for this channel yet.",
         "messageOrigineInconnu": "Unknown source message: cannot reply from the app."
+      },
+      "etatEnvoi": {
+        "enCours": "Sending",
+        "echec": "Not sent",
+        "aVerifier": "Delivery unconfirmed",
+        "echecDetail": "This message did not go out. Write to them on LinkedIn, or send it again here.",
+        "aVerifierDetail": "LinkedIn did not confirm the send. Open the conversation on LinkedIn before sending again: the message may already be there."
       }
     },
     "reponse": {
       "depuis": "Reply from {boite}",
       "depuisSansBoite": "Reply",
+      "depuisLinkedin": "Reply on LinkedIn",
       "via": "via {transport}, in the same thread",
       "placeholder": "Your reply…",
       "note": "Saved in the contact's thread and in the Inbox",
@@ -1848,7 +1856,11 @@
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number.",
         "avances": "Advanced settings",
-        "avancesLead": "Collection limits and the post review window, each editable on its own."
+        "avancesLead": "Collection limits and the post review window, each editable on its own.",
+        "releveIntervalle": {
+          "nom": "LinkedIn reply check",
+          "usage": "Minutes between two checks for new replies."
+        }
       },
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",

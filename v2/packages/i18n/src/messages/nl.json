@@ -139,13 +139,21 @@
       "sequenceArretee": "sequentie gestopt bij de reactie",
       "repondDepuis": "gereageerd vanaf {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat alleen voor e-mailgesprekken.",
+        "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat nog niet voor dit kanaal.",
         "messageOrigineInconnu": "Onbekend oorspronkelijk bericht: antwoorden vanuit de app is niet mogelijk."
+      },
+      "etatEnvoi": {
+        "enCours": "Wordt verzonden",
+        "echec": "Niet verzonden",
+        "aVerifier": "Verzending onbevestigd",
+        "echecDetail": "Dit bericht is niet verzonden. Schrijf op LinkedIn, of verstuur het hier opnieuw.",
+        "aVerifierDetail": "LinkedIn heeft de verzending niet bevestigd. Open het gesprek op LinkedIn voordat u opnieuw verstuurt: het bericht is er mogelijk al."
       }
     },
     "reponse": {
       "depuis": "Antwoorden vanaf {boite}",
       "depuisSansBoite": "Antwoorden",
+      "depuisLinkedin": "Antwoorden op LinkedIn",
       "via": "via {transport}, in hetzelfde gesprek",
       "placeholder": "Je antwoord…",
       "note": "Opgeslagen in het gesprek van het contact en in de Inbox",
@@ -1848,7 +1856,11 @@
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in.",
         "avances": "Geavanceerde instellingen",
-        "avancesLead": "De limieten van de verzameling en de beoordelingstermijn van posts, stuk voor stuk aanpasbaar."
+        "avancesLead": "De limieten van de verzameling en de beoordelingstermijn van posts, stuk voor stuk aanpasbaar.",
+        "releveIntervalle": {
+          "nom": "Controle op LinkedIn-reacties",
+          "usage": "Aantal minuten tussen twee controles op nieuwe reacties."
+        }
       },
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",

@@ -4,7 +4,7 @@ import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import { ErreurReponseImpossible } from '../inbox/repondre-au-fil.js';
-import { calculerReponsePossible, lireFil, listerFils, marquerInteret, marquerTraite, repondre } from './reception.js';
+import { calculerReponsePossible, etatEnvoiLu, lireFil, listerFils, marquerInteret, marquerTraite, repondre } from './reception.js';
 
 /** Capture chaque appel `query` (texte + valeurs) — utile pour vérifier le SQL émis, pas seulement son résultat. */
 function contexteCapturant(
@@ -20,12 +20,28 @@ function contexteCapturant(
 }
 
 describe('calculerReponsePossible', () => {
-  it("canal LinkedIn : impossible, quel que soit l'historique", () => {
+  // Inversé par le lot « réponses LinkedIn » : répondre sur LinkedIn existe désormais. Il n'y a
+  // rien à retrouver dans le message d'origine, parce que la réponse part par la file d'actions,
+  // qui résout le profil depuis l'adresse du contact — d'où `transport: null` et aucune exigence
+  // sur l'historique, pas même un message entrant.
+  it('canal LinkedIn : possible, sans transport et sans condition sur l\'historique', () => {
     expect(calculerReponsePossible('linkedin', [{ direction: 'in', transport: null, graphMessageId: null, salesblinkInboxMessageId: 'x' }])).toEqual({
-      possible: false,
-      raison: 'reception.fil.raisonReponseImpossible.canalNonEmail',
+      possible: true,
+      raison: null,
       transport: null,
     });
+    expect(calculerReponsePossible('linkedin', [])).toEqual({ possible: true, raison: null, transport: null });
+  });
+
+  it('etatEnvoiLu : les trois états connus passent, tout le reste devient null', () => {
+    expect(etatEnvoiLu('en_cours')).toBe('en_cours');
+    expect(etatEnvoiLu('echec')).toBe('echec');
+    expect(etatEnvoiLu('a_verifier')).toBe('a_verifier');
+    expect(etatEnvoiLu('envoye')).toBeNull();
+    expect(etatEnvoiLu(null)).toBeNull();
+    // Une valeur qu'aucune version du produit n'a écrite : mieux vaut un message d'apparence
+    // ordinaire qu'une marque dont personne ne sait ce qu'elle veut dire.
+    expect(etatEnvoiLu('rien_de_connu')).toBeNull();
   });
 
   it('aucun message entrant : impossible', () => {
@@ -263,9 +279,11 @@ describe('lireFil', () => {
     });
     const fil = await lireFil(ctx, { filId: '11111111-1111-1111-1111-111111111111' });
     expect(fil.canal).toBe('linkedin');
-    // Canal non-email : impossible de répondre depuis l'application, quel que soit l'historique de messages.
-    expect(fil.reponsePossible).toBe(false);
-    expect(fil.raisonReponseImpossible).toBe('reception.fil.raisonReponseImpossible.canalNonEmail');
+    // Inversé par le lot « réponses LinkedIn » : le fil LinkedIn ouvre désormais sa zone de
+    // réponse, sans transport — la réponse part par la file d'actions, pas par une boîte mail.
+    expect(fil.reponsePossible).toBe(true);
+    expect(fil.raisonReponseImpossible).toBeNull();
+    expect(fil.transportReponse).toBeNull();
   });
 
   it('reponsePossible à false avec la raison quand aucun message entrant', async () => {

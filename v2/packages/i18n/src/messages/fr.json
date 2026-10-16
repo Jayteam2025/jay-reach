@@ -139,13 +139,21 @@
       "sequenceArretee": "séquence arrêtée à la réponse",
       "repondDepuis": "répondu depuis {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Répondre depuis Jay Reach n'existe que pour les fils email.",
+        "canalNonEmail": "Répondre depuis Jay Reach n'existe pas encore pour ce canal.",
         "messageOrigineInconnu": "Message d'origine inconnu : impossible de répondre depuis l'application."
+      },
+      "etatEnvoi": {
+        "enCours": "Envoi en cours",
+        "echec": "Non envoyé",
+        "aVerifier": "Envoi incertain",
+        "echecDetail": "Ce message n'est pas parti. Écrivez-lui sur LinkedIn, ou renvoyez-le ici.",
+        "aVerifierDetail": "LinkedIn n'a pas confirmé l'envoi. Ouvrez la conversation sur LinkedIn avant de renvoyer : le message est peut-être déjà parti."
       }
     },
     "reponse": {
       "depuis": "Répondre depuis {boite}",
       "depuisSansBoite": "Répondre",
+      "depuisLinkedin": "Répondre sur LinkedIn",
       "via": "via {transport}, dans le même fil",
       "placeholder": "Votre réponse…",
       "note": "Enregistrée dans le fil du contact et dans la Réception",
@@ -1848,7 +1856,11 @@
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
-        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un."
+        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un.",
+        "releveIntervalle": {
+          "nom": "Relève des réponses LinkedIn",
+          "usage": "Intervalle, en minutes, entre deux passages qui vont voir si quelqu'un a répondu."
+        }
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",

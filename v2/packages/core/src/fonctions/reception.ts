@@ -80,6 +80,14 @@ export interface MessageFil {
    * message sortant.
    */
   readonly repondDepuis: string | null;
+  /**
+   * Où en est un message SORTANT, quand il n'est pas simplement parti : `en_cours` tant qu'il est
+   * écrit mais pas encore expédié, `echec` s'il ne partira pas, `a_verifier` quand LinkedIn n'a
+   * rien confirmé et qu'on ne sait donc pas. `null` pour un message envoyé — l'immense majorité —
+   * et pour tout message entrant. L'écran s'en sert à la place de la date : un message qui n'est
+   * pas parti n'en a pas, et c'est justement la question à laquelle l'état répond.
+   */
+  readonly etatEnvoi: 'en_cours' | 'echec' | 'a_verifier' | null;
 }
 
 export interface ResumeContactFil {
@@ -257,7 +265,13 @@ export async function listerFils(
     `select t.id, t.contact_id, t.channel, t.classification, t.interest, t.handled_at, t.last_message_at, t.resume_at,
             c.first_name, c.last_name, c.job_title, ac.name as account_name,
             camp.name as campagne_nom,
-            (select m.body from thread_messages m where m.thread_id = t.id order by m.sent_at desc nulls last limit 1) as dernier_message
+            -- nulls first : un message sans date est un message qui vient d'être écrit et n'est
+            -- pas encore parti. C'est le dernier du fil, donc celui que l'aperçu doit montrer --
+            -- avec nulls last il passait derrière tous les messages datés, et la liste affichait
+            -- un message plus ancien. Départage par id faute de colonne de création : arbitraire
+            -- entre deux messages non datés, mais stable d'un rafraîchissement à l'autre.
+            (select m.body from thread_messages m where m.thread_id = t.id
+              order by m.sent_at desc nulls first, m.id desc limit 1) as dernier_message
        from threads t /* jr:liste_fils */
        left join contacts c on c.id = t.contact_id
        left join accounts ac on ac.id = c.account_id${JOINTURE_DERNIERE_INSCRIPTION}
@@ -320,6 +334,7 @@ interface LigneMessage {
   transport: string | null;
   graph_message_id: string | null;
   salesblink_inbox_message_id: string | null;
+  etat: string | null;
 }
 
 interface LigneSignal {
@@ -368,10 +383,25 @@ export interface ResultatReponsePossible {
   readonly transport: 'microsoft_graph' | 'salesblink' | null;
 }
 
+/**
+ * Borne `raw ->> 'etat'` aux trois valeurs que le produit connaît. Une valeur inattendue devient
+ * `null`, donc un message qui s'affiche comme un message ordinaire : mieux vaut une marque absente
+ * qu'une marque dont personne ne sait ce qu'elle veut dire.
+ */
+export function etatEnvoiLu(brut: string | null): 'en_cours' | 'echec' | 'a_verifier' | null {
+  return brut === 'en_cours' || brut === 'echec' || brut === 'a_verifier' ? brut : null;
+}
+
 export function calculerReponsePossible(
   canal: 'email' | 'linkedin',
   messages: readonly InfosReponseMessage[],
 ): ResultatReponsePossible {
+  // LinkedIn n'a pas de transport : la réponse part par la file d'actions, qui résout le profil
+  // depuis l'adresse du contact. Rien à retrouver dans le message d'origine, donc rien à refuser
+  // ici — un contact sans adresse résoluble est arrêté à l'envoi, et son échec s'affiche dans le fil.
+  if (canal === 'linkedin') {
+    return { possible: true, raison: null, transport: null };
+  }
   if (canal !== 'email') {
     return { possible: false, raison: 'reception.fil.raisonReponseImpossible.canalNonEmail', transport: null };
   }
@@ -415,7 +445,8 @@ export async function lireFil(ctx: Contexte, entree: unknown): Promise<FilDetail
               headers ->> 'reply_from' as repond_depuis,
               headers ->> 'transport' as transport,
               headers ->> 'graph_message_id' as graph_message_id,
-              headers ->> 'salesblink_inbox_message_id' as salesblink_inbox_message_id
+              headers ->> 'salesblink_inbox_message_id' as salesblink_inbox_message_id,
+              raw ->> 'etat' as etat
          from thread_messages /* jr:fil_messages */
         where thread_id = $1
         order by sent_at asc nulls last`,
@@ -462,6 +493,7 @@ export async function lireFil(ctx: Contexte, entree: unknown): Promise<FilDetail
     destinataire: m.direction === 'out' ? nomContact : null,
     objet: m.direction === 'out' ? m.objet : null,
     repondDepuis: m.direction === 'in' ? m.repond_depuis : null,
+    etatEnvoi: m.direction === 'out' ? etatEnvoiLu(m.etat) : null,
   }));
 
   const { possible, raison, transport } = calculerReponsePossible(

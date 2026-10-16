@@ -5,8 +5,8 @@
  * que Réglages › Plafonds, écrites par la même action (`actionEcrireReglage`) : une seule vérité,
  * deux endroits pour la régler. Lecture seule pour qui n'est pas administrateur.
  *
- * Toutes les clés ne sont pas des plafonds : `linkedin_fenetre_validation_post_jours` est une
- * DURÉE. Le composant ne s'en occupe pas — il édite un entier positif et affiche le message que
+ * Toutes les clés ne sont pas des plafonds : `linkedin_fenetre_validation_post_jours` et
+ * `linkedin_releve_intervalle_min` sont des DURÉES. Le composant ne s'en occupe pas — il édite un entier positif et affiche le message que
  * le métier renvoie quand il refuse (la fenêtre doit dépasser le délai d'ancienneté des signaux,
  * `schemaEcrireReglage`). La règle vit dans le métier, pas dans la saisie.
  */
@@ -23,7 +23,8 @@ export interface LignePlafondLinkedin {
     | 'linkedin_messages_par_semaine'
     | 'linkedin_visites_profil_par_semaine'
     | 'linkedin_fiches_post_par_jour'
-    | 'linkedin_fenetre_validation_post_jours';
+    | 'linkedin_fenetre_validation_post_jours'
+    | 'linkedin_releve_intervalle_min';
   nom: string;
   /** Déjà composé (« 1 utilisé aujourd'hui ») — ce composant ne compte rien. */
   usage: string;
