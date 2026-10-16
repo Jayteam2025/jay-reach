@@ -14,3 +14,5 @@ export { enfilerReponseLinkedIn, marquerReponseEnvoyee, signalerEchecReponse, re
 export { prochainEnvoiLinkedIn } from '@jay-reach/core';
 export { reparerLignesCoincees } from '../../packages/core/src/linkedin/file.js';
 export { regler } from '../../apps/worker/src/handlers/envoi-linkedin.js';
+// Tâche 10 : le rejeu du classement sur l'existant.
+export { rejouerClassement } from '@jay-reach/core';

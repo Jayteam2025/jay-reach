@@ -17,7 +17,7 @@
  */
 import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
-import { classifyReply } from './classify.js';
+import { classifyReply, type ClassifyResult } from './classify.js';
 import { exclureApresReponse } from './exclusion-sur-reponse.js';
 
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
@@ -197,6 +197,54 @@ async function applyToEnrollment(
 }
 
 /**
+ * Les conséquences d'une classification : inscription, résultat, et exclusion si c'est une réponse
+ * humaine. Partagée par l'enregistrement d'une réponse neuve et par le reclassement d'une réponse dont
+ * le corps arrive après coup : les deux ne peuvent pas diverger.
+ */
+async function appliquerConsequences(
+  tx: Executeur,
+  org: string,
+  contactId: string,
+  cls: ClassifyResult,
+): Promise<void> {
+  await applyToEnrollment(tx, org, contactId, cls.classification, cls.resumeInDays);
+  await recordOutcome(tx, org, contactId, cls.classification);
+  // Seule `human_reply` exclut : une absence, un départ ou une signature automatique ne sont pas
+  // une réponse (règle du commanditaire, 16/10). Les gardes ci-dessus gardent leur effet propre.
+  if (cls.classification === 'human_reply') await exclureApresReponse(tx, org, contactId);
+}
+
+/**
+ * Classes qu'un corps arrivé après coup peut encore faire changer. `human_reply` n'y est PAS : elle a
+ * déjà exclu le contact, de façon irréversible, et aucun corps ne la défait. `auto_left_company`
+ * non plus : c'est déjà la lecture du corps.
+ */
+export const CLASSES_RECLASSABLES: readonly string[] = ['auto_absence', 'auto_other', 'unclassified'];
+
+/**
+ * Reclasse un fil dont la classification vient d'être contredite par le corps du dernier message, et
+ * applique les conséquences. Rend `true` seulement si la classification a changé. Ne touche ni
+ * `last_message_at` ni `is_read` : rien de neuf n'est arrivé, l'opérateur a déjà vu ce message.
+ * Pas de notification : le message a déjà été notifié à sa première réception.
+ */
+export async function reclasserFil(
+  tx: Executeur,
+  org: string,
+  fil: { readonly id: string; readonly contactId: string | null; readonly classification: string },
+  cls: ClassifyResult,
+): Promise<boolean> {
+  if (!CLASSES_RECLASSABLES.includes(fil.classification)) return false;
+  if (cls.classification === fil.classification) return false;
+  await tx.query(`update threads set classification = $3 where id = $1 and organization_id = $2`, [
+    fil.id,
+    org,
+    cls.classification,
+  ]);
+  if (fil.contactId) await appliquerConsequences(tx, org, fil.contactId, cls);
+  return true;
+}
+
+/**
  * Rattache le résultat au dernier envoi reçu par le contact.
  *
  * `campaign_stats` compte les réponses depuis `outcomes`, pas depuis les fils :
@@ -241,6 +289,49 @@ async function recordOutcome(
 function enTeteTexte(headers: Record<string, unknown> | null, cle: string): string | null {
   const valeur = headers?.[cle];
   return typeof valeur === 'string' && valeur !== '' ? valeur : null;
+}
+
+/**
+ * Complète le corps d'un message connu dont le corps stocké était vide, et reclasse le fil si ce corps
+ * change la classification. Rend la nouvelle classification, ou `null` si rien n'a changé (corps déjà
+ * présent : on ne touche à rien ; ce message n'est pas le dernier du fil : le corps est complété mais
+ * c'est le dernier message qui porte la classification du fil).
+ */
+async function completerCorps(
+  ex: Executeur,
+  org: string,
+  messageId: string,
+  threadId: string,
+  body: string,
+  cls: ClassifyResult,
+): Promise<string | null> {
+  return dansUneTransaction(ex, async (tx) => {
+    const lu = await tx.query<{ contact_id: string | null; classification: string; corps_vide: boolean; est_dernier: boolean }>(
+      `select t.contact_id, t.classification::text as classification,
+              coalesce(btrim(m.body), '') = '' as corps_vide,
+              not exists (
+                select 1 from thread_messages o
+                 where o.thread_id = m.thread_id and o.direction = 'in' and o.id <> m.id
+                   and (coalesce(o.sent_at, '-infinity'::timestamptz), o.id::text)
+                     > (coalesce(m.sent_at, '-infinity'::timestamptz), m.id::text)
+              ) as est_dernier
+         from thread_messages m join threads t on t.id = m.thread_id
+        where m.id = $1 and t.id = $2 and t.organization_id = $3
+          for update of m`,
+      [messageId, threadId, org],
+    );
+    const message = lu.rows[0];
+    if (!message?.corps_vide) return null;
+    await tx.query(`update thread_messages set body = $2 where id = $1`, [messageId, body]);
+    if (!message.est_dernier) return null;
+    const reclasse = await reclasserFil(
+      tx,
+      org,
+      { id: threadId, contactId: message.contact_id, classification: message.classification },
+      cls,
+    );
+    return reclasse ? cls.classification : null;
+  });
 }
 
 /**
@@ -297,7 +388,14 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
         `select thread_id as id from thread_messages where id = $1`,
         [deja.rows[0].id],
       );
-      return { threadId: fil.rows[0]!.id, classification: cls.classification, isNew: false };
+      const threadId = fil.rows[0]!.id;
+      // Le corps arrive APRÈS le message : la relève SalesBlink livre `/replies` sans corps, puis le
+      // corps via `/inbox`. Classé sur ses seuls en-têtes, le message est `auto_absence` quoi qu'il dise ;
+      // sans ce rejeu il le resterait pour toujours (« I am no longer with... » avait fait REPRENDRE la
+      // séquence). On ne reclasse que si le corps apporté est non vide là où le stocké était vide.
+      const reclasse =
+        reply.body.trim() !== '' ? await completerCorps(ex, org, deja.rows[0].id, threadId, reply.body, cls) : null;
+      return { threadId, classification: reclasse ?? cls.classification, isNew: false };
     }
   }
 
@@ -321,11 +419,7 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
       ],
     );
 
-    await applyToEnrollment(tx, org, reply.contactId, cls.classification, cls.resumeInDays);
-    await recordOutcome(tx, org, reply.contactId, cls.classification);
-    // Seule `human_reply` exclut : une absence, un départ ou une signature automatique ne sont pas
-    // une réponse (règle du commanditaire, 16/10). Les gardes ci-dessus gardent leur effet propre.
-    if (cls.classification === 'human_reply') await exclureApresReponse(tx, org, reply.contactId);
+    await appliquerConsequences(tx, org, reply.contactId, cls);
     return fil;
   });
 

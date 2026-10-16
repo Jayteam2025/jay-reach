@@ -98,6 +98,17 @@ export function adressesLinkedinAOpposer(contact: {
 }
 
 /**
+ * Quelles lignes de la file `annulerEnvoisEnFile` annule ($1 organisation, $2 contact, $3 adresses).
+ * Une seule définition : l'aperçu du rejeu (`apercuExclusion`) compte avec ELLE, donc le mode à blanc
+ * ne peut pas annoncer autre chose que ce que l'exclusion annulera.
+ */
+const FILTRE_ENVOIS_A_ANNULER = `organization_id = $1 and status = 'pending' and origine <> 'reponse'
+        and (contact_id = $2
+             or (contact_id is null and cardinality($3::text[]) > 0
+                 and app.url_linkedin_normalisee(linkedin_url)
+                     = any(array(select app.url_linkedin_normalisee(a) from unnest($3::text[]) a))))`;
+
+/**
  * Annule les envois LinkedIn encore EN FILE d'un contact qu'on vient d'exclure, et écarte l'action
  * du séquenceur qui les portait (`skipped` / `enrollment_inactive`, comme `applyToEnrollment` : sinon
  * le tick la ressortirait). Rend le nombre de lignes annulées.
@@ -122,11 +133,7 @@ export async function annulerEnvoisEnFile(
   const res = await ex.query<{ action_id: string | null }>(
     `update linkedin_action_queue /* jr:annulation_file_exclusion */
         set status = 'cancelled', error_code = 'contact_exclu', updated_at = now()
-      where organization_id = $1 and status = 'pending' and origine <> 'reponse'
-        and (contact_id = $2
-             or (contact_id is null and cardinality($3::text[]) > 0
-                 and app.url_linkedin_normalisee(linkedin_url)
-                     = any(array(select app.url_linkedin_normalisee(a) from unnest($3::text[]) a))))
+      where ${FILTRE_ENVOIS_A_ANNULER}
       returning action_id`,
     [org, contactId, [...adressesProfil]],
   );
@@ -194,4 +201,27 @@ export async function exclureApresReponse(
     });
   }
   return posees;
+}
+
+/**
+ * Ce qu'`exclureApresReponse` ferait pour ce contact, SANS rien écrire : `exclu` quand il n'est pas déjà
+ * `do_not_contact`, et le nombre d'envois LinkedIn en file qui seraient annulés. Sert au mode à blanc
+ * du rejeu du classement ; lecture seule par construction (deux `select`).
+ */
+export async function apercuExclusion(
+  ex: Executeur,
+  org: string,
+  contactId: string,
+): Promise<{ exclu: boolean; envoisAnnules: number }> {
+  const res = await ex.query<{ linkedin_url: string | null; linkedin_provider_id: string | null; status: string }>(
+    `select linkedin_url, linkedin_provider_id, status::text as status from contacts where id = $1 and organization_id = $2`,
+    [contactId, org],
+  );
+  const contact = res.rows[0];
+  if (!contact) return { exclu: false, envoisAnnules: 0 };
+  const compte = await ex.query<{ n: number }>(
+    `select count(*)::int as n from linkedin_action_queue /* jr:apercu_envois_annules */ where ${FILTRE_ENVOIS_A_ANNULER}`,
+    [org, contactId, adressesLinkedinAOpposer(contact)],
+  );
+  return { exclu: contact.status !== 'do_not_contact', envoisAnnules: compte.rows[0]?.n ?? 0 };
 }
