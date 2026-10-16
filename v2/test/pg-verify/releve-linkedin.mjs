@@ -82,10 +82,24 @@
 //  17. (tache 12) parcours enchaîné d'une réponse, 192 à 203, sur UN contact : retirer l'appel d'exclusion de recordInboundReply — 194 à 196 ;
 //      l'annulation des envois en file — 198 ; le `origine <> 'reponse'` de l'annulation — 199 ; la garde d'envoi — 200 ; le `q.origine <> 'reponse'`
 //      de la garde — 200 et 201 ; `marquerReponseEnvoyee` — 202 ; un second insert dans thread_messages à l'envoi — 203.
+//  18. (revue finale) la relève hors jours d'envoi : réimposer `send_days` dans le handler — 204 (et 205b par cascade) ; retirer la plage HORAIRE — 205b seul ;
+//      filet des notifications : balayage inerte — 208, 209, 210, 211, 212, 214 ; sortir la marque et la notification de leur transaction commune — 210 à 214 (213 seul
+//      pour l'atomicité) ; retirer `raw ->> 'notifiee' = 'false'` de la prise de marque — 214 seul ; ne plus poser `notifiee: false` à l'insertion — 197, 207, 208a, 208 à 212, 214 ;
+//      retirer les DEUX filtres d'organisation du balayage (sélection ET prise de marque) — 215 ; `enregistrerCompteLinkedIn` de la relève — 206 ;
+//      tri de l'aperçu de la Réception : `nulls first` sans distinguer `en_cours` — 216, 216b ; `nePlusContacter` sans la valeur saisie — 219, 219b ;
+//      garde `do_not_contact` de l'import CSV — 222 ; de l'inscription depuis une liste — 223, 223b ; contrôle de pré-remplissage de la migration 20261016100000
+//      non conditionnel — 224.
+//      NON PROUVES (déclarés) : les filtres d'organisation du balayage des notifications, CHACUN SEUL (la sélection et la prise de marque se couvrent : seuls les deux retirés
+//      ensemble font rougir 215) ; la reprise d'une notification de RECLASSEMENT (`reclasse: true`, message déjà marqué `notifiee: true`) : un échec y fige le curseur, et le
+//      passage suivant ne rejoue plus rien (le corps d'un message LinkedIn arrive avec lui, le cas ne se présente que pour un message sans texte) ; le choix de l'appelant
+//      de ne pas compter une notification échouée comme échec du passage (unitaire seulement) ; la garde `do_not_contact` de `enrollContact` / `inscrireContact` reste prouvée par 96 ;
+//      `sequence.ts:947` (inscription de TEST de l'opérateur sur sa propre adresse) n'a volontairement AUCUNE garde : elle lève même `do_not_contact` pour ce contact-là ;
+//      l'index 20261016130000 (son propre contrôle de forme échoue à la pose, mais le planificateur n'est pas observé).
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 //   6b (sens inverse, tache 12) : même migration, assouplir en `num_nonnulls(...) <= 1` pour TOUS les kinds (la relève sans origine passe, mais
 //      aussi la collecte) : la migration se verifie elle-meme et echoue d'abord (MIGRATION_FAIL, constate le 16/10) ; en relachant AUSSI son
 //      controle final (les deux `raise` kind nul / kind fiche), 42 et 43 (profil ET fiche) rougissent : OBSERVE le 16/10 : 42, 43 profil, 43 fiche (trois lignes rouges).
+import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
@@ -117,6 +131,11 @@ import {
   regler,
   prochainEnvoiLinkedIn,
   rejouerClassement,
+  notifierReponseEntrante,
+  balayerReponsesNonNotifiees,
+  listerFils,
+  importerCsv,
+  ajouterDepuisListe,
 } from './_releve-linkedin-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -1630,9 +1649,226 @@ async function parcoursComplet() {
   check('203 UNE seule ligne dans thread_messages pour cette reponse (et le fil ne compte que l entrante et elle)', toutes === 1 && total === 2, `${toutes} / ${total}`);
 }
 
+// Revue finale (16/10), 204 a 224 : ce qu'aucune tache ne portait isolement. Organisations propres a la section (W : jours et
+// heures de la releve ; N : filet des notifications ; G : gardes d'inscription ; L : liste de la Reception).
+const piloteDeLaReleve = (moi, conversation, publicId) => ({
+  aller: async () => undefined, url: async () => 'https://www.linkedin.com/feed/', saisir: async () => undefined, presserEntree: async () => undefined,
+  texte: async () => '', attendre: async () => true, effacerCookies: async () => undefined, fermer: async () => undefined,
+  requete: async (u) => {
+    const nu = moi.replace('urn:li:fsd_profile:', '');
+    if (u === 'https://www.linkedin.com/voyager/api/me') {
+      return { statut: 200, corps: JSON.stringify({ data: { '*miniProfile': `urn:li:fs_miniProfile:${nu}` }, included: [{ entityUrn: `urn:li:fs_miniProfile:${nu}`, publicIdentifier: publicId }] }) };
+    }
+    if (u === urlConversations(moi, 20)) return { statut: 200, corps: JSON.stringify({ data: { messengerConversationsX: conversation } }) };
+    throw new Error(`requete non prevue : ${u}`);
+  },
+});
+const conversationDe = (moi, idm, de, url, quand, texte) => ({
+  entityUrn: `urn:li:msg_conversation:c-${idm}`, lastActivityAt: quand, groupChat: false,
+  conversationParticipants: [
+    { hostIdentityUrn: moi, participantType: { member: { profileUrl: 'https://www.linkedin.com/in/moi-section' } } },
+    { hostIdentityUrn: `urn:li:fsd_profile:${de}`, participantType: { member: { profileUrl: url } } },
+  ],
+  messages: { elements: [{ entityUrn: `urn:li:msg_message:${idm}`, deliveredAt: quand, sender: { hostIdentityUrn: `urn:li:fsd_profile:${de}` }, body: { text: texte } }] },
+});
+
+async function releveHorsJoursEtHoraires() {
+  const ORG_W = '00000000-0000-0000-0000-0000000000f2';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org W', 'org-w')`, [ORG_W]);
+  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [ORG_W]);
+  const MOI = 'urn:li:fsd_profile:ACoAAmoi-w';
+  const heureParis = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Paris' }).format(new Date())) % 24;
+  const jourParis = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Europe/Paris' }).format(new Date())];
+  const sansAujourdhui = [1, 2, 3, 4, 5, 6, 7].filter((j) => j !== jourParis);
+  // Plage HORAIRE ouverte toute la journee, mais le jour d'aujourd'hui ABSENT de send_days : c'est le « samedi » de la revue.
+  await q(
+    `insert into linkedin_settings (organization_id, send_from_hour, send_to_hour, send_days, timezone) values ($1, 0, 24, $2::int[], 'Europe/Paris')`,
+    [ORG_W, sansAujourdhui],
+  );
+  let ouvertures = 0;
+  const pilote = piloteDeLaReleve(MOI, { elements: [] }, 'moi-w');
+  const deps = { pool, env: { JAY_REACH_LINKEDIN: '1' }, ouvrirNavigateur: async () => { ouvertures += 1; return pilote; }, releverSortie: async () => ({ ip: '203.0.113.7' }) };
+  await traiterReleveLinkedIn(deps, { organizationId: ORG_W });
+  const etatW = await lireEtat(pool, ORG_W);
+  check('204 la releve tourne un jour absent de send_days (les jours ne la bornent pas) : navigateur ouvert, curseur pose', ouvertures === 1 && etatW.curseur !== null, JSON.stringify({ ouvertures, etatW, jourParis }));
+
+  // Paire : au MEME instant, un envoi de sequence est refuse par les memes reglages (la garde de jours existe bel et bien pour lui).
+  const c = id(950);
+  await q(`insert into contacts (id, organization_id, email, linkedin_url) values ($1, $2, 'w@example.test', 'https://www.linkedin.com/in/w-950')`, [c, ORG_W]);
+  await q(
+    `insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, message_body, method, status, origine, scheduled_for)
+     values ($1, $2, 'https://www.linkedin.com/in/w-950', 'message', 'relance', 'serveur', 'pending', 'sequence', now() - interval '1 day')`,
+    [ORG_W, c],
+  );
+  const envoi = await reclamerProchaineAction(pool, ORG_W, new Date());
+  check('205 paire : au meme instant, une ligne de sequence est refusee (hors jours d envoi) alors que la releve a tourne', envoi.action === null && envoi.motif !== null, JSON.stringify(envoi));
+
+  // Hors plage HORAIRE : la releve ne s'ouvre pas (le critere de nuit reste).
+  const [de, a] = heureParis <= 20 ? [heureParis + 2, heureParis + 3] : [heureParis - 3, heureParis - 2];
+  await q(`update linkedin_settings set send_from_hour = $2, send_to_hour = $3 where organization_id = $1`, [ORG_W, de, a]);
+  await traiterReleveLinkedIn(deps, { organizationId: ORG_W });
+  check('205b la plage horaire reste respectee : hors des heures reglees, la releve ne s ouvre pas', ouvertures === 1, `${ouvertures} (heure ${heureParis}, plage ${de}-${a})`);
+}
+
+async function filetDesNotifications() {
+  const ORG_N = '00000000-0000-0000-0000-0000000000f3';
+  const ORG_X = '00000000-0000-0000-0000-0000000000f4';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org N', 'org-n'), ($2, 'Org X', 'org-x')`, [ORG_N, ORG_X]);
+  await q(`insert into linkedin_server_sessions (organization_id, status) values ($1, 'active')`, [ORG_N]);
+  await q(`insert into auth.users (id, email) values ($1, 'membre-n@example.test')`, [id(9300)]);
+  await q(`insert into memberships (organization_id, user_id, role) values ($1, $2, 'admin'), ($3, $2, 'admin')`, [ORG_N, id(9300), ORG_X]);
+  await q(`insert into linkedin_settings (organization_id, send_from_hour, send_to_hour, send_days, timezone) values ($1, 0, 24, '{1,2,3,4,5,6,7}', 'Europe/Paris')`, [ORG_N]);
+  const contact = (n, org) => q(`insert into contacts (id, organization_id, email, linkedin_provider_id) values ($1, $2, $3, $4)`, [id(n), org, `n${n}@example.test`, `ACoAAnotif${n}`]);
+  await contact(951, ORG_N); await contact(952, ORG_N); await contact(953, ORG_N); await contact(954, ORG_X);
+  const MOI = 'urn:li:fsd_profile:ACoAAmoi-n';
+  const conversation = { elements: [] };
+  const pilote = piloteDeLaReleve(MOI, conversation, 'moi-n');
+  const deps = { pool, env: { JAY_REACH_LINKEDIN: '1' }, ouvrirNavigateur: async () => pilote, releverSortie: async () => ({ ip: '203.0.113.7' }) };
+  const releve = () => traiterReleveLinkedIn(deps, { organizationId: ORG_N });
+  const notifs = async (org = ORG_N) => Number((await q(`select count(*) as n from notifications where organization_id = $1 and event = 'contact.replied'`, [org])).rows[0].n);
+  const marque = async (pm) => (await q(`select m.raw ->> 'notifiee' as n from thread_messages m where m.provider_message_id = $1`, [pm])).rows[0]?.n ?? null;
+  const recu = () => Date.now() + 1000;
+
+  await releve(); // boite vide : pose le compte et le curseur
+  const vu = (await q(`select account_urn, account_seen_at > now() - interval '5 minutes' as recent from linkedin_server_sessions where organization_id = $1`, [ORG_N])).rows[0];
+  check('206 la releve renseigne le compte vu (account_urn, account_seen_at) : l ecran Reglages > LinkedIn dit vrai', vu.account_urn === MOI && vu.recent === true, JSON.stringify(vu));
+
+  // 207. Le chemin nominal : le message est enregistre, notifie, et marque.
+  conversation.elements = [conversationDe(MOI, 'n1', 'ACoAAnotif951', 'https://www.linkedin.com/in/n951', recu(), 'Oui, appelez-moi')];
+  await releve();
+  check('207 une reponse relevee est notifiee une fois ET marquee notifiee (marque ecrite avec la notification)', (await notifs()) === 1 && (await marque('urn:li:msg_message:n1')) === 'true', `${await notifs()} / ${await marque('urn:li:msg_message:n1')}`);
+
+  // 208. Le filet : un message enregistre sans notification (marque false), comme apres un echec definitif d'autrefois.
+  await recordInboundReply(pool, ORG_N, { contactId: id(952), channel: 'linkedin_message', body: 'Perdue, jamais notifiee', providerMessageId: 'urn:li:msg_message:perdue', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
+  check('208a pre : le message est en base, marque non notifiee, aucune notification de plus', (await marque('urn:li:msg_message:perdue')) === 'false' && (await notifs()) === 1);
+  conversation.elements = [];
+  await releve();
+  const corps = (await q(`select payload ->> 'body' as b from notifications where organization_id = $1 and event = 'contact.replied' order by sent_at desc limit 1`, [ORG_N])).rows[0]?.b;
+  check('208 le balayage notifie la reponse restee sans notification, meme quand la boite est vide, et leve la marque', (await notifs()) === 2 && (await marque('urn:li:msg_message:perdue')) === 'true' && corps === 'Perdue, jamais notifiee', `${await notifs()} / ${await marque('urn:li:msg_message:perdue')} / ${corps}`);
+  await releve();
+  check('209 le balayage est idempotent : un passage de plus ne notifie plus rien', (await notifs()) === 2, String(await notifs()));
+
+  // 210. LE scenario de la revue : la base refuse la notification APRES l'enregistrement du message.
+  await q(`create or replace function jr_test_refuse_notifs() returns trigger language plpgsql as $$ begin raise exception 'notifications indisponibles'; end $$`);
+  await q(`create trigger jr_test_refuse before insert on notifications for each row execute function jr_test_refuse_notifs()`);
+  const ancien = new Date(Date.now() - 2 * 3_600_000);
+  await q(`update linkedin_server_sessions set releve_curseur_at = $2 where organization_id = $1`, [ORG_N, ancien]);
+  conversation.elements = [conversationDe(MOI, 'n2', 'ACoAAnotif953', 'https://www.linkedin.com/in/n953', recu(), 'Je suis interesse')];
+  const panne = await erreur(releve());
+  const curseurApres = (await lireEtat(pool, ORG_N)).curseur;
+  check('210 une notification que la base refuse ne fige pas le curseur et ne leve pas : le message reste a notifier', panne === null && curseurApres.getTime() > ancien.getTime() + 60_000 && (await marque('urn:li:msg_message:n2')) === 'false' && (await notifs()) === 2,
+    JSON.stringify({ panne: panne?.message, curseurApres, marque: await marque('urn:li:msg_message:n2'), notifs: await notifs() }));
+  await releve(); // le message est maintenant CONNU (isNew false) : sans filet, il ne serait jamais notifie
+  check('211 toujours en panne : toujours en attente, jamais perdu, jamais de doublon', (await marque('urn:li:msg_message:n2')) === 'false' && (await notifs()) === 2);
+  await q(`drop trigger jr_test_refuse on notifications`);
+  await releve();
+  check('212 la base revient : la reponse est notifiee au passage suivant, alors que le message etait deja connu (isNew false)', (await notifs()) === 3 && (await marque('urn:li:msg_message:n2')) === 'true', `${await notifs()} / ${await marque('urn:li:msg_message:n2')}`);
+
+  // 213. Atomicite : la marque et la notification partent ensemble ou pas du tout.
+  await recordInboundReply(pool, ORG_N, { contactId: id(951), channel: 'linkedin_message', body: 'Atomique', providerMessageId: 'urn:li:msg_message:atome', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
+  await q(`create trigger jr_test_refuse before insert on notifications for each row execute function jr_test_refuse_notifs()`);
+  const refus = await erreur(notifierReponseEntrante(pool, ORG_N, 'urn:li:msg_message:atome', 'x'));
+  await q(`drop trigger jr_test_refuse on notifications`);
+  check('213 une notification qui echoue defait la marque (une seule transaction) : le message reste a notifier', refus !== null && (await marque('urn:li:msg_message:atome')) === 'false', String(refus?.message));
+  const deux = await Promise.all([notifierReponseEntrante(pool, ORG_N, 'urn:li:msg_message:atome', 'x'), notifierReponseEntrante(pool, ORG_N, 'urn:li:msg_message:atome', 'x')]);
+  check('214 deux balayages concurrents : UNE seule notification (le second attend le verrou puis ne trouve plus la marque)', deux.filter(Boolean).length === 1 && (await notifs()) === 4, JSON.stringify([deux, await notifs()]));
+
+  // 215. Le balayage reste dans son organisation.
+  await recordInboundReply(pool, ORG_X, { contactId: id(954), channel: 'linkedin_message', body: 'Autre org', providerMessageId: 'urn:li:msg_message:autre', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
+  const faites = await balayerReponsesNonNotifiees(pool, ORG_N);
+  check('215 le balayage d une organisation ne notifie pas, et ne marque pas, les reponses d une autre', faites === 0 && (await marque('urn:li:msg_message:autre')) === 'false' && (await notifs(ORG_X)) === 0, `${faites} / ${await marque('urn:li:msg_message:autre')} / ${await notifs(ORG_X)}`);
+}
+
+async function receptionEtOppositions() {
+  // 216 a 218 : l'apercu de la liste ne remonte que le message EN COURS d'envoi, pas un echec fige.
+  const ORG_L = '00000000-0000-0000-0000-0000000000f5';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org L', 'org-l')`, [ORG_L]);
+  const ctx = { ex: pool, organisationId: ORG_L, utilisateurId: null, role: 'viewer' };
+  const fil = async (n, messages) => {
+    await q(`insert into contacts (id, organization_id, email) values ($1, $2, $3)`, [id(n), ORG_L, `l${n}@example.test`]);
+    const t = (await q(`insert into threads (organization_id, contact_id, channel, classification, last_message_at, is_read) values ($1, $2, 'linkedin_message', 'human_reply', now(), false) returning id`, [ORG_L, id(n)])).rows[0].id;
+    for (const [dir, corps, sent, raw] of messages) {
+      await q(`insert into thread_messages (thread_id, direction, body, sent_at, raw) values ($1, $2, $3, $4::timestamptz, $5::jsonb)`, [t, dir, corps, sent, JSON.stringify(raw)]);
+    }
+    return t;
+  };
+  const apercu = async (t) => (await listerFils(ctx, {})).fils.find((f) => f.id === t)?.apercu;
+  const echoue = await fil(960, [['out', 'Ma reponse echouee', null, { etat: 'echec', code: 'x' }], ['in', 'La nouvelle reponse du prospect', '2026-10-16T10:00:00Z', {}]]);
+  check('216 un message ECHOUE (sent_at nul pour toujours) ne remonte plus devant une reponse plus recente du prospect', (await apercu(echoue)) === 'La nouvelle reponse du prospect', String(await apercu(echoue)));
+  const aVerifier = await fil(961, [['out', 'Ma reponse a verifier', null, { etat: 'a_verifier', code: 'x' }], ['in', 'La reponse recente', '2026-10-16T10:00:00Z', {}]]);
+  check('216b meme chose pour un message a verifier', (await apercu(aVerifier)) === 'La reponse recente', String(await apercu(aVerifier)));
+  const enCours = await fil(962, [['in', 'Une reponse du prospect', '2026-10-16T10:00:00Z', {}], ['out', 'Ma reponse en cours d envoi', null, { etat: 'en_cours', queue_id: 'q' }]]);
+  check('217 paire : un message EN COURS d envoi reste l apercu du fil (il vient d etre ecrit)', (await apercu(enCours)) === 'Ma reponse en cours d envoi', String(await apercu(enCours)));
+  const dates = await fil(963, [['in', 'Plus ancien', '2026-10-15T10:00:00Z', {}], ['out', 'Plus recent', '2026-10-16T10:00:00Z', {}]]);
+  check('218 les messages dates gardent l ordre chronologique', (await apercu(dates)) === 'Plus recent', String(await apercu(dates)));
+}
+
+async function nePlusContacterAdresseSaisie() {
+  const ORG_P = '00000000-0000-0000-0000-0000000000f6';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org P', 'org-p')`, [ORG_P]);
+  const ctx = { ex: pool, organisationId: ORG_P, utilisateurId: null, role: 'operator' };
+  const adresses = async (n) => (await q(`select value from suppressions where organization_id = $1 and scope = 'linkedin' and reason = 'operator_do_not_contact' and value ilike $2`, [ORG_P, `%${n}%`])).rows.map((r) => r.value);
+  const nouveau = (n, url, provider) => q(`insert into contacts (id, organization_id, email, linkedin_url, linkedin_provider_id) values ($1, $2, $3, $4, $5)`, [id(n), ORG_P, `p${n}@example.test`, url, provider ?? null]);
+  await nouveau(970, 'https://www.linkedin.com/pub/jean-dupont970/1/2/3');
+  await nePlusContacter(ctx, { contactId: id(970) });
+  check('219 une adresse SAISIE que normaliserUrlProfil refuse (/pub/) est quand meme opposee, telle que saisie', (await adresses('dupont970')).length === 1, JSON.stringify(await adresses('dupont970')));
+  await nouveau(971, 'https://www.linkedin.com/company/acme971');
+  await nePlusContacter(ctx, { contactId: id(971) });
+  check('219b une page societe saisie est opposee aussi', (await adresses('acme971')).length === 1, JSON.stringify(await adresses('acme971')));
+  await nouveau(972, 'https://fr.linkedin.com/in/Paul-Martin972/?trk=x');
+  await nePlusContacter(ctx, { contactId: id(972) });
+  const v = await adresses('martin972');
+  check('220 paire : une adresse valide reste opposee sous sa forme normalisee, sans doublon brut', v.length === 1 && v[0] === 'https://www.linkedin.com/in/Paul-Martin972', JSON.stringify(v));
+  await nouveau(973, null, 'ACoAAfabrique973');
+  await nePlusContacter(ctx, { contactId: id(973) });
+  check('221 une adresse DEDUITE d un identifiant reste validee : jamais fabriquee pour un identifiant non reconnu (FullEnrich)', (await adresses('973')).length === 0 || (await adresses('973')).every((x) => x.includes('ACoAAfabrique973')), JSON.stringify(await adresses('973')));
+  await nouveau(974, '   ');
+  await nePlusContacter(ctx, { contactId: id(974) });
+  check('221b une adresse blanche ne pose rien', (await q(`select count(*)::int as n from suppressions where organization_id = $1 and scope = 'linkedin' and value = '   '`, [ORG_P])).rows[0].n === 0);
+}
+
+async function gardesDInscription() {
+  const ORG_G = '00000000-0000-0000-0000-0000000000f7';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org GI', 'org-gi')`, [ORG_G]);
+  const ctx = { ex: pool, organisationId: ORG_G, utilisateurId: null, role: 'operator' };
+  const camp = (await q(`insert into campaigns (organization_id, name, status) values ($1, 'Camp G', 'active') returning id`, [ORG_G])).rows[0].id;
+  const statut = async (n) => (await q(`select count(*)::int as n from enrollments where organization_id = $1 and contact_id = $2`, [ORG_G, id(n)])).rows[0].n;
+  // Import CSV : l'adresse du fichier est celle d'un contact EXCLU (le `do update` de l'import ne touche pas son statut).
+  await q(`insert into contacts (id, organization_id, email, first_name, status) values ($1, $2, 'exclu-csv@example.test', 'Exclu', 'do_not_contact'), ($3, $2, 'ok-csv@example.test', 'Ok', 'active')`, [id(980), ORG_G, id(981)]);
+  await importerCsv(ctx, {
+    campagneId: camp, nom: 'Import G', fileName: 'g.csv',
+    parsed: { headers: ['Prenom', 'Email'], rows: [{ Prenom: 'Exclu', Email: 'exclu-csv@example.test' }, { Prenom: 'Ok', Email: 'ok-csv@example.test' }] },
+    mapping: { Prenom: 'first_name', Email: 'email' },
+  });
+  check('222 import CSV : un contact exclu que le fichier reimporte n entre dans aucune campagne', (await statut(980)) === 0, String(await statut(980)));
+  check('222b paire : le contact actif du meme fichier est bien inscrit', (await statut(981)) === 1, String(await statut(981)));
+
+  // Inscription depuis une liste : la reponse arrive ENTRE la lecture des candidats et l'insertion (course simulee sur le vrai SQL).
+  const liste = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1, 'Liste G', 'Liste G', 'import') returning id`, [ORG_G])).rows[0].id;
+  await q(`insert into contacts (id, organization_id, email, status) values ($1, $2, 'course@example.test', 'active'), ($3, $2, 'calme@example.test', 'active')`, [id(982), ORG_G, id(983)]);
+  await q(`insert into list_members (list_id, contact_id) values ($1, $2), ($1, $3)`, [liste, id(982), id(983)]);
+  const exCourse = { query: async (sql, params) => {
+    const r = await pool.query(sql, params);
+    if (String(sql).includes('jr:sources_liste_candidats')) await pool.query(`update contacts set status = 'do_not_contact' where id = $1`, [id(982)]);
+    return r;
+  } };
+  const res = await ajouterDepuisListe({ ...ctx, ex: exCourse }, { campagneId: camp, listId: liste });
+  check('223 inscription depuis une liste : un contact devenu exclu entre la lecture et l insertion n est pas inscrit', (await statut(982)) === 0, JSON.stringify([res, await statut(982)]));
+  check('223b paire : l autre contact de la liste est inscrit', (await statut(983)) === 1 && res.ajoutes === 1, JSON.stringify([res, await statut(983)]));
+}
+
+async function migrationRejouable() {
+  // 224 : la migration du lot se rejoue sur une base ou la releve a deja pose des curseurs (elle l'a fait, ci-dessus). Le controle de
+  // pre-remplissage ne vaut que pour une colonne creee par CETTE execution.
+  const curseurs = (await q(`select count(*)::int as n from linkedin_server_sessions where releve_curseur_at is not null`)).rows[0].n;
+  const sql = readFileSync(new URL('../../supabase/migrations/20261016100000_linkedin_releve.sql', import.meta.url), 'utf8');
+  const e = await erreur(pool.query(sql));
+  check('224 la migration 20261016100000 se rejoue sans erreur alors que des curseurs de releve existent', curseurs > 0 && e === null, `${curseurs} curseurs ; ${e?.message}`);
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif, parcoursComplet);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif, parcoursComplet, releveHorsJoursEtHoraires, filetDesNotifications, receptionEtOppositions, nePlusContacterAdresseSaisie, gardesDInscription, migrationRejouable);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

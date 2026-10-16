@@ -1,6 +1,6 @@
 // Point d'entrée du bundle de releve-linkedin.sh : réexporte, sans les modifier, les fonctions de
 // production dont le SQL est exécuté par le harnais.
-export { enqueueReleveLinkedIn, ecrireEtat, lireEtat, rattacher, traiterReleveLinkedIn, contactsSansUrn, REQUETES_PAR_RELEVE } from '../../apps/worker/src/handlers/releve-linkedin.js';
+export { notifierReponseEntrante, balayerReponsesNonNotifiees, enqueueReleveLinkedIn, ecrireEtat, lireEtat, rattacher, traiterReleveLinkedIn, contactsSansUrn, REQUETES_PAR_RELEVE } from '../../apps/worker/src/handlers/releve-linkedin.js';
 export { compterRequetesLinkedIn, lirePlafondLinkedIn, tracerRequeteMessagerie } from '@jay-reach/core';
 export { urlConversations } from '../../apps/worker/src/linkedin/messagerie.js';
 export { enregistrerMessageSortant, toucherDernierMessage } from '@jay-reach/core';
@@ -16,3 +16,6 @@ export { reparerLignesCoincees } from '../../packages/core/src/linkedin/file.js'
 export { regler } from '../../apps/worker/src/handlers/envoi-linkedin.js';
 // Tâche 10 : le rejeu du classement sur l'existant.
 export { rejouerClassement } from '@jay-reach/core';
+// Revue finale : la liste de la Réception (aperçu du dernier message), la relève hors jours d'envoi et le filet des notifications,
+// l'import CSV et l'inscription depuis une liste (garde d'entrée), le compte vu par la relève.
+export { listerFils, importerCsv, ajouterDepuisListe } from '@jay-reach/core';
