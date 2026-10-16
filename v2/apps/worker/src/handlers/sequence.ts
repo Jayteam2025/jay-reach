@@ -927,9 +927,18 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
         echeanceEtapeSuivante(new Date(candidat.resume_at).getTime(), candidat.id, delayHeures ?? 0) ??
         new Date(candidat.resume_at).getTime();
       const cle = actionIdempotencyKey(candidat.id, etapeId);
+      // L'état de retour N'EST PAS toujours `scheduled` : une action bloquée alors que l'accord
+      // d'un humain était exigé doit retourner dans la FILE, pas en partance. Le tick écrit
+      // `requiresApproval` dans le payload au moment du blocage `post_a_relire`
+      // (`apps/worker/src/handlers/sequence.ts`), et les trois chemins qui débloquent une action
+      // lisent le même drapeau — celui-ci, la relance de `validerPost`, et le retour d'absence.
+      // Pour tout autre motif il est absent du payload, donc rien ne change : c'est ce qui rend
+      // cette lecture sûre.
       const rejeu = await pool.query(
         `update actions
-            set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
+            set status = case when coalesce((payload ->> 'requiresApproval')::boolean, false)
+                              then 'pending_approval'::action_status else 'scheduled'::action_status end,
+                scheduled_for = $3, error = null, block_reason = null
           where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
         [cle, candidat.organization_id, new Date(echeanceRejeu).toISOString()],
       );

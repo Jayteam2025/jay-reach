@@ -1176,9 +1176,18 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
     // manuelle, c'est le redémarrage que l'opérateur vient de demander.
     // Toujours tentée (aucun cas particulier à coder) : sans ligne bloquée à
     // rejouer, elle ne matche simplement aucune ligne côté vraie base.
+      // L'état de retour N'EST PAS toujours `scheduled` : une action bloquée alors que l'accord
+      // d'un humain était exigé doit retourner dans la FILE, pas en partance. Le tick écrit
+      // `requiresApproval` dans le payload au moment du blocage `post_a_relire`
+      // (`apps/worker/src/handlers/sequence.ts`), et les trois chemins qui débloquent une action
+      // lisent le même drapeau — celui-ci, la relance de `validerPost`, et le retour d'absence.
+      // Pour tout autre motif il est absent du payload, donc rien ne change : c'est ce qui rend
+      // cette lecture sûre.
     await ctx.ex.query(
       `update actions /* jr:reprendre_action */
-          set status = 'scheduled', scheduled_for = $3, error = null, block_reason = null
+          set status = case when coalesce((payload ->> 'requiresApproval')::boolean, false)
+                            then 'pending_approval'::action_status else 'scheduled'::action_status end,
+              scheduled_for = $3, error = null, block_reason = null
         where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
       [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId, new Date(instantDeReprise).toISOString()],
     );

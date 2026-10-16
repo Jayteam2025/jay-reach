@@ -26,6 +26,9 @@ export { apercuEnvoi } from '../../packages/core/src/fonctions/file-du-jour.js';
 export { listerFileDuJour } from '../../packages/core/src/fonctions/campagnes.js';
 // Les deux rejeux LinkedIn et le rejeu email : eux aussi rendent le corps APRES coup.
 export { rejouerActionsEmailEnAttente, rejouerActionsLinkedInEnAttente, rejouerActionsLinkedInReprises } from '../../apps/worker/src/traitements.js';
+// Les DEUX autres chemins qui debloquent une action : ils ecrivaient `scheduled` en dur.
+export { reprendreAbsencesEchues } from '../../apps/worker/src/handlers/sequence.js';
+export { reprendreInscription } from '../../packages/core/src/fonctions/sequence.js';
 // Tache 9 : le scoring nourri du texte du post.
 export { runScore, compterSignauxScorables } from '../../apps/worker/src/handlers/score.js';
 export { buildScoringUserMessage } from '../../packages/core/src/scoring.js';

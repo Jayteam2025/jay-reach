@@ -826,6 +826,13 @@ describe('compterEntreesDuJour (revue F5, point 1, tour de correction 2)', () =>
   });
 });
 
+/**
+ * Le rejeu d'une action bloquée, reconnu par ce qu'il FAIT et non par l'état qu'il écrit : celui-ci
+ * se lit sur le payload (`pending_approval` quand l'accord d'un humain était exigé, `scheduled`
+ * sinon — le tick pose le drapeau au blocage `post_a_relire`).
+ */
+const REJEU_ACTION_ABSENCE = /update actions\s+set status = case when coalesce\(\(payload ->> 'requiresApproval'\)/i;
+
 describe('reprendreAbsencesEchues (F10)', () => {
   const STEP_ID_ABSENCE = 'etape-en-attente';
 
@@ -887,7 +894,9 @@ describe('reprendreAbsencesEchues (F10)', () => {
     // écriture : `deja_envoyee` remplace l'ancien filtre SQL sur
     // `message_id`, désormais une colonne calculée par ligne.
     const LIGNE_BLOQUEE = /select id, \(payload ->> 'message_id'\) is not null as deja_envoyee/i;
-    const REJEU_ACTION = /update actions\s+set status = 'scheduled'/i;
+    // L'état de retour se lit sur le payload (`pending_approval` si l'accord d'un humain était
+    // exigé, `scheduled` sinon) : le motif reconnaît le rejeu, pas l'état qu'il écrit.
+    const REJEU_ACTION = /update actions\s+set status = case when coalesce\(\(payload ->> 'requiresApproval'\)/i;
     const JOURNAL = /insert into audit_events/i;
     // Repli (étape supprimée pendant la pause) : ni délai à lire, ni action à
     // rejouer — sans lui, `next_action_at` resterait `null` pour toujours.
@@ -1050,7 +1059,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
 
     await reprendreAbsencesEchues(pool, now);
 
-    const rejeu = appels.find((a) => /update actions\s+set status = 'scheduled'/i.test(a.sql));
+    const rejeu = appels.find((a) => REJEU_ACTION_ABSENCE.test(a.sql));
     expect(rejeu).toBeDefined();
     // Le délai (48h) repart depuis le RETOUR, jamais `now()` : sinon le
     // message partirait le jour même de la reprise, exactement ce que la

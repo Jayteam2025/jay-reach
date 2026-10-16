@@ -125,6 +125,11 @@
 //  63. accroche-post.ts : ranger l'orpheline dans N'IMPORTE QUELLE catégorie du décompte (la
 //      compter en `en_attente`, ou retirer la condition de fiche qui la range en `inexploitable`)
 //      — 23b rougit dans les deux cas : il juge la SOMME, pas un compteur.
+//  64. apps/worker/src/handlers/sequence.ts : remettre `set status = 'scheduled'` en dur dans le
+//      rejeu de `reprendreAbsencesEchues` — 38a rougit : au retour d'absence, une action qui
+//      attendait l'accord d'un humain part sans lui.
+//  65. packages/core/src/fonctions/sequence.ts : la même chose dans `reprendreInscription` —
+//      38b rougit : la reprise à la main fait sauter la file d'attente.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -172,6 +177,8 @@ import {
   rejouerActionsEmailEnAttente,
   rejouerActionsLinkedInEnAttente,
   rejouerActionsLinkedInReprises,
+  reprendreAbsencesEchues,
+  reprendreInscription,
   rejeterPost,
   reouvrirPost,
   validerPost,
@@ -2542,6 +2549,92 @@ async function validerRelanceLesRetenues() {
     bloqueeAutrement?.block_reason === 'missing_variable' && apresN?.status === 'blocked', JSON.stringify([bloqueeAutrement, apresN]));
 }
 
+/**
+ * Les DEUX autres chemins qui débloquent une action, et l'état qu'ils lui rendent.
+ *
+ * `relacherLesRetenuesDuPost` ne voit que les inscriptions `active`. Deux autres chemins
+ * remettent la même action en marche, et ils écrivaient `scheduled` EN DUR :
+ * `reprendreInscription` (la reprise à la main) et `reprendreAbsencesEchues` (le retour
+ * d'absence). Le scénario tient debout : une action email parmi les trois premiers envois d'un
+ * gabarit, bloquée par un post non relu ; une réponse d'absence met l'inscription en pause ; on
+ * valide le post, mais la relance saute cette inscription puisqu'elle n'est plus `active` ; au
+ * retour, le rejeu la pose `scheduled`, plus rien ne la rebloque, et elle part SANS l'accord
+ * humain. C'est la règle non négociable n°1, par un chemin que la relance ne couvre pas.
+ *
+ * Pour tout autre motif le drapeau est absent du payload, donc rien ne change — c'est ce qui rend
+ * la correction sûre, et c'est la seconde moitié de ce que ces contrôles montrent.
+ */
+async function repriseRestitueLaFile() {
+  console.log('\n# les deux autres chemins de reprise rendent l\'action à l\'état où elle allait');
+  await demarrerBoss();
+
+  /** Une inscription dont l'action est bloquée, avec ou sans l'accord humain exigé. */
+  const monteBloquee = async (n, { approbation, motif }) => {
+    const m = await monde();
+    if (approbation) await q(`update campaigns set approval_policy = '{"mode":"all"}'::jsonb where id = $1`, [m.campagne]);
+    // `missing_variable` ne se pose qu'en LinkedIn : c'est le seul canal dont le tick rend le
+    // corps, l'email étant rendu à l'envoi. Monter ce cas en email donnerait une action JAMAIS
+    // bloquée, et un contrôle qui fabrique son état ne prouve rien.
+    const canal = motif === 'missing_variable' ? 'linkedin_message' : 'email';
+    const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal });
+    const p = await engageurDUnPost(m, n, { etat: 'pending' });
+    if (canal === 'email') {
+      await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob${n}-${Date.now()}@exemple.invalid`]);
+      await expediteurEmail(m.org, `exp${n}-${Date.now()}@exemple.invalid`);
+    }
+    await tourDInscription(m.org);
+    // Le motif voulu : l'accroche pour le post, une variable introuvable pour l'autre cas.
+    await q(`update message_templates set body = $2 where id = $1`,
+      [gabarit, motif === 'post_a_relire' ? ACCROCHE_URL : 'Bonjour, à {{ville}} ?']);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+    await tickDueEnrollments(pool, new Date());
+    const a = (await q(`select a.id, a.status, a.block_reason, a.payload, e.id as inscription
+                          from actions a join enrollments e on e.id = a.enrollment_id
+                         where a.organization_id = $1`, [m.org])).rows[0];
+    return { m, p, action: a };
+  };
+
+  // 1. LE RETOUR D'ABSENCE, avec l'accord humain exigé.
+  const abs = await monteBloquee(130, { approbation: true, motif: 'post_a_relire' });
+  check('38. l\'action est bloquée par le post, et le tick a noté que l\'accord humain était exigé',
+    abs.action?.block_reason === 'post_a_relire' && abs.action?.payload?.requiresApproval === true,
+    JSON.stringify([abs.action?.block_reason, abs.action?.payload]));
+  await validerPost(abs.m.ctx, { postId: abs.p.fiche, campagneId: abs.m.campagne });
+  await q(`update enrollments set status = 'paused_absence', resume_at = now() - interval '1 hour',
+              next_action_at = null where id = $1`, [abs.action.inscription]);
+  // La relance a sauté cette inscription (plus `active`) : on la remet bloquée, comme elle l'était.
+  await q(`update actions set status = 'blocked', block_reason = 'post_a_relire' where id = $1`, [abs.action.id]);
+  await reprendreAbsencesEchues(pool, new Date());
+  const apresAbs = (await q(`select status, block_reason from actions where id = $1`, [abs.action.id])).rows[0];
+  check('38a. au retour d\'absence, elle retourne dans la FILE D\'ATTENTE, pas en partance',
+    apresAbs?.status === 'pending_approval' && apresAbs?.block_reason === null, JSON.stringify(apresAbs));
+
+  // 2. LA REPRISE À LA MAIN, même exigence.
+  const rep = await monteBloquee(131, { approbation: true, motif: 'post_a_relire' });
+  await validerPost(rep.m.ctx, { postId: rep.p.fiche, campagneId: rep.m.campagne });
+  await q(`update enrollments set status = 'paused', next_action_at = null where id = $1`, [rep.action.inscription]);
+  await q(`update actions set status = 'blocked', block_reason = 'post_a_relire' where id = $1`, [rep.action.id]);
+  await reprendreInscription(rep.m.ctx, { inscriptionId: rep.action.inscription });
+  const apresRep = (await q(`select status, block_reason from actions where id = $1`, [rep.action.id])).rows[0];
+  check('38b. reprise à la main, même verdict : la file, pas la partance',
+    apresRep?.status === 'pending_approval' && apresRep?.block_reason === null, JSON.stringify(apresRep));
+
+  // 3. L'AUTRE MOITIÉ : sans drapeau, rien ne change. C'est ce qui rend la correction sûre.
+  for (const [cas, approbation] of [['un autre motif de blocage', false], ['sans accord exigé', false]]) {
+    const n = cas === 'un autre motif de blocage' ? 132 : 133;
+    const autre = await monteBloquee(n, { approbation, motif: cas === 'un autre motif de blocage' ? 'missing_variable' : 'post_a_relire' });
+    await q(`update enrollments set status = 'paused', next_action_at = null where id = $1`, [autre.action.inscription]);
+    await reprendreInscription(autre.m.ctx, { inscriptionId: autre.action.inscription });
+    const apres = (await q(`select status, block_reason from actions where id = $1`, [autre.action.id])).rows[0];
+    // Le motif de DÉPART est affirmé : sans lui, ce contrôle serait vert sur une action qui
+    // n'avait jamais été bloquée, et ne dirait rien de la reprise.
+    check(`38c. ${cas} : la reprise la repose PLANIFIÉE, comme avant`,
+      autre.action?.block_reason === (cas === 'un autre motif de blocage' ? 'missing_variable' : 'post_a_relire')
+        && apres?.status === 'scheduled' && apres?.block_reason === null,
+      `${JSON.stringify(apres)} / bloquée en ${autre.action?.block_reason}`);
+  }
+}
+
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */
 async function parLeLienHistorique(campagne, source) {
   await q(`delete from campaign_sources where campaign_id = $1 and source_id = $2`, [campagne, source]);
@@ -2600,7 +2693,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

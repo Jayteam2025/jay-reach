@@ -872,7 +872,11 @@ describe('reprendreInscription', () => {
         'org-1',
         new Date().toISOString(),
       ]);
-      expect(String(appelAction?.[0])).toMatch(/status\s*=\s*'scheduled'/i);
+      // L'état de retour se lit sur le payload : `pending_approval` quand l'accord d'un humain
+      // était exigé (le tick l'écrit au blocage `post_a_relire`), `scheduled` sinon — et ce cas-ci
+      // est un `email_gate`, qui ne porte pas le drapeau, donc il repart planifié.
+      expect(String(appelAction?.[0])).toMatch(/payload ->> 'requiresApproval'/);
+      expect(String(appelAction?.[0])).toMatch(/else 'scheduled'::action_status end/);
       expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
     } finally {
       vi.useRealTimers();
