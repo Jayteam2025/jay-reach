@@ -146,9 +146,13 @@
 //  69. file-du-jour.ts : retirer `approved` des trois filtres d'état — 40 et 40a rougissent :
 //      « Reporter » lève « Envoi introuvable » sur un envoi approuvé, et « Écarter » le laisse
 //      compté comme prévu.
-//  70. approbation.ts : faire diverger les deux écritures de la règle (retirer la clause
-//      `channels` du SQL, ou le `includes` du TypeScript) — 40b rougit en NOMMANT les politiques
-//      sur lesquelles elles ne disent plus la même chose.
+//  70. approbation.ts : faire diverger les deux écritures de la règle — 40b rougit en NOMMANT
+//      les entrées fautives. Trois façons, toutes vérifiées : retirer la clause `channels` du
+//      SQL ; revenir à l'opérateur permissif `jsonb ?` (les deux formes pathologiques
+//      `{"channels":{"email":true}}` et `{"channels":"email"}` divergent alors, et dans le
+//      mauvais sens — le SQL exige, le tick non) ; retirer le canal `letter` de
+//      `approbationExigeeHorsRelecture` (dix entrées rougissent, pour le seul canal que le dépôt
+//      dit non négociable).
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -200,7 +204,7 @@ import {
   reprendreInscription,
   reporterEnvoi,
   ecarterDuneCampagne,
-  policyRequiresApproval,
+  approbationExigeeHorsRelecture,
   sqlApprobationExigee,
   rejeterPost,
   reouvrirPost,
@@ -2892,39 +2896,46 @@ async function approuveVisibleParLesEcrans() {
     { channels: [] },
     { mode: 'all', channels: ['letter'] },
     { mode: 'none', channels: ['email', 'call'] },
+    // Les deux formes PATHOLOGIQUES sur lesquelles les écritures divergeaient : `jsonb ?`
+    // accepte les CLÉS d'un objet et lit un scalaire comme un tableau d'un élément, là où le
+    // tick refuse les deux. L'écart allait dans le mauvais sens — le SQL exigeait l'accord, le
+    // tick non, donc c'est le tick qui laissait partir. Elles restent dans la grille pour que la
+    // divergence ne revienne pas par une écriture future.
+    { channels: { email: true } },
+    { channels: 'email' },
+    { channels: 'letter' },
+    { channels: [1, 2] },
   ];
   const ecarts = [];
   for (const politique of politiques) {
-    for (const canal of ['email', 'linkedin_message', 'call']) {
+    // `letter` est DANS la grille : son terme vit maintenant des deux côtés
+    // (`approbationExigeeHorsRelecture`), et le garder d'un seul laissait le tick libre de cesser
+    // de l'exiger sans que rien ne rougisse — pour le seul canal que le dépôt dit non négociable.
+    for (const canal of ['email', 'linkedin_message', 'call', 'letter']) {
       const sql = (await q(
         `select ${sqlApprobationExigee('a', 'camp')} as exige
            from (select $1::jsonb as payload, $2::text as channel) a,
                 (select $3::jsonb as approval_policy) camp`,
         [JSON.stringify({}), canal, JSON.stringify(politique)],
       )).rows[0].exige === true;
-      const ts = policyRequiresApproval(politique, canal);
+      const ts = approbationExigeeHorsRelecture(canal, politique);
       if (sql !== ts) ecarts.push({ politique, canal, sql, ts });
     }
   }
-  check('40b. les deux écritures de la règle d\'approbation disent la même chose, politique par politique',
+  check('40b. les deux écritures de la règle d\'approbation disent la même chose, entrée par entrée',
     ecarts.length === 0, JSON.stringify(ecarts));
 
-  // Et les deux termes que le SQL ajoute, que le TypeScript ne connaît pas : le canal `letter`
-  // et le drapeau du payload. Sans eux, le contrôle ci-dessus serait vrai d'une expression
-  // amputée de la moitié de son travail.
-  const enPlus = (await q(
-    `select ${sqlApprobationExigee('a', 'camp')} as exige
-       from (select $1::jsonb as payload, 'letter'::text as channel) a, (select '{}'::jsonb as approval_policy) camp`,
-    [JSON.stringify({})],
-  )).rows[0].exige;
+  // Le SEUL terme que le SQL ajoute et que le tick ne peut pas connaître : le drapeau du payload,
+  // puisque c'est le tick lui-même qui l'écrit. Sans ce contrôle, 40b serait vrai d'une
+  // expression amputée de ce terme-là.
   const parLeDrapeau = (await q(
     `select ${sqlApprobationExigee('a', 'camp')} as exige
        from (select $1::jsonb as payload, 'email'::text as channel) a, (select '{}'::jsonb as approval_policy) camp`,
     [JSON.stringify({ requiresApproval: true })],
   )).rows[0].exige;
-  check('40c. le SQL ajoute ce que le TypeScript ne voit pas : le courrier, et le drapeau du blocage',
-    enPlus === true && parLeDrapeau === true && policyRequiresApproval({}, 'letter') === false,
-    JSON.stringify([enPlus, parLeDrapeau]));
+  check('40c. et le SQL ajoute le drapeau du blocage, que le tick ne peut pas connaître : il l\'écrit',
+    parLeDrapeau === true && approbationExigeeHorsRelecture('email', {}) === false,
+    JSON.stringify(parLeDrapeau));
 }
 
 /** Relie une campagne à une source par le SEUL lien historique `campaigns.source_id`. */

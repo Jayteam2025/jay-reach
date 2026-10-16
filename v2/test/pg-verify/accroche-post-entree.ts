@@ -30,7 +30,7 @@ export { rejouerActionsEmailEnAttente, rejouerActionsLinkedInEnAttente, rejouerA
 export { reprendreAbsencesEchues } from '../../apps/worker/src/handlers/sequence.js';
 export { reprendreInscription } from '../../packages/core/src/fonctions/sequence.js';
 // La regle d'approbation, dans ses DEUX formes : le harnais les compare sur un jeu de politiques.
-export { policyRequiresApproval, sqlApprobationExigee } from '../../packages/core/src/sequencer/approbation.js';
+export { approbationExigeeHorsRelecture, sqlApprobationExigee } from '../../packages/core/src/sequencer/approbation.js';
 // Les gestes d'ecran qui ignoraient l'etat `approved`.
 export { reporterEnvoi, ecarterDuneCampagne } from '../../packages/core/src/fonctions/file-du-jour.js';
 // Tache 9 : le scoring nourri du texte du post.

@@ -31,8 +31,30 @@ export function policyRequiresApproval(policy: unknown, channel: string): boolea
   if (!policy || typeof policy !== 'object') return false;
   const p = policy as { mode?: unknown; channels?: unknown };
   if (p.mode === MODE_POLITIQUE_TOUT) return true;
-  if (Array.isArray(p.channels) && p.channels.includes(channel)) return true;
+  // UN TABLEAU DE CHAÎNES, rien d'autre : c'est la forme stricte sur laquelle les deux écritures
+  // s'alignent. L'opérateur `jsonb ?` du SQL acceptait en plus les CLÉS d'un objet
+  // (`{"channels":{"email":true}}`) et un scalaire lu comme un tableau d'un élément
+  // (`{"channels":"email"}`) — deux entrées sur lesquelles le SQL exigeait l'accord quand le
+  // tick ne l'exigeait pas, donc deux entrées par lesquelles un message serait parti sans lui.
+  if (Array.isArray(p.channels) && p.channels.some((c) => c === channel)) return true;
   return false;
+}
+
+/**
+ * Ce que le TICK exige, hors du seuil des premiers envois : le miroir TypeScript EXACT de
+ * `sqlApprobationExigee`, moins le drapeau — qui n'existe pas encore au moment du tick, puisque
+ * c'est lui qui l'écrit.
+ *
+ * Le canal `letter` est ici, et pas seulement dans la forme SQL : c'est le seul canal dont la
+ * règle du dépôt dit qu'il n'est « jamais négociable » (règle non négociable n°1), et le garder
+ * d'un seul côté laissait le tick libre de cesser de l'exiger sans que rien ne rougisse.
+ *
+ * `lk_mode = 'manual'` reste chez l'appelant : il ne vit pas sur la campagne, et aucune des deux
+ * formes de ce fichier ne le connaît. Écart assumé, inatteignable aujourd'hui (une contrainte en
+ * base impose `mode = 'auto'`).
+ */
+export function approbationExigeeHorsRelecture(channel: string, policy: unknown): boolean {
+  return channel === CANAL_TOUJOURS_APPROUVE || policyRequiresApproval(policy, channel);
 }
 
 /**
@@ -45,7 +67,10 @@ export function policyRequiresApproval(policy: unknown, channel: string): boolea
  *    l'accord vient du seuil des premiers envois (`relecturePremiersEnvoisRequise`) — ce seuil
  *    compte les envois déjà partis, donc il ne se rejoue pas dans une mise à jour en masse.
  *  - le CANAL `letter`, toujours.
- *  - la POLITIQUE COURANTE, parce que le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE :
+ *  - la POLITIQUE COURANTE — lue sur la forme STRICTE, un tableau de chaînes : `jsonb ?` aurait
+ *    accepté en plus les clés d'un objet et un scalaire, là où le tick les refuse, et l'écart
+ *    allait dans le mauvais sens (le SQL exige, le tick non, donc c'est le tick qui laisse
+ *    partir). Elle compte parce que le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE :
  *    une politique posée depuis doit s'appliquer, sinon l'action repart sans l'accord désormais
  *    requis.
  *
@@ -58,7 +83,8 @@ export function sqlApprobationExigee(action: string, campagne: string): string {
   return `(coalesce((${action}.payload ->> 'requiresApproval')::boolean, false)
              or ${action}.channel = '${CANAL_TOUJOURS_APPROUVE}'
              or ${campagne}.approval_policy ->> 'mode' = '${MODE_POLITIQUE_TOUT}'
-             or ${campagne}.approval_policy -> 'channels' ? ${action}.channel::text)`;
+             or (jsonb_typeof(${campagne}.approval_policy -> 'channels') = 'array'
+                 and ${campagne}.approval_policy -> 'channels' @> to_jsonb(${action}.channel::text)))`;
 }
 
 /**

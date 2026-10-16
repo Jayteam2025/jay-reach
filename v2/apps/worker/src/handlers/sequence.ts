@@ -20,7 +20,7 @@ import {
   placesRestantes,
   runGuards,
   resolveSender,
-  policyRequiresApproval,
+  approbationExigeeHorsRelecture,
   sqlEtatApresDeblocage,
   shiftIntoBusinessHours,
   applyLeadTime,
@@ -1117,10 +1117,12 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     let missingLocale = false;
     if (step) {
       const ch = step.channel;
+      // Le canal `letter` et la politique viennent de `approbationExigeeHorsRelecture`, miroir
+      // TypeScript de `sqlApprobationExigee` : les deux écritures de la règle sont comparées par
+      // le harnais, ce qui n'était pas possible tant que le terme `letter` vivait ici seul.
       requiresApproval =
-        ch === 'letter' ||
-        (isLinkedIn(ch) && row.lk_mode === 'manual') ||
-        policyRequiresApproval(row.approval_policy, ch);
+        approbationExigeeHorsRelecture(ch, row.approval_policy) ||
+        (isLinkedIn(ch) && row.lk_mode === 'manual');
       // I2 (revue finale du 17/09) : les deux mécanismes se cumulent — l'un OU
       // l'autre suffit à mettre l'action en attente. Court-circuité si une
       // approbation est déjà requise, pour ne pas compter les envois déjà
