@@ -875,7 +875,9 @@ describe('reprendreInscription', () => {
       // L'état de retour se lit sur le payload : `pending_approval` quand l'accord d'un humain
       // était exigé (le tick l'écrit au blocage `post_a_relire`), `scheduled` sinon — et ce cas-ci
       // est un `email_gate`, qui ne porte pas le drapeau, donc il repart planifié.
-      expect(String(appelAction?.[0])).toMatch(/payload ->> 'requiresApproval'/);
+      expect(String(appelAction?.[0])).toMatch(/a\.payload ->> 'requiresApproval'/);
+      // Le drapeau est un MINIMUM : la politique courante et le canal `letter` durcissent aussi.
+      expect(String(appelAction?.[0])).toMatch(/camp\.approval_policy ->> 'mode' = 'all'/);
       expect(String(appelAction?.[0])).toMatch(/else 'scheduled'::action_status end/);
       expect(String(appelAction?.[0])).toMatch(/block_reason\s*=\s*null/i);
     } finally {

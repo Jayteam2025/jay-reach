@@ -474,10 +474,20 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
 async function relacherLesRetenuesDuPost(ctx: Contexte, postId: string): Promise<void> {
   await ctx.ex.query(
     `update actions a /* jr:relacher_retenues_du_post */
+      -- Le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE : c'est un MINIMUM, pas la
+      -- vérité du jour. Une politique passée à all depuis, ou un canal letter, exigent
+      -- l'accord maintenant. On pose donc pending_approval dès que l'un des trois le dit :
+      -- ça ne peut que durcir, jamais laisser partir davantage.
+      -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
+      -- partis, hors de portée d'une mise à jour en masse.)
         set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
-                          then 'pending_approval'::action_status else 'scheduled'::action_status end,
+                       or a.channel = 'letter'
+                       or camp.approval_policy ->> 'mode' = 'all'
+                       or camp.approval_policy -> 'channels' ? a.channel::text
+                     then 'pending_approval'::action_status else 'scheduled'::action_status end,
             block_reason = null
        from enrollments e
+       join campaigns camp on camp.id = e.campaign_id
        join signals s on s.id = e.signal_id and s.organization_id = e.organization_id
       where a.enrollment_id = e.id
         and a.organization_id = $1

@@ -1184,11 +1184,23 @@ export async function reprendreInscription(ctx: Contexte, entree: unknown): Prom
       // Pour tout autre motif il est absent du payload, donc rien ne change : c'est ce qui rend
       // cette lecture sûre.
     await ctx.ex.query(
-      `update actions /* jr:reprendre_action */
-          set status = case when coalesce((payload ->> 'requiresApproval')::boolean, false)
-                            then 'pending_approval'::action_status else 'scheduled'::action_status end,
+      `update actions a /* jr:reprendre_action */
+      -- Le drapeau dit ce qui était exigé AU MOMENT DU BLOCAGE : c'est un MINIMUM, pas la
+      -- vérité du jour. Une politique passée à all depuis, ou un canal letter, exigent
+      -- l'accord maintenant. On pose donc pending_approval dès que l'un des trois le dit :
+      -- ça ne peut que durcir, jamais laisser partir davantage.
+      -- (relecturePremiersEnvoisRequise n'est pas rejouée : elle compte les envois déjà
+      -- partis, hors de portée d'une mise à jour en masse.)
+          set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
+                       or a.channel = 'letter'
+                       or camp.approval_policy ->> 'mode' = 'all'
+                       or camp.approval_policy -> 'channels' ? a.channel::text
+                     then 'pending_approval'::action_status else 'scheduled'::action_status end,
               scheduled_for = $3, error = null, block_reason = null
-        where idempotency_key = $1 and organization_id = $2 and status in ('blocked', 'failed')`,
+         from enrollments e
+         join campaigns camp on camp.id = e.campaign_id
+        where a.enrollment_id = e.id
+          and a.idempotency_key = $1 and a.organization_id = $2 and a.status in ('blocked', 'failed')`,
       [actionIdempotencyKey(inscriptionId, etapeId), ctx.organisationId, new Date(instantDeReprise).toISOString()],
     );
     // LinkedIn : marque la ligne de file refusée comme REPRISE par un humain. Seule une ligne
