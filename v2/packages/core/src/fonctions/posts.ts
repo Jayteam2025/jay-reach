@@ -459,11 +459,24 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
  * `block_reason = 'post_a_relire'` seul : une action bloquée pour un autre motif
  * (`missing_variable`, `missing_locale`, un gate d'email) ne doit rien à la validation d'un post,
  * et la relâcher la ferait partir sans que sa cause ait été traitée.
+ *
+ * **L'état de retour n'est pas toujours `scheduled`.** La branche du post passe AVANT celle de
+ * l'approbation dans `composeTick` : une action qui aurait dû attendre l'accord d'un humain part
+ * quand même en `blocked`, et la relâcher en `scheduled` lui ferait sauter la file. Le tick écrit
+ * donc `requiresApproval` dans le payload au moment du blocage, et on restitue l'état où elle
+ * serait allée. Ce n'est pas qu'une affaire de courrier : une politique de campagne, ou les trois
+ * premiers envois d'un couple gabarit+version, l'exigent aussi en email (règle non négociable #1).
+ *
+ * Les actions bloquées par les gardes à l'ENVOI (`email-salesblink`, les deux rejeux LinkedIn)
+ * n'ont pas ce drapeau, et c'est juste : elles étaient déjà sorties de la file d'approbation —
+ * `scheduled` est bien l'état où elles retournent.
  */
 async function relacherLesRetenuesDuPost(ctx: Contexte, postId: string): Promise<void> {
   await ctx.ex.query(
     `update actions a /* jr:relacher_retenues_du_post */
-        set status = 'scheduled', block_reason = null
+        set status = case when coalesce((a.payload ->> 'requiresApproval')::boolean, false)
+                          then 'pending_approval'::action_status else 'scheduled'::action_status end,
+            block_reason = null
        from enrollments e
        join signals s on s.id = e.signal_id and s.organization_id = e.organization_id
       where a.enrollment_id = e.id

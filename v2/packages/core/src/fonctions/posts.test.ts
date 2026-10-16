@@ -90,7 +90,11 @@ describe('validerPost', () => {
     const relance = appels.find((a) => /jr:relacher_retenues_du_post/.test(a.sql))?.sql ?? '';
     expect(relance).toMatch(/block_reason = 'post_a_relire'/);
     expect(relance).toMatch(/a\.status = 'blocked'/);
-    expect(relance).toMatch(/set status = 'scheduled', block_reason = null/);
+    // L'état de retour n'est pas toujours `scheduled` : une action qui attendait l'accord d'un
+    // humain doit retourner dans la file, pas en partance (le tick a écrit le drapeau).
+    expect(relance).toMatch(/payload ->> 'requiresApproval'/);
+    expect(relance).toMatch(/then 'pending_approval'::action_status else 'scheduled'::action_status/);
+    expect(relance).toMatch(/block_reason = null/);
     expect(relance).toMatch(/e\.status = 'active'/);
     expect(relance).toMatch(/s\.linkedin_post_id = \$2::uuid/);
     // L'échéance de l'inscription n'est PAS posée : l'échéance et le rejeu ne visent jamais la

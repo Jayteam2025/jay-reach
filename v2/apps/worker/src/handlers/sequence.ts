@@ -1317,6 +1317,13 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
           : { messageBody }; // courrier : corps rendu localement
       // Blocage variable : on nomme les champs manquants (UI : regroupement).
       if (a.blockReason === 'missing_variable') payload.missingVariables = unresolvedVariables;
+      // Blocage par un post non relu : on garde l'état où l'action SERAIT allée sans lui.
+      // `requiresApproval` est décidé ici, avant `composeTick`, et la branche du post passe avant
+      // celle de l'approbation : sans cette trace, `relacherLesRetenuesDuPost` la relâcherait en
+      // `scheduled` et elle SAUTERAIT la file d'attente humaine. Ce n'est pas qu'une affaire de
+      // courrier : une politique de campagne, ou les trois premiers envois d'un couple
+      // gabarit+version, l'exigent aussi en email (règle non négociable #1).
+      if (a.blockReason === 'post_a_relire') payload.requiresApproval = requiresApproval;
       const ins = await pool.query<{ id: string }>(
         `insert into actions
            (organization_id, enrollment_id, step_id, channel, status, block_reason, scheduled_for, dispatch_after, payload, idempotency_key, template_id, sender_id)
