@@ -2035,7 +2035,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn.",
-      "linkedinFichePost": "Wachtrij voor het aanvullen van postfiches: opent een post opnieuw waarvan de fiche (auteur, tekst, datum) onvolledig bleef."
+      "linkedinFichePost": "Wachtrij voor het aanvullen van postfiches: opent een post opnieuw waarvan de fiche (auteur, tekst, datum) onvolledig bleef.",
+      "linkedinReleve": "Wachtrij voor het ophalen van LinkedIn-antwoorden: leest de inbox van het gekoppelde account en registreert de antwoorden van contacten."
     }
   },
   "motifsPause": {

@@ -2035,7 +2035,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation.",
-      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète."
+      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète.",
+      "linkedinReleve": "File de la relève des réponses LinkedIn : lit la messagerie du compte connecté et enregistre les réponses des contacts."
     }
   },
   "motifsPause": {

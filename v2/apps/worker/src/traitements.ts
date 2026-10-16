@@ -79,6 +79,7 @@ import {
 } from './handlers/collecte-linkedin.js';
 import { dependancesEnvoiReelles, traiterEnvoiLinkedIn, type EnvoiLinkedInJob } from './handlers/envoi-linkedin.js';
 import { dependancesFichePostReelles, traiterFichePost, type FichePostJob } from './handlers/fiche-post.js';
+import { dependancesReleveReelles, traiterReleveLinkedIn, type ReleveLinkedInJob } from './handlers/releve-linkedin.js';
 import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -118,6 +119,8 @@ export const FILES_BRANCHEES = [
   'linkedin.envoi',
   // Ouvre une page LinkedIn : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
   'linkedin.fiche-post',
+  // Ouvre le navigateur du serveur : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
+  'linkedin.releve',
   'retention.purge',
 ] as const;
 
@@ -128,7 +131,7 @@ export const FILES_BRANCHEES = [
  * (ou la collecte) serait détruite sans un message d'erreur. Elles restent à qui a un navigateur :
  * le worker permanent.
  */
-export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post'];
+export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post', 'linkedin.releve'];
 
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
@@ -1248,6 +1251,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
     case 'linkedin.fiche-post':
       return traiterFichePost(dependancesFichePostReelles(ctx.pool, ctx.encryptionKey), donnees as FichePostJob);
+    case 'linkedin.releve':
+      return traiterReleveLinkedIn(dependancesReleveReelles(ctx.pool), donnees as ReleveLinkedInJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

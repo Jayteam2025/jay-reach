@@ -749,6 +749,19 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string, 
 }
 
 /**
+ * Consigne UNE requête de la relève de messagerie, au moment où elle part : même table, même fenêtre
+ * horaire que la collecte, donc le même budget. Elle ne se rattache à aucun passage, action ni
+ * fiche (`kind = 'messagerie'` est le seul cas sans origine que la contrainte accepte).
+ */
+export async function tracerRequeteMessagerie(ctx: Pick<Contexte, 'ex' | 'organisationId'>): Promise<void> {
+  await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_messagerie_tracer */
+     values ($1, 'messagerie')`,
+    [ctx.organisationId],
+  );
+}
+
+/**
  * Consigne UNE requête d'ENVOI émise vers LinkedIn, au moment où elle part : même table, même
  * fenêtre horaire que la collecte (le compte est le même). L'action doit appartenir à
  * l'organisation, pour la même raison que `tracerRequeteLinkedIn` : le worker écrit avec la clé

@@ -2035,7 +2035,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed.",
-      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete."
+      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete.",
+      "linkedinReleve": "LinkedIn replies polling queue: reads the connected account's inbox and records contacts' replies."
     }
   },
   "motifsPause": {

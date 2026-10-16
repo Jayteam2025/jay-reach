@@ -69,6 +69,10 @@ export const QUEUES: readonly QueueDef[] = [
   // (`FILES_AVEC_NAVIGATEUR`). Un job de lot par organisation, `stately` comme l'envoi : un seul
   // navigateur à la fois par organisation. Deux reprises suffisent, une page illisible ne se corrige pas en insistant.
   { name: 'linkedin.fiche-post', descriptionKey: 'jobs.q.linkedinFichePost', retry: { retryLimit: 2, retryBackoff: true }, policy: 'stately' },
+  // Relève des réponses LinkedIn : ouvre le navigateur du serveur, exclue de la route cron (`FILES_AVEC_NAVIGATEUR`).
+  // Aucune reprise : c'est un sondage répété, le passage suivant rattrape (le curseur n'avance qu'après un succès).
+  // `stately` + clé de singleton = organisation : un seul navigateur à la fois par organisation.
+  { name: 'linkedin.releve', descriptionKey: 'jobs.q.linkedinReleve', retry: { retryLimit: 0, retryBackoff: false }, policy: 'stately' },
 ] as const;
 
 export const QUEUE_NAMES = QUEUES.map((q) => q.name);
