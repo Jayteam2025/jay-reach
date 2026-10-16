@@ -1125,6 +1125,22 @@ async function enEcoutant(f) {
  * Un tour complet de production des inscriptions : le producteur dépose, le traitement inscrit.
  * `limit` large car la requête balaie TOUTES les organisations du harnais d'un seul passage.
  */
+/**
+ * Un expéditeur email, OUVERT À TOUTE HEURE.
+ *
+ * `business_hours` par défaut vaut 9h-18h du lundi au vendredi (`heuresOuvrees`, `sequence.ts`) :
+ * hors de ce créneau, `runGuards` REPORTE l'envoi au lieu de composer l'action, et toute section
+ * qui observe une action email devient rouge — un harnais qui ne prouve rien la nuit, le week-end
+ * ou avant 9h n'est pas un harnais. Mesuré le 16/10 à 8h35 : quatre contrôles rouges et une
+ * section entière non jouée, pour une cause qui n'avait rien à voir avec le code.
+ */
+const expediteurEmail = async (org, nom) =>
+  q(
+    `insert into senders (organization_id, kind, identity, business_hours)
+     values ($1, 'email', $2, '{"startHour":0,"endHour":24,"days":[1,2,3,4,5,6,7]}'::jsonb)`,
+    [org, nom],
+  );
+
 async function tourDInscription(org) {
   await demarrerBoss();
   await enqueueEnrollments(boss, pool, { limit: 500 });
@@ -2162,7 +2178,7 @@ async function gardeALEnvoi() {
         await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob${n}@exemple.invalid`]);
         // Un expéditeur : sans lui le tick met l'inscription en pause AVANT d'insérer l'action,
         // et le contrôle du post relu n'observerait rien.
-        await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp${n}@exemple.invalid`]);
+        await expediteurEmail(m.org, `exp${n}@exemple.invalid`);
       }
       // 1. La campagne ne nomme aucun post : la personne s'inscrit, comme avant ce lot.
       await tourDInscription(m.org);
@@ -2253,7 +2269,7 @@ async function rienARelireNeRetientPas() {
   await etapeAvecCorps(m, ACCROCHE_URL_A_REPLI, { canal: 'email' });
   const p = await engageurDUnPost(m, 110, { etat: 'pending' });
   await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob110-${Date.now()}@exemple.invalid`]);
-  await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp110-${Date.now()}@exemple.invalid`]);
+  await expediteurEmail(m.org, `exp110-${Date.now()}@exemple.invalid`);
   await q(`update signals set linkedin_post_id = null where id = $1`, [p.signal_id]);
 
   check('35. la campagne nomme toujours le post : un repli ne désactive pas la relecture',
@@ -2392,7 +2408,7 @@ async function validerRelanceLesRetenues() {
   const gabarit = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email' });
   const p = await engageurDUnPost(m, 120, { etat: 'pending' });
   await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob120-${Date.now()}@exemple.invalid`]);
-  await q(`insert into senders (organization_id, kind, identity) values ($1, 'email', $2)`, [m.org, `exp120-${Date.now()}@exemple.invalid`]);
+  await expediteurEmail(m.org, `exp120-${Date.now()}@exemple.invalid`);
   // Une SECONDE personne, sur un AUTRE post, retenue elle aussi : valider le premier ne doit pas
   // la réveiller. `reprendreInscription`, le seul autre mécanisme de reprise du dépôt, s'appelle
   // par inscription et n'aurait pas cette borne — c'est pourquoi elle est écrite dans la requête.
