@@ -85,7 +85,7 @@
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 //   6b (sens inverse, tache 12) : même migration, assouplir en `num_nonnulls(...) <= 1` pour TOUS les kinds (la relève sans origine passe, mais
 //      aussi la collecte) : la migration se verifie elle-meme et echoue d'abord (MIGRATION_FAIL, constate le 16/10) ; en relachant AUSSI son
-//      controle final, 43 rougit pour chaque kind de collecte (profil, fiche) et 42 aussi (la trace sans nature ni origine passerait).
+//      controle final (les deux `raise` kind nul / kind fiche), 42 et 43 (profil ET fiche) rougissent : OBSERVE le 16/10 : 42, 43 profil, 43 fiche (trois lignes rouges).
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
