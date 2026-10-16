@@ -122,6 +122,9 @@
 //      une action qui attendait l'accord d'un humain saute la file d'attente.
 //  62. posts.ts : filtrer `listerPostsDeCampagne` sur `review_status = 'pending'` — 35h rougit :
 //      le lien de la File du jour mènerait à une liste qui a écarté le post à rouvrir.
+//  63. accroche-post.ts : ranger l'orpheline dans N'IMPORTE QUELLE catégorie du décompte (la
+//      compter en `en_attente`, ou retirer la condition de fiche qui la range en `inexploitable`)
+//      — 23b rougit dans les deux cas : il juge la SOMME, pas un compteur.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -1494,6 +1497,15 @@ async function fenetreReglable() {
     etats[f.id].reviewed_at === null && etats[f.id].reviewed_by === null, JSON.stringify([etats[f.id].reviewed_at, etats[f.id].reviewed_by]));
 }
 
+/**
+ * Ce que le décompte compte EN TOUT, toutes catégories confondues.
+ *
+ * Dérivé de l'objet rendu plutôt que d'une liste de champs recopiée : une catégorie qu'on
+ * rajouterait demain entre dans la somme sans qu'on y pense, ce qui est tout l'intérêt — c'est ce
+ * qu'un `=== undefined` sur un champ supprimé ne peut plus faire.
+ */
+const totalCompte = (d) => Object.values(d).filter((v) => typeof v === 'number').reduce((a, b) => a + b, 0);
+
 async function decompteLisible() {
   console.log('\n# le décompte : pourquoi personne ne part');
   const m = await monde();
@@ -1521,8 +1533,12 @@ async function decompteLisible() {
         and not exists (select 1 from enrollments e
                          where e.contact_id = ct.id and e.status in ('active', 'paused', 'paused_absence'))`,
     [orpheline.contact_id])).rowCount;
-  check('23b. la personne sans aucun post est dans la population, et n\'entre dans aucun compteur',
-    orphelineComptable === 1 && r.postInexploitable === 1 && r.enAttenteDeValidation === 1, JSON.stringify(r));
+  // L'assertion porte sur la SOMME, pas sur un compteur : répéter `postInexploitable === 1`
+  // referait 23c en double, et deux contrôles pour un fait ne valent pas mieux qu'un contrôle
+  // creux. La somme se dérive de l'objet rendu, jamais d'une liste recopiée — le jour où une
+  // catégorie réapparaît et attrape l'orpheline, elle entre dedans toute seule.
+  check('23b. la personne sans aucun post est dans la population, et n\'est comptée NULLE PART',
+    orphelineComptable === 1 && totalCompte(r) === 2, `${totalCompte(r)} comptée(s) sur 4 personnes — ${JSON.stringify(r)}`);
   check('23c. et celles dont la fiche est inexploitable', r.postInexploitable === 1, JSON.stringify(r));
 
   // Chaque compteur suit bien SA personne : on corrige une fiche à la fois, et un seul bouge.
