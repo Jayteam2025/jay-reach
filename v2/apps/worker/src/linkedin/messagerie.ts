@@ -26,6 +26,13 @@ export type Releve = {
   readonly entrants: readonly MessageReleve[];
   readonly ecartesNonUnAUn: number;
   readonly ecartesAnterieuresAuCurseur: number;
+  /**
+   * Conversations lues comme un-à-un faute d'indice contraire (ni `groupChat`, ni participants
+   * lisibles). Un compteur qui monte à la recette dit que le critère un-à-un est à confirmer.
+   */
+  readonly unAUnSansIndice: number;
+  /** Conversations traitées sans `lastActivityAt` : le curseur n'a pas pu les écarter. */
+  readonly sansHorodatage: number;
 };
 
 /**
@@ -55,6 +62,25 @@ function extraireConversations(corps: unknown): readonly unknown[] | null {
   const noeud = corps.data[cle];
   if (!estObjet(noeud) || !Array.isArray(noeud.elements)) return null;
   return noeud.elements;
+}
+
+/**
+ * CRITÈRE NON ATTESTÉ. Aucun relevé réel de la messagerie n'existe dans le dépôt : l'extension gelée
+ * ne lit ni `groupChat` ni les participants. Les deux signaux ci-dessous sont les noms Voyager
+ * habituels, posés comme HYPOTHÈSE à confirmer sur une charge réelle :
+ *  - `groupChat === true` ;
+ *  - `conversationParticipants` (tableau, ou objet portant `elements`) de plus de deux membres.
+ * Sans aucun des deux, on ne sait pas : on lit comme un-à-un (cas majoritaire en prospection) et on
+ * le COMPTE à part (`unAUnSansIndice`). Éteindre toute la relève sur un champ inventé serait pire
+ * que le risque couvert.
+ */
+function typeDeConversation(conv: Objet): 'groupe' | 'un_a_un' | 'sans_indice' {
+  if (conv.groupChat === true) return 'groupe';
+  const p = conv.conversationParticipants;
+  const liste = Array.isArray(p) ? p : estObjet(p) && Array.isArray(p.elements) ? p.elements : null;
+  if (liste !== null && liste.length > 2) return 'groupe';
+  if (conv.groupChat === false || liste !== null) return 'un_a_un';
+  return 'sans_indice';
 }
 
 const nombre = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -87,16 +113,11 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
     throw new ErreurMessagerie('LinkedIn a changé la forme de sa messagerie : la relève ne sait plus la lire.');
   }
 
-  // Une réponse non vide où AUCUNE conversation ne porte le discriminant un-à-un / groupe est une
-  // forme inconnue, pas une boîte de groupes : on ne rend pas un « tout écarté » silencieux.
-  const objets = conversations.filter(estObjet);
-  if (objets.length > 0 && !objets.some((c) => typeof c.groupChat === 'boolean')) {
-    throw new ErreurMessagerie('LinkedIn a changé la forme de sa messagerie : le type de conversation n’est plus lisible.');
-  }
-
   const entrants: MessageReleve[] = [];
   let ecartesNonUnAUn = 0;
   let ecartesAnterieuresAuCurseur = 0;
+  let unAUnSansIndice = 0;
+  let sansHorodatage = 0;
 
   for (const conv of conversations) {
     if (!estObjet(conv)) {
@@ -104,15 +125,20 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
       continue;
     }
     const activite = nombre(conv.lastActivityAt);
-    if (activite !== null && activite <= depuis.getTime()) {
+    if (activite === null) {
+      // On ne perd rien : sans date, impossible de dire que la conversation est ancienne, donc on la
+      // traite (le dédoublonnage par identifiant de message en aval absorbe un éventuel rejeu).
+      sansHorodatage += 1;
+    } else if (activite <= depuis.getTime()) {
       ecartesAnterieuresAuCurseur += 1;
       continue;
     }
-    // Strictement `false` : un champ absent ne vaut pas « un-à-un », dans le doute on ne lit pas.
-    if (conv.groupChat !== false) {
+    const type = typeDeConversation(conv);
+    if (type === 'groupe') {
       ecartesNonUnAUn += 1;
       continue;
     }
+    if (type === 'sans_indice') unAUnSansIndice += 1;
 
     const elements = estObjet(conv.messages) ? conv.messages.elements : undefined;
     const message = Array.isArray(elements) ? elements[0] : undefined;
@@ -137,5 +163,5 @@ export function analyserConversations(brut: string, compteUrn: string, depuis: D
     entrants.push({ conversationUrn, messageUrn, expediteurUrn: expediteur, texte, recuLe: new Date(quand) });
   }
 
-  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur };
+  return { entrants, ecartesNonUnAUn, ecartesAnterieuresAuCurseur, unAUnSansIndice, sansHorodatage };
 }

@@ -9,7 +9,7 @@ import {
 /**
  * Forme réduite de l'appel de l'extension gelée (`linkedin-inbox.js`), identifiants inventés :
  * `data.<messengerConversations…>.elements[]`, dernier message dans `messages.elements[0]`.
- * `groupChat` est le discriminant un-à-un ; sa présence n'est pas attestée par l'extension.
+ * `groupChat` et `conversationParticipants` sont des hypothèses non attestées (voir messagerie.ts).
  */
 const MOI = 'ACoAAmoimoimoi';
 const LUI = 'ACoAAluiluilui';
@@ -22,11 +22,15 @@ function conv(o: {
   groupe?: boolean | undefined;
   activite?: number;
   texte?: string;
+  participants?: number;
 }) {
   return {
     entityUrn: `urn:li:msg_conversation:(urn:li:fsd_profile:${MOI},${o.id})`,
     lastActivityAt: o.activite ?? APRES,
     ...(o.groupe === undefined ? {} : { groupChat: o.groupe }),
+    ...(o.participants === undefined
+      ? {}
+      : { conversationParticipants: Array.from({ length: o.participants }, (_, i) => ({ entityUrn: `p${i}` })) }),
     messages: {
       elements: [
         {
@@ -39,6 +43,7 @@ function conv(o: {
     },
   };
 }
+const VIDE = { ecartesNonUnAUn: 0, ecartesAnterieuresAuCurseur: 0, unAUnSansIndice: 0, sansHorodatage: 0 };
 const charge = (elements: unknown[], cle = 'messengerConversationsBySyncToken') =>
   JSON.stringify({ data: { [cle]: { elements } } });
 
@@ -68,7 +73,7 @@ describe('analyserConversations', () => {
 
   it('ignore nos propres messages sans les compter comme écartés', () => {
     const r = analyserConversations(charge([conv({ id: 'a', groupe: false, de: MOI })]), MOI, DEPUIS);
-    expect(r).toEqual({ entrants: [], ecartesNonUnAUn: 0, ecartesAnterieuresAuCurseur: 0 });
+    expect(r).toEqual({ ...VIDE, entrants: [] });
   });
 
   it('écarte et compte une conversation dont l’activité ne dépasse pas le curseur (bornes comprises)', () => {
@@ -91,10 +96,32 @@ describe('analyserConversations', () => {
     expect(r.entrants.map((m) => m.conversationUrn)).toEqual([expect.stringContaining(',a)')]);
   });
 
-  it('une conversation sans discriminant n’est pas un-à-un par défaut', () => {
-    const r = analyserConversations(charge([conv({ id: 'x' }), conv({ id: 'a', groupe: false })]), MOI, DEPUIS);
+  it('écarte un groupe signalé par plus de deux participants, même sans groupChat', () => {
+    const r = analyserConversations(charge([conv({ id: 'g', participants: 3 }), conv({ id: 'a', participants: 2 })]), MOI, DEPUIS);
     expect(r.ecartesNonUnAUn).toBe(1);
     expect(r.entrants).toHaveLength(1);
+    expect(r.unAUnSansIndice).toBe(0);
+  });
+
+  it('groupChat true écarte, même avec deux participants', () => {
+    const r = analyserConversations(charge([conv({ id: 'g', groupe: true, participants: 2 })]), MOI, DEPUIS);
+    expect(r.ecartesNonUnAUn).toBe(1);
+    expect(r.entrants).toHaveLength(0);
+  });
+
+  it('sans aucun indice, la conversation est lue comme un-à-un et comptée à part', () => {
+    const r = analyserConversations(charge([conv({ id: 'x' }), conv({ id: 'a', groupe: false })]), MOI, DEPUIS);
+    expect(r.entrants).toHaveLength(2);
+    expect(r.unAUnSansIndice).toBe(1);
+    expect(r.ecartesNonUnAUn).toBe(0);
+  });
+
+  it('une conversation sans lastActivityAt est traitée et comptée, pas perdue', () => {
+    const c = conv({ id: 'a', groupe: false });
+    delete (c as { lastActivityAt?: number }).lastActivityAt;
+    const r = analyserConversations(charge([c]), MOI, DEPUIS);
+    expect(r.entrants).toHaveLength(1);
+    expect(r.sansHorodatage).toBe(1);
   });
 
   it('un expéditeur qui n’est pas un membre (système, organisation) est écarté et compté', () => {
@@ -106,11 +133,7 @@ describe('analyserConversations', () => {
   });
 
   it('une boîte réellement vide rend une relève vide, sans erreur', () => {
-    expect(analyserConversations(charge([]), MOI, DEPUIS)).toEqual({
-      entrants: [],
-      ecartesNonUnAUn: 0,
-      ecartesAnterieuresAuCurseur: 0,
-    });
+    expect(analyserConversations(charge([]), MOI, DEPUIS)).toEqual({ ...VIDE, entrants: [] });
   });
 
   it('ne code pas en dur le nom du champ : tout champ préfixé messengerConversations est lu', () => {
@@ -126,7 +149,6 @@ describe('analyserConversations', () => {
       'sans champ messengerConversations': JSON.stringify({ data: { autreChose: { elements: [] } } }),
       'elements absent': JSON.stringify({ data: { messengerConversationsX: {} } }),
       'elements non tableau': JSON.stringify({ data: { messengerConversationsX: { elements: {} } } }),
-      'discriminant un-à-un introuvable partout': charge([conv({ id: 'a' }), conv({ id: 'b' })]),
     };
     for (const [nom, brut] of Object.entries(cas)) {
       it(nom, () => {
@@ -143,7 +165,9 @@ describe('analyserConversations', () => {
     }
 
     it('ne recopie jamais la charge utile dans le message', () => {
-      expect(() => analyserConversations(charge([conv({ id: 'a', texte: 'SECRET-PRIVE' })]), MOI, DEPUIS)).toThrow(
+      const c = conv({ id: 'a', groupe: false, texte: 'SECRET-PRIVE' });
+      delete (c.messages.elements[0] as { entityUrn?: string }).entityUrn;
+      expect(() => analyserConversations(charge([c]), MOI, DEPUIS)).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining('SECRET-PRIVE') }),
       );
     });
