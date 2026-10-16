@@ -402,7 +402,13 @@ export async function validerPost(ctx: Contexte, entree: unknown): Promise<void>
   // AVANT de diagnostiquer : sans campagne à nous, il n'y a rien à exiger, donc rien à dire.
   await exigerCampagneDeLOrganisation(ctx, campagneId);
   const etat = await etatDuPost(ctx, postId);
-  if (etat.review_status === 'approved') return;
+  // Déjà validée : rien à écrire, mais il reste peut-être des actions retenues par ELLE — une
+  // autre campagne qui écrit plus de variables, et dont la fiche vient d'être complétée. Sortir
+  // en silence les laissait bloquées pour toujours.
+  if (etat.review_status === 'approved') {
+    await relacherLesRetenuesDuPost(ctx, postId);
+    return;
+  }
   if (etat.review_status === 'rejected') throw refus('Ce post est rejeté : rouvrez-le avant de le valider.');
   if (etat.expired) throw refus(MESSAGE_ECHEANCE_PASSEE);
   const manquantes = await variablesManquantes(ctx, postId, campagneId);
@@ -519,6 +525,12 @@ export async function corrigerSujetDePost(ctx: Contexte, entree: unknown): Promi
     [ctx.organisationId, postId, sujet],
   );
   if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Post');
+  // Compléter une fiche DÉBLOQUE : la garde n'exige que ce que la campagne écrit, donc écrire le
+  // champ manquant lève la rétention. Sans cette ligne, les futures actions passaient mais celles
+  // DÉJÀ bloquées n'étaient relâchées par personne — l'impasse du tour 10 par l'autre porte, les
+  // trois autres chemins exigeant `pending`, `paused` ou `paused_absence`. Ce qui doit rester
+  // retenu l'est par la garde à l'envoi, qui rebloque.
+  await relacherLesRetenuesDuPost(ctx, postId);
 }
 
 /**
@@ -544,6 +556,9 @@ export async function corrigerAuteurDePost(ctx: Contexte, entree: unknown): Prom
     [ctx.organisationId, postId, auteur],
   );
   if ((res.rowCount ?? 0) === 0) throw new ErreurIntrouvable('Post');
+  // Même raison qu'au-dessus : compléter débloque, et ce qui doit rester retenu l'est par la
+  // garde à l'envoi.
+  await relacherLesRetenuesDuPost(ctx, postId);
 }
 
 /**
