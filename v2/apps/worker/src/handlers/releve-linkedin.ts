@@ -21,6 +21,9 @@
  *  - **Le rattachement se fait en deux temps** : par l'identifiant du profil (`linkedin_provider_id`),
  *    puis, à défaut, par l'URL de profil. Beaucoup de contacts n'ont qu'une URL.
  *  - **Un message qui ne correspond à aucun contact n'est jamais stocké** (compté seulement).
+ *  - **Après la relève, au plus trois URN manquants sont résolus** (`resoudreUrnManquants`), sous le
+ *    budget de requêtes de l'heure. Un échec ou un budget épuisé n'est JAMAIS une erreur du passage :
+ *    la relève vient d'être enregistrée, son curseur avance.
  *  - **Le journal du passage porte TOUS les compteurs** (`compteursDuReleve` et les nôtres), jamais
  *    un contenu : deux dérives de forme (`groupChat` partout, unité de `lastActivityAt`) ne lèvent
  *    rien et ne se voient qu'à ces compteurs.
@@ -42,12 +45,13 @@ import {
   prendreVerrouLinkedIn,
   recordInboundReply,
   tracerRequeteMessagerie,
+  bloquerSessionLinkedIn,
   type Contexte,
   type Sortie,
 } from '@jay-reach/core';
 import { controlerSortie } from '../linkedin/controle-sortie.js';
 import { ENTETES_VOYAGER } from '../linkedin/engageurs.js';
-import { lireCompteConnecte } from '../linkedin/envoi.js';
+import { ErreurEnvoi, lireCompteConnecte, resoudreProfil } from '../linkedin/envoi.js';
 import {
   analyserConversations,
   compteursDuReleve,
@@ -87,6 +91,14 @@ export const MARGE_CURSEUR_MS = 5 * 60_000;
 /** Tentatives d'enregistrement d'une notification : un échec d'écriture après `isNew` ne se rejoue pas au passage suivant. */
 const TENTATIVES_NOTIFICATION = 3;
 const LONGUEUR_EXTRAIT = 140;
+/** Résolutions d'URN par passage : la valeur de l'ancienne extension. */
+export const URN_RESOLUES_PAR_PASSAGE = 3;
+/**
+ * Candidats lus en base : plus que `URN_RESOLUES_PAR_PASSAGE`, parce que l'adresse d'un contact peut
+ * n'être pas une page de profil (`normaliserUrlProfil` la refuse, hors budget) ; trois lignes lues
+ * seulement laisseraient trois adresses invalides occuper la tête pour toujours.
+ */
+const CANDIDATS_LUS = 20;
 const ENTETES = { ...ENTETES_VOYAGER, 'x-li-lang': 'fr_FR' };
 
 const TITRE_NOTIFICATION = 'Nouvelle réponse LinkedIn';
@@ -168,6 +180,84 @@ export async function rattacher(pool: Pool, organizationId: string, m: MessageRe
   );
   if (res.rows.length > 1) return 'url_ambigue';
   return res.rows[0] ? { contactId: res.rows[0].id, par: 'url', ambigu: false } : null;
+}
+
+type Candidat = { id: string; linkedin_url: string };
+
+/**
+ * Les contacts à qui un envoi LinkedIn est parti et qui n'ont pas d'URN, le dernier envoi d'abord.
+ * Le critère est `linkedin_provider_id is null` et rien d'autre : une valeur fausse mais non nulle
+ * (353 identifiants FullEnrich vidés par la tâche 2) rendrait le contact invisible à toute reprise.
+ * Borné à l'organisation des DEUX côtés (le worker n'a pas de RLS).
+ */
+export async function contactsSansUrn(pool: Pool, organizationId: string, limite: number): Promise<Candidat[]> {
+  const res = await pool.query<Candidat>(
+    `select c.id, c.linkedin_url from contacts c /* jr:releve_urn_a_resoudre */
+       join lateral (
+         select max(q.sent_at) as dernier
+           from linkedin_action_queue q
+          where q.organization_id = c.organization_id and q.contact_id = c.id and q.status = 'sent'
+       ) e on e.dernier is not null
+      where c.organization_id = $1
+        and c.linkedin_provider_id is null
+        and btrim(coalesce(c.linkedin_url, '')) <> ''
+      order by e.dernier desc, c.id
+      limit $2`,
+    [organizationId, limite],
+  );
+  return res.rows;
+}
+
+type CompteursResolution = { candidats: number; tentees: number; resolues: number; echecs: number; interrompu: boolean };
+
+/**
+ * Résout l'URN de contacts qui n'en ont pas, dans le navigateur et sous le verrou du passage. NE LÈVE
+ * JAMAIS : le passage qui l'appelle vient d'enregistrer sa relève, et son curseur ne doit dépendre
+ * ni d'une résolution qui échoue ni d'un budget épuisé (zéro résolution est un succès).
+ *
+ * `budget` = requêtes encore permises dans l'heure. Chaque résolution coûte une requête, tracée AVANT
+ * son appel, sous le même budget que le reste du canal. Un refus de session (cookie refusé, défi,
+ * limitation) arrête la boucle : insister sur les contacts suivants serait marteler un compte en défaut.
+ */
+async function resoudreUrnManquants(
+  pool: Pool,
+  ctx: Contexte,
+  pilote: Pilote,
+  budget: number,
+): Promise<CompteursResolution> {
+  const c: CompteursResolution = { candidats: 0, tentees: 0, resolues: 0, echecs: 0, interrompu: false };
+  const nombre = Math.min(URN_RESOLUES_PAR_PASSAGE, budget);
+  if (nombre <= 0) return c;
+  try {
+    const lus = await contactsSansUrn(pool, ctx.organisationId, CANDIDATS_LUS);
+    const retenus = lus
+      .map((l) => ({ id: l.id, url: normaliserUrlProfil(l.linkedin_url) }))
+      .filter((l): l is { id: string; url: string } => l.url !== null);
+    c.candidats = retenus.length;
+    for (const cible of retenus.slice(0, nombre)) {
+      c.tentees += 1;
+      try {
+        await tracerRequeteMessagerie(ctx);
+        const urn = await resoudreProfil(pilote, cible.url);
+        await memoriserUrnDuContact(pool, ctx.organisationId, cible.id, urn);
+        c.resolues += 1;
+      } catch (err) {
+        c.echecs += 1;
+        console.error(`[releve-linkedin] URN d’un contact non résolue (${nomDe(err)})`);
+        if (err instanceof ErreurEnvoi && (err.code === 'not_logged_in' || err.code === 'defi' || err.code === 'restricted')) {
+          c.interrompu = true;
+          if (err.code !== 'restricted') {
+            await bloquerSessionLinkedIn(ctx, err.code === 'defi' ? 'defi' : 'cookie_refuse').catch(() => undefined);
+          }
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    c.echecs += 1;
+    console.error(`[releve-linkedin] résolution des URN abandonnée (${nomDe(err)})`);
+  }
+  return c;
 }
 
 /** Les 140 premiers caractères (par points de code : jamais une paire de substitution coupée). */
@@ -343,14 +433,21 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
     // Le journal du passage : tous les compteurs, aucun contenu.
     console.log(`[releve-linkedin] passage ${JSON.stringify({ ...c, ...compteursDuReleve(releve) })}`);
 
+    if (c.echecs === 0) {
+      const suivant = etat.curseur === null ? maintenant : new Date(Math.max(etat.curseur.getTime(), maintenant.getTime() - MARGE_CURSEUR_MS));
+      await ecrireEtat(pool, org, identite.urn, suivant);
+    }
+
+    // APRÈS la relève et l'écriture du curseur : rien de ce qui suit ne peut plus les compromettre.
+    const resolution = await resoudreUrnManquants(pool, ctx, pilote, plafondHoraire - deLHeure - REQUETES_PAR_RELEVE);
+    console.log(`[releve-linkedin] resolution ${JSON.stringify(resolution)}`);
+
     if (c.echecs > 0) {
       throw erreurNommee(
         'ReleveIncomplete',
         `${c.echecs} réponse(s) LinkedIn n’ont pas pu être traitées : le curseur reste en place.`,
       );
     }
-    const suivant = etat.curseur === null ? maintenant : new Date(Math.max(etat.curseur.getTime(), maintenant.getTime() - MARGE_CURSEUR_MS));
-    await ecrireEtat(pool, org, identite.urn, suivant);
   } finally {
     // Durée nulle, même propriétaire : le verrou tombe tout de suite.
     if (verrouPris) await prendreVerrouLinkedIn(ctx, proprietaire, 0).catch(() => false);

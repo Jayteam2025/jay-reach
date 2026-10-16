@@ -29,6 +29,7 @@ import {
 
 const ORG = 'org-1';
 const JOB = { organizationId: ORG };
+const URL_PROFILS = 'https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=';
 const URL_ME = 'https://www.linkedin.com/voyager/api/me';
 const MOI = 'urn:li:fsd_profile:ACoAAexpediteur';
 const MOI_NU = 'ACoAAexpediteur';
@@ -87,6 +88,8 @@ interface Monde {
   /** Contacts par URL normalisée (rattachement de repli). */
   parUrl: Map<string, string[]>;
   requetesSql: { tag: string; params: unknown[] }[];
+  /** Identifiants publics demandes a la resolution de profil, dans l'ordre. */
+  profilsDemandes: string[];
 }
 
 function monde(opts: {
@@ -105,6 +108,12 @@ function monde(opts: {
   urnEchoue?: boolean;
   /** La ligne de session n'existe plus au moment d'ecrire le curseur. */
   sessionDisparue?: boolean;
+  /** Contacts sans URN a qui un envoi est parti (la requete de candidats les rend dans cet ordre). */
+  candidats?: { id: string; linkedin_url: string }[];
+  /** Reponse du profil par identifiant public ; absent = profil_not_found (404). */
+  profils?: Record<string, { statut: number; corps?: unknown } | Error>;
+  /** La requete de candidats echoue. */
+  candidatsEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -117,6 +126,7 @@ function monde(opts: {
     parUrn: new Map(Object.entries(opts.contactsParUrn ?? {})),
     parUrl: new Map(Object.entries(opts.contactsParUrl ?? {})),
     requetesSql: [],
+    profilsDemandes: [],
   };
   const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
   const query = async (sql: string, params: unknown[] = []) => {
@@ -140,6 +150,11 @@ function monde(opts: {
     }
     if (tag === 'plafond_du_jour' || t.includes('organization_settings')) return rep([{ value: String(opts.plafondHoraire ?? 60) }]);
     if (tag === 'linkedin_requetes_compter') return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
+    if (tag === 'releve_urn_a_resoudre') {
+      w.journal.push(`candidats org=${String(params[0])} limite=${String(params[1])}`);
+      if (opts.candidatsEchoue) throw new Error('base indisponible');
+      return rep(opts.candidats ?? []);
+    }
     if (tag === 'contact_memoriser_urn') {
       w.journal.push(`urn_contact contact=${String(params[0])} org=${String(params[1])} urn=${String(params[2])}`);
       if (opts.urnEchoue) throw new Error('base indisponible');
@@ -174,6 +189,14 @@ function monde(opts: {
     attendre: async () => true,
     requete: async (u) => {
       w.requetes.push(u);
+      if (u.startsWith(URL_PROFILS)) {
+        const slug = decodeURIComponent(u.slice(URL_PROFILS.length));
+        w.profilsDemandes.push(slug);
+        w.journal.push(`requete profil ${slug}`);
+        const p = opts.profils?.[slug];
+        if (p instanceof Error) throw p;
+        return { statut: p?.statut ?? 404, corps: JSON.stringify(p?.corps ?? {}) };
+      }
       w.journal.push(`requete ${u === URL_ME ? 'me' : 'conversations'}`);
       const r = u === URL_ME ? (opts.me ?? ME_OK) : u === URL_CONVERSATIONS ? opts.conversations : undefined;
       if (!r) throw new Error(`requete non prevue : ${u}`);
@@ -772,6 +795,156 @@ describe('le journal du passage et la trace', () => {
     const w = monde({ compte: 'ACoAAancien', curseur: new Date(AVANT) });
     await traiterReleveLinkedIn(deps(w), JOB);
     expect(w.traces).toBe(1);
+  });
+});
+
+/** Un profil rendu par LinkedIn : l'URN et l'identifiant public qu'il porte. */
+const profil = (slug: string, urn: string) => ({
+  statut: 200,
+  corps: { elements: [{ entityUrn: `urn:li:fsd_profile:${urn}`, publicIdentifier: slug }] },
+});
+const cand = (id: string, slug: string) => ({ id, linkedin_url: `https://www.linkedin.com/in/${slug}` });
+const memorises = (w: Monde) => w.journal.filter((l) => l.startsWith('urn_contact'));
+const tracesProfil = (w: Monde) => w.traces - 2;
+const base = { compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } } as const;
+
+describe('la resolution des URN manquants', () => {
+  it('resout au plus trois contacts par passage, les premiers rendus (les plus recents), et memorise chaque URN', async () => {
+    const w = monde({
+      ...base,
+      candidats: [cand('c1', 'a'), cand('c2', 'b'), cand('c3', 'c'), cand('c4', 'd'), cand('c5', 'e')],
+      profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb'), c: profil('c', 'ACoAAc'), d: profil('d', 'ACoAAd') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a', 'b', 'c']);
+    expect(memorises(w)).toEqual([
+      `urn_contact contact=c1 org=${ORG} urn=ACoAAa`,
+      `urn_contact contact=c2 org=${ORG} urn=ACoAAb`,
+      `urn_contact contact=c3 org=${ORG} urn=ACoAAc`,
+    ]);
+  });
+
+  it('la lecture des candidats est bornee a l organisation du passage', async () => {
+    const w = monde({ ...base });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.journal.find((l) => l.startsWith('candidats'))).toMatch(`org=${ORG} `);
+  });
+
+  it('chaque resolution est tracee AVANT son appel, et compte dans le budget (deux traces de la releve en plus)', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(tracesProfil(w)).toBe(2);
+    const ordre = w.journal.filter((l) => l === 'trace' || l.startsWith('requete'));
+    expect(ordre).toEqual(['trace', 'requete me', 'trace', 'requete conversations', 'trace', 'requete profil a', 'trace', 'requete profil b']);
+  });
+
+  it('la resolution vient APRES l ecriture du curseur de la releve', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    const ordre = w.journal.filter((l) => l.startsWith('etat ') || l.startsWith('requete profil'));
+    expect(ordre.map((l) => l.split(' ')[0])).toEqual(['etat', 'requete']);
+  });
+
+  it('plafond atteint apres la releve : zero resolution, aucune lecture de candidats, le passage reussit et le curseur avance', async () => {
+    // Exactement les deux requetes de la releve : le passage a lieu, il ne reste rien pour la resolution.
+    const w = monde({ ...base, plafondHoraire: 60, requetesDeLHeure: 58, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual([]);
+    expect(tracesProfil(w)).toBe(0);
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(sortie.error).toEqual([]);
+  });
+
+  it('un budget de deux resolutions restantes n en laisse partir que deux', async () => {
+    const w = monde({
+      ...base,
+      plafondHoraire: 60,
+      requetesDeLHeure: 56,
+      candidats: [cand('c1', 'a'), cand('c2', 'b'), cand('c3', 'c')],
+      profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb'), c: profil('c', 'ACoAAc') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a', 'b']);
+  });
+
+  it('une resolution qui echoue n emporte pas le passage : la suivante est tentee, le curseur avance, rien ne leve', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 404 }, b: profil('b', 'ACoAAb') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(memorises(w)).toEqual([`urn_contact contact=c2 org=${ORG} urn=ACoAAb`]);
+    expect(sortie.log.join('\n')).toContain('"resolues":1,"echecs":1');
+  });
+
+  it('une requete qui plante (reseau) n emporte pas le passage non plus', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: new Error('net::ERR http://proxy:secret@x') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(sortie.error.join('\n')).not.toContain('secret');
+  });
+
+  it('une memorisation qui echoue n emporte pas le passage', async () => {
+    const w = monde({ ...base, urnEchoue: true, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('une lecture de candidats qui echoue n emporte pas le passage', async () => {
+    const w = monde({ ...base, candidatsEchoue: true });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(w.fermer).toHaveBeenCalledTimes(1);
+  });
+
+  it('une adresse qui n est pas une page de profil n est jamais passee a la resolution, et ne consomme ni budget ni trace', async () => {
+    const w = monde({
+      ...base,
+      candidats: [
+        { id: 'x1', linkedin_url: 'https://www.linkedin.com/in/' },
+        { id: 'x2', linkedin_url: 'https://example.com/in/qqn' },
+        { id: 'x3', linkedin_url: 'https://www.linkedin.com/company/acme' },
+        cand('c1', 'a'),
+      ],
+      profils: { a: profil('a', 'ACoAAa') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a']);
+    expect(tracesProfil(w)).toBe(1);
+  });
+
+  it('une session refusee (cookie) arrete la boucle et bloque la session, sans lever', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 401 }, b: profil('b', 'ACoAAb') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual(['a']);
+    expect(w.requetesSql.some((r) => r.tag === 'linkedin_session_bloquer')).toBe(true);
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('une limitation (429) arrete la boucle sans bloquer la session', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 429 }, b: profil('b', 'ACoAAb') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a']);
+    expect(w.requetesSql.some((r) => r.tag === 'linkedin_session_bloquer')).toBe(false);
+  });
+
+  it('une releve qui a des echecs individuels leve toujours, mais resout quand meme, et le verrou est rendu', async () => {
+    mocks.enregistrer.mockRejectedValue(new Error('base'));
+    const w = monde({ ...base, contactsParUrn: { ACoAAdupont: ['c-1'] }, conversations: { statut: 200, corps: charge({ id: 'a', de: 'ACoAAdupont' }) }, candidats: [cand('c9', 'z')], profils: { z: profil('z', 'ACoAAz') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).rejects.toThrow(/n’ont pas pu être traitées/);
+    expect(etatEcrit(w)).toEqual([]);
+    expect(w.profilsDemandes).toEqual(['z']);
+    expect(w.journal.filter((l) => l.startsWith('verrou')).at(-1)).toMatch(/ 0$/);
+  });
+
+  it('un compte change ne resout rien : le passage s arrete avant', async () => {
+    const w = monde({ compte: 'ACoAAancien', curseur: new Date(AVANT), candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual([]);
+  });
+
+  it('le journal du passage porte les compteurs de la resolution', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(sortie.log.join('\n')).toContain('resolution {"candidats":1,"tentees":1,"resolues":1,"echecs":0,"interrompu":false}');
   });
 });
 

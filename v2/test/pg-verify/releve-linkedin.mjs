@@ -8,11 +8,18 @@
 //   3. retirer `and organization_id = $1` d'une des deux recherches — 25 rougit ;
 //   4. ecrireEtat : remplacer `coalesce($3::timestamptz, releve_curseur_at)` par `$3` — 30 rougit ;
 //   5. retirer une des trois formes d'URN de la liste — 11 à 13 rougissent ;
-//   6. migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
+//   7. contactsSansUrn : retirer `c.linkedin_provider_id is null` — 60, 61, 63, 66 rougissent ;
+//      retirer `q.organization_id = c.organization_id` — 60 et 62 ; retirer `q.status = 'sent'` — 60 et 61
+//      (l'action en echec porte un sent_at : sans lui `dernier is not null` ne l'ecarterait pas) ;
+//   8. (tests unitaires) `.slice(0, nombre)`, le budget, la trace avant l'appel, le filtre `normaliserUrlProfil`,
+//      l'arret sur refus de session, la capture d'un echec individuel : chacun fait rougir au moins un test.
+//   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
+  contactsSansUrn,
   ecrireEtat,
+  lirePlafondLinkedIn,
   enqueueReleveLinkedIn,
   lireEtat,
   rattacher,
@@ -243,9 +250,136 @@ async function passageComplet() {
     deposes === 1 && envois[0][2].singletonKey === ORG_A && envois[0][2].singletonSeconds === 1800, JSON.stringify(envois));
 }
 
+// Tâche 5 : résolution des URN manquants. Fixtures propres à la section, posées APRÈS le passage complet :
+// avant, le passage aurait tenté de les résoudre sur un pilote qui n'a pas de profils à rendre.
+async function resolutionDesUrn() {
+  const jour = (n) => `now() - make_interval(days => ${n})`;
+  const contact = (n, org, provider, url) =>
+    q(`insert into contacts (id, organization_id, email, linkedin_provider_id, linkedin_url) values ($1, $2, $3, $4, $5)`, [id(n), org, `r${n}@example.test`, provider, url]);
+  const profil = (slug) => `https://www.linkedin.com/in/${slug}`;
+  // `quand` est une expression SQL : l'ancienneté se lit dans la base, pas dans l'horloge du poste.
+  const action = (n, org, contactId, kind, statut, quand) =>
+    q(
+      `insert into linkedin_action_queue (id, organization_id, contact_id, linkedin_url, kind, status, sent_at)
+       values ($1, $2, $3, 'https://www.linkedin.com/in/x', $4, $5, ${quand})`,
+      [id(n), org, id(contactId), kind, statut],
+    );
+  await contact(100, ORG_A, null, profil('recent'));        // envoi parti il y a 1 jour
+  await contact(101, ORG_A, null, profil('ancien'));        // deux envois partis : invitation il y a 9 j, message il y a 5 j
+  await contact(102, ORG_A, 'ACoAAdejaposee', profil('urn-deja-posee')); // a deja son URN
+  await contact(103, ORG_A, null, profil('jamais-ecrit'));  // aucun envoi
+  await contact(104, ORG_A, null, profil('en-attente'));    // seul envoi : statut failed, malgré un sent_at
+  await contact(105, ORG_A, null, '   ');                   // pas d adresse
+  await contact(106, ORG_A, '', profil('valeur-vide'));     // valeur non nulle : hors critere
+  await contact(107, ORG_A, null, profil('envoi-autre-org'));// la seule action qui le vise appartient a l organisation B
+  await contact(108, ORG_B, null, profil('chez-b'));        // envoi parti, mais dans B
+  await contact(109, ORG_A, null, profil('introuvable'));   // envoi parti il y a 12 h, profil inexistant (404)
+  await contact(110, ORG_A, null, profil('dix-jours'));     // envoi parti il y a 10 j
+  await action(100, ORG_A, 100, 'message', 'sent', jour(1));
+  await action(101, ORG_A, 101, 'invite', 'sent', jour(9));
+  await action(102, ORG_A, 101, 'message', 'sent', jour(5));
+  await action(103, ORG_A, 102, 'message', 'sent', jour(1));
+  // `sent_at` renseigné malgré le statut : seul le statut peut l'écarter (sans lui, `sent_at is not null` suffirait).
+  await action(104, ORG_A, 104, 'message', 'failed', jour(1));
+  await action(105, ORG_A, 105, 'message', 'sent', jour(1));
+  await action(106, ORG_A, 106, 'message', 'sent', jour(1));
+  await action(107, ORG_B, 107, 'message', 'sent', jour(1));
+  await action(108, ORG_B, 108, 'message', 'sent', jour(1));
+  await action(109, ORG_A, 109, 'message', 'sent', `now() - interval '12 hours'`);
+  await action(110, ORG_A, 110, 'message', 'sent', jour(10));
+
+  const lus = await contactsSansUrn(pool, ORG_A, 20);
+  check('60 candidats : sans URN, avec un envoi parti, le dernier envoi d abord, chacun UNE fois (deux envois = une ligne)',
+    JSON.stringify(lus.map((l) => l.id)) === JSON.stringify([id(109), id(100), id(101), id(110)]), JSON.stringify(lus.map((l) => l.id.slice(-3))));
+  const exclus = new Set(lus.map((l) => l.id));
+  check('61 exclus : URN deja pose, valeur vide non nulle, aucun envoi, seul envoi en echec',
+    ![id(102), id(106), id(103), id(104)].some((x) => exclus.has(x)));
+  check('62 exclus : l action qui vise le contact appartient a une AUTRE organisation ; et le contact d une autre organisation',
+    !exclus.has(id(107)) && !exclus.has(id(108)));
+  const deB = await contactsSansUrn(pool, ORG_B, 20);
+  check('62b depuis B : seulement SES contacts', JSON.stringify(deB.map((l) => l.id)) === JSON.stringify([id(108)]), JSON.stringify(deB));
+  const borne = await contactsSansUrn(pool, ORG_A, 2);
+  check('63 la limite borne la lecture, les plus recents restent', JSON.stringify(borne.map((l) => l.id)) === JSON.stringify([id(109), id(100)]));
+  // 64 est le temoin de 61 : sans le critere `is null`, la fixture ramenerait bien 102 et 106.
+  const temoin = await q(`select count(*)::int n from contacts where organization_id = $1 and id = any($2::uuid[]) and linkedin_provider_id is not null`, [ORG_A, [id(102), id(106)]]);
+  check('64 temoin : les deux contacts exclus ont bien une valeur non nulle (la fixture saurait les ramener)', temoin.rows[0].n === 2);
+
+  // Un passage sur la vraie base.
+  const MOI = 'urn:li:fsd_profile:ACoAAmoi';
+  const demandes = [];
+  const profils = {
+    recent: 'ACoAAurnrecent',
+    ancien: 'ACoAAurnancien',
+    'dix-jours': 'ACoAAurndix',
+  };
+  const pilote = {
+    aller: async () => undefined,
+    url: async () => 'https://www.linkedin.com/feed/',
+    saisir: async () => undefined,
+    presserEntree: async () => undefined,
+    texte: async () => '',
+    attendre: async () => true,
+    effacerCookies: async () => undefined,
+    fermer: async () => undefined,
+    requete: async (u) => {
+      if (u === 'https://www.linkedin.com/voyager/api/me') {
+        return { statut: 200, corps: JSON.stringify({ data: { '*miniProfile': 'urn:li:fs_miniProfile:ACoAAmoi' }, included: [{ entityUrn: 'urn:li:fs_miniProfile:ACoAAmoi', publicIdentifier: 'moi' }] }) };
+      }
+      if (u === urlConversations(MOI, 20)) return { statut: 200, corps: JSON.stringify({ data: { messengerConversationsX: { elements: [] } } }) };
+      const slug = /memberIdentity=(.+)$/.exec(u)?.[1];
+      if (slug === undefined) throw new Error(`requete non prevue : ${u}`);
+      demandes.push(slug);
+      if (!(slug in profils)) return { statut: 404, corps: '{}' };
+      return { statut: 200, corps: JSON.stringify({ elements: [{ entityUrn: `urn:li:fsd_profile:${profils[slug]}`, publicIdentifier: slug }] }) };
+    },
+  };
+  const deps = { pool, env: { JAY_REACH_LINKEDIN: '1' }, ouvrirNavigateur: async () => pilote, releverSortie: async () => ({ ip: '203.0.113.7' }) };
+  const urnDe = async (n) => (await q(`select linkedin_provider_id from contacts where id = $1`, [id(n)])).rows[0].linkedin_provider_id;
+  const unJourAvant = async () => {
+    await q(`update linkedin_server_sessions set releve_curseur_at = now() - interval '2 days', releve_compte_urn = $2 where organization_id = $1`, [ORG_A, MOI]);
+  };
+  const curseurAvance = async () => (await q(`select releve_curseur_at > now() - interval '1 hour' as ok from linkedin_server_sessions where organization_id = $1`, [ORG_A])).rows[0].ok;
+  const traces = async () => (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1`, [ORG_A])).rows[0].n;
+
+  // Budget épuisé : exactement les deux requêtes de la relève restent. Aucune résolution, aucune erreur.
+  const plafond = await lirePlafondLinkedIn({ ex: pool, organisationId: ORG_A }, 'linkedin_requetes_par_heure');
+  const deja = await compterRequetesLinkedIn({ ex: pool, organisationId: ORG_A }, new Date(Date.now() - 3_600_000));
+  await q(`insert into linkedin_requetes (organization_id, kind) select $1, 'messagerie' from generate_series(1, $2::int)`, [ORG_A, plafond - 2 - deja]);
+  await unJourAvant();
+  const avantBudget = await traces();
+  const sansBudget = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
+  check('65 budget epuise apres la releve : le passage REUSSIT, le curseur avance, aucune resolution',
+    sansBudget === null && demandes.length === 0 && (await curseurAvance()) && (await urnDe(100)) === null && (await traces()) === avantBudget + 2,
+    `${sansBudget?.message ?? ''} demandes=${demandes.length}`);
+  await q(`delete from linkedin_requetes where organization_id = $1`, [ORG_A]);
+
+  // Premier passage libre : quatre candidats, trois résolutions (109 d abord, introuvable, puis 100 et 101).
+  await unJourAvant();
+  const avant = await traces();
+  const e1 = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
+  check('66 trois resolutions au plus : 109 (404), 100 et 101 ; 110 n est pas touche',
+    JSON.stringify(demandes) === JSON.stringify(['introuvable', 'recent', 'ancien']) && (await urnDe(110)) === null, JSON.stringify(demandes));
+  check('67 une resolution qui echoue (404) n emporte pas le passage : il reussit et son curseur avance',
+    e1 === null && (await curseurAvance()), String(e1?.message));
+  check('68 les URN resolus sont memorises sous leur forme nue, sur les bons contacts ; l echec ne laisse rien',
+    (await urnDe(100)) === 'ACoAAurnrecent' && (await urnDe(101)) === 'ACoAAurnancien' && (await urnDe(109)) === null,
+    `${await urnDe(100)} ${await urnDe(101)} ${await urnDe(109)}`);
+  check('69 chaque resolution est tracee : 2 requetes de la releve + 3 resolutions', (await traces()) === avant + 5, `${avant} -> ${await traces()}`);
+  const autres = await q(`select count(*)::int n from contacts where organization_id = $1 and id = any($2::uuid[]) and linkedin_provider_id is distinct from $3`, [ORG_A, [id(102)], 'ACoAAdejaposee']);
+  check('70 un contact qui avait deja un URN n est ni resolu ni modifie', autres.rows[0].n === 0 && !demandes.includes('urn-deja-posee'));
+  const bB = await urnDe(108);
+  check('71 le contact de l autre organisation n est pas touche', bB === null);
+
+  // Second passage : les deux restants (109 introuvable et 110) ; seul 110 se résout. Les résolus ne reviennent pas.
+  demandes.length = 0;
+  await unJourAvant();
+  const e2 = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
+  check('72 second passage : on ne re-resout jamais un contact qui a son URN', e2 === null && !demandes.includes('recent') && !demandes.includes('ancien') && (await urnDe(110)) === 'ACoAAurndix', JSON.stringify(demandes));
+}
+
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;
