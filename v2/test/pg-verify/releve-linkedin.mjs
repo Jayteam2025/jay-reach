@@ -28,15 +28,17 @@
 //      paire : l'inscription du contact exclu aboutit) ; `poserExclusion` qui pose toujours 'manual' — 93 rougit.
 //  11. (tache 8) annulerEnvoisEnFile : retirer l'appel dans exclureApresReponse — 113 a 118 rougissent ; retirer `status = 'pending'`
 //      — 114 rougit ; retirer `origine <> 'reponse'` — 118 rougit ; retirer le `update actions` — 115 ; retirer la branche
-//      `contact_id is null or ...` — 116 ; passer `contact.linkedin_url` brut au lieu de `reelle` (retirer la validation) — 117 SEUL rougit ;
+//      d'adresse (`contact_id is null and cardinality($3) > 0 and ... = any(...)`, par ex. `false and`) — 116 ; passer `contact.linkedin_url` brut au lieu de `reelle` (retirer la validation) — 117 SEUL rougit ;
 //      GARDE de reclamerProchaineAction : retirer le bloc `jr:linkedin_garde_contact_exclu` — 119, 119b et 122 rougissent (120 et 121 restent verts) ;
 //      retirer `q.origine <> 'reponse'` DE LA GARDE — 121 seul ; retirer son `exists (... do_not_contact)` — 120 et 122 (tout est refuse) ; retirer son `update actions` — 119b ;
 //      retirer `organization_id = $1` de l'annulation — 123 ; du `update actions` de l'annulation — 128 ;
 //      retirer `c.organization_id = q.organization_id` de la garde — 132 ; la branche suppressions de la garde — 129 ;
 //      sa regex de profil — 131 seul ; `annulerEnvoisEnFile` sans la forme deduite — 124 ; sans validation de `normaliserUrnLinkedIn` — 125 et 127 ;
 //      `nePlusContacter` sans l'annulation — 126.
-//      NON PROUVES, par construction : `q.organization_id = $2` de la garde et le filtre du `update actions` de la garde (l'id vient de
-//      `prochainesCandidates`, deja filtre par organisation).
+//      `su.organization_id = q.organization_id` de la garde — 133 ; `su.expires_at is null or ...` de la garde — 134 (opposition expiree) ;
+//      sa paire a date future — 135.
+//      NON PROUVES, par construction (exactement ces deux, et aucun autre) : `q.organization_id = $2` de la garde et le filtre
+//      `organization_id` du `update actions` de la garde (l'id vient de `prochainesCandidates`, deja filtre par organisation).
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 import pg from 'pg';
 import {
@@ -874,6 +876,25 @@ async function exclusionEtFile() {
   const rat = await ligne(440, 'message', { orgId: ORG_G, quand: AVANT_G });
   const o4 = await reclamerProchaineAction(pool, ORG_G, NOW);
   check('132 un contact exclu d une autre organisation, rattache par contact_id, ne bloque pas la ligne', o4.action?.id === rat, JSON.stringify(o4));
+  await vider();
+
+  // 133. Isolation : l'opposition d'une AUTRE organisation, meme adresse, ne bloque pas la ligne.
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin) values ($1, 'linkedin', 'https://www.linkedin.com/in/ACoAAisol450', 'test', 'manual')`, [ORG_B]);
+  const isol = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in/ACoAAisol450' });
+  const o5 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('133 l opposition d une autre organisation sur la meme adresse ne bloque pas la ligne', o5.action?.id === isol, JSON.stringify(o5));
+  await vider();
+
+  // 134 / 135. Expiration : une opposition expiree ne bloque pas ; la meme, a date future, bloque.
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin, expires_at) values ($1, 'linkedin', 'https://www.linkedin.com/in/ACoAAexp451', 'test', 'manual', now() - interval '1 day')`, [ORG_G]);
+  const expiree = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in/ACoAAexp451' });
+  const o6 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('134 une opposition expiree ne bloque pas la ligne', o6.action?.id === expiree, JSON.stringify(o6));
+  await vider();
+  await q(`insert into suppressions (organization_id, scope, value, reason, origin, expires_at) values ($1, 'linkedin', 'https://www.linkedin.com/in/ACoAAfut452', 'test', 'manual', now() + interval '1 day')`, [ORG_G]);
+  const future = await ligne(null, 'message', { orgId: ORG_G, quand: AVANT_G, url: 'https://www.linkedin.com/in/ACoAAfut452' });
+  const o7 = await reclamerProchaineAction(pool, ORG_G, NOW);
+  check('135 la meme opposition, a date future, bloque la ligne', o7.motif === 'contact_exclu' && (await st(future)).status === 'cancelled', JSON.stringify([o7.motif, await st(future)]));
   await vider();
 }
 
