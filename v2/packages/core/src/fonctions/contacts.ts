@@ -15,6 +15,7 @@ import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js'
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
+import { normaliserUrlProfil } from './sources.js';
 import { adressesLinkedinAOpposer, annulerEnvoisEnFile, poserExclusion } from '../inbox/exclusion-sur-reponse.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
@@ -551,9 +552,16 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
     // adresse réelle et forme déduite de l'URN, chacune VALIDÉE. La collecte reconnaît une personne
     // par l'une ou l'autre ; un identifiant qui n'est pas un URN de membre n'en fabrique aucune.
     const adresses = adressesLinkedinAOpposer(contact);
+    // Une adresse SAISIE que `normaliserUrlProfil` refuse (`/pub/`, `/mwlite/`, page société, URL tronquée)
+    // s'oppose quand même, brute : avant le lot elle passait telle quelle, et l'opérateur qui clique veut
+    // qu'on ne recontacte pas la personne. Seule la forme DÉDUITE d'un identifiant reste validée (jamais
+    // d'adresse fabriquée). Cette valeur brute ne sert qu'à l'opposition : l'annulation de file compare
+    // par adresse, et une adresse dégénérée y rattacherait des lignes d'autres personnes.
+    const saisie = contact.linkedin_url?.trim() ?? '';
+    const opposees = saisie !== '' && normaliserUrlProfil(saisie) === null ? [...adresses, saisie] : adresses;
     await poserExclusion(tx, ctx.organisationId, contactId, {
       email: contact.email,
-      adressesLinkedin: adresses,
+      adressesLinkedin: opposees,
       motif: 'operator_do_not_contact',
       origine: 'manual',
     });
