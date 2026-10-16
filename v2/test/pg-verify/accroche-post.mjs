@@ -154,7 +154,9 @@
 //      jamais celles qui sont déjà bloquées.
 //  73. posts-fiches.ts : retirer `SQL_POST_ATTENDU` des deux branches de `fichesARattraper` —
 //      41, 41b et 41c rougissent : on ouvre une page LinkedIn et on paie un crédit pour un post
-//      qu'aucune campagne ne nomme.
+//      qu'aucune campagne ne nomme. Chaque DISJOINT a sa mutation : retirer la branche des
+//      signaux fait rougir 41a seul, retirer celle de `linkedin_posts_traites` fait rougir 41e
+//      (et les sections de rattrapage, qui passent toutes par elle).
 //  70. approbation.ts : faire diverger les deux écritures de la règle — 40b rougit en NOMMANT
 //      les entrées fautives. Trois façons, toutes vérifiées : retirer la clause `channels` du
 //      SQL ; revenir à l'opérateur permissif `jsonb ?` (les deux formes pathologiques
@@ -834,6 +836,25 @@ async function rattrapageCibleCeQuiSert() {
   check('41b. une campagne archivée ne fait rattraper personne',
     !(await candidates(m.org)).includes(p.fiche), JSON.stringify(await candidates(m.org)));
   await q(`update campaigns set status = 'active' where id = $1`, [m.campagne]);
+
+  // LA SECONDE BRANCHE DU FILTRE, dans les DEUX sens. `linkedin_posts_traites` existe dès que la
+  // collecte a vu le post, avant même ses engageurs : c'est elle qui couvre une fiche sans aucun
+  // signal rattaché. Elle n'était exercée qu'en positif (les mondes des sections de rattrapage
+  // passent par elle), donc elle pouvait disparaître sans qu'un seul contrôle bouge — la mesure
+  // qui a démasqué la preuve du drapeau.
+  const t = await monde();
+  await etapeAvecCorps(t, SANS_ACCROCHE, { canal: 'email' });
+  const sourceT = await sourceDePost(t, urlN(167), 'Engageurs 167');
+  const ficheT = await enregistrerFichePost(pool, t.org, ficheN(167, VIDE), { fenetreJours: FENETRE });
+  await marquerPostTraite(pool, t.org, sourceT, `urn:li:activity:7271000000000000167`);
+  const sansSignal = (await q(`select 1 from signals where linkedin_post_id = $1`, [ficheT.id])).rowCount;
+  check('41d. une fiche SANS signal, traitée par une source dont la campagne ne nomme aucun post : pas candidate',
+    sansSignal === 0 && !(await candidates(t.org)).includes(ficheT.id),
+    `${sansSignal} signal(aux) / ${JSON.stringify(await candidates(t.org))}`);
+  await q(`update message_templates set body = $2 where id = $1`,
+    [(await q(`select mt.id from message_templates mt join sequence_steps st on st.template_parent_id = mt.id where st.campaign_id = $1`, [t.campagne])).rows[0].id, ACCROCHE_URL]);
+  check('41e. la même fiche, l\'accroche branchée : candidate par la trace de traitement seule',
+    (await candidates(t.org)).includes(ficheT.id), JSON.stringify(await candidates(t.org)));
 
   // L'autre moitié du rattrapage : la fiche COMPLÈTE dont le sujet reste à écrire. Même filtre,
   // sinon on paierait un crédit Anthropic pour un sujet que personne ne lira.
@@ -2710,6 +2731,10 @@ async function validerRelanceLesRetenues() {
   // sort en silence sur une fiche `approved`, et les deux correcteurs ne relâchaient pas).
   const c = await monde();
   const gabaritC = await etapeAvecCorps(c, SANS_ACCROCHE, { canal: 'email' });
+  // Une SECONDE étape, comme en 40 et 40a : une séquence à une seule étape laisse l'inscription
+  // `completed` dès la première planifiée, et ces contrôles la supposent encore vivante. Verts
+  // sans elle, mais pour une raison qui tient à la forme de la fixture.
+  await etapeAvecCorps(c, SANS_ACCROCHE, { canal: 'email', position: 1 });
   const pc = await engageurDUnPost(c, 163, { etat: 'approved', sujet: null });
   await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [pc.contact_id, `bob163-${Date.now()}@exemple.invalid`]);
   await expediteurEmail(c.org, `exp163-${Date.now()}@exemple.invalid`);
@@ -2729,6 +2754,7 @@ async function validerRelanceLesRetenues() {
   // Et l'AUTEUR, le second correcteur, sur le même modèle.
   const d = await monde();
   const gabaritD = await etapeAvecCorps(d, SANS_ACCROCHE, { canal: 'email' });
+  await etapeAvecCorps(d, SANS_ACCROCHE, { canal: 'email', position: 1 });
   const pd = await engageurDUnPost(d, 164, { etat: 'approved', nomAffiche: null });
   await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [pd.contact_id, `bob164-${Date.now()}@exemple.invalid`]);
   await expediteurEmail(d.org, `exp164-${Date.now()}@exemple.invalid`);
