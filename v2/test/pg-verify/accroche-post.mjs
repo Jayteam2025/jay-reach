@@ -130,6 +130,14 @@
 //      attendait l'accord d'un humain part sans lui.
 //  65. packages/core/src/fonctions/sequence.ts : la même chose dans `reprendreInscription` —
 //      38b rougit : la reprise à la main fait sauter la file d'attente.
+//  66. retirer les deux lignes `camp.approval_policy` des trois expressions de relâchement —
+//      38e, 38f et 38g rougissent : une politique d'approbation posée APRÈS le blocage ne
+//      s'applique pas, et l'action repart sans l'accord désormais exigé.
+//  67. traitements.ts : remettre `a.status = 'scheduled'` dans les deux balayages — les deux
+//      contrôles 39 rougissent : une action approuvée par un humain ne part sur aucun canal.
+//  68. email-salesblink.ts : refuser `approved` au contrôle de statut, OU y accepter
+//      `pending_approval` — côté Vitest, l'un des deux contrôles du gestionnaire rougit à chaque
+//      fois ; le second compte le plus, il garde la file d'attente fermée.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import PgBoss from 'pg-boss';
@@ -1510,8 +1518,23 @@ async function fenetreReglable() {
  * Dérivé de l'objet rendu plutôt que d'une liste de champs recopiée : une catégorie qu'on
  * rajouterait demain entre dans la somme sans qu'on y pense, ce qui est tout l'intérêt — c'est ce
  * qu'un `=== undefined` sur un champ supprimé ne peut plus faire.
+ *
+ * LA FORME compte autant que le nombre. Ne sommer que les `number` laisserait passer une
+ * catégorie rendue autrement — une liste d'identifiants, un objet par motif —, et c'est
+ * exactement la forme qu'aurait `sansPost` ressuscité en liste. On compte donc des PERSONNES,
+ * quelle que soit la forme : un nombre vaut lui-même, une liste vaut sa longueur, un objet vaut
+ * la somme de ses valeurs. Les booléens restent dehors, et c'est la seule frontière qu'on pose :
+ * ils disent un FAIT sur la campagne (« elle nomme un post », « elle a une source »), jamais un
+ * nombre de personnes — `aUneSourceDePost` ferait sinon bouger le total sans que personne ne
+ * soit retenu.
  */
-const totalCompte = (d) => Object.values(d).filter((v) => typeof v === 'number').reduce((a, b) => a + b, 0);
+const personnesComptees = (v) => {
+  if (typeof v === 'number') return v;
+  if (Array.isArray(v)) return v.length;
+  if (v !== null && typeof v === 'object') return Object.values(v).reduce((a, x) => a + personnesComptees(x), 0);
+  return 0; // booléen, chaîne, nul : un fait, pas une population.
+};
+const totalCompte = (d) => Object.values(d).reduce((a, v) => a + personnesComptees(v), 0);
 
 async function decompteLisible() {
   console.log('\n# le décompte : pourquoi personne ne part');
@@ -1538,8 +1561,13 @@ async function decompteLisible() {
     `select 1 from contacts ct join signals s on s.id = ct.source_signal_id
       where ct.id = $1 and s.linkedin_post_id is null
         and not exists (select 1 from enrollments e
-                         where e.contact_id = ct.id and e.status in ('active', 'paused', 'paused_absence'))`,
-    [orpheline.contact_id])).rowCount;
+                         where e.contact_id = ct.id and e.status in ('active', 'paused', 'paused_absence'))
+        -- LE prédicat d'appartenance, rejoué tel quel : chaque personne a sa PROPRE source, et
+        -- c'est par ce lien-là qu'elle sortirait de la population sans que le total bronche. La
+        -- somme resterait à 2, le contrôle resterait vert, et il n'aurait rien prouvé d'elle.
+        and (exists (select 1 from campaigns cp where cp.id = $2 and cp.source_id = s.source_id)
+          or exists (select 1 from campaign_sources cs where cs.campaign_id = $2 and cs.source_id = s.source_id))`,
+    [orpheline.contact_id, m.campagne])).rowCount;
   // L'assertion porte sur la SOMME, pas sur un compteur : répéter `postInexploitable === 1`
   // referait 23c en double, et deux contrôles pour un fait ne valent pas mieux qu'un contrôle
   // creux. La somme se dérive de l'objet rendu, jamais d'une liste recopiée — le jour où une
@@ -2352,14 +2380,20 @@ async function rienARelireNeRetientPas() {
   // liste l'excluait, l'opérateur arriverait sur un écran vide sans comprendre.
   const l = await monde();
   await etapeAvecCorps(l, ACCROCHE_URL, { canal: 'email' });
+  // DEUX états distincts, pas deux fois le même : la bascule d'expiration les aurait rendus
+  // identiques, et le libellé aurait promis un cas que le contrôle ne traitait pas.
   const rejete = await engageurDUnPost(l, 123, { etat: 'pending' });
   const echu = await engageurDUnPost(l, 124, { etat: 'pending' });
-  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = any($1::uuid[])`, [[rejete.fiche, echu.fiche]]);
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = $1`, [rejete.fiche]);
   await rejeterFichesPostExpirees(pool);
+  // Celui-ci est échu APRÈS la bascule : encore `pending`, mais hors de sa fenêtre — l'état dans
+  // lequel une fiche passe la plupart du temps avant que le moteur ne la rejette.
+  await q(`update linkedin_posts set expires_at = now() - interval '1 hour' where id = $1`, [echu.fiche]);
   const listes = await listerPostsDeCampagne(l.ctx, { campagneId: l.campagne });
+  const etatsListes = Object.fromEntries(listes.map((x) => [x.id, x.etat]));
   check('35h. un post rejeté ou échu reste listé : le lien de la File du jour mène bien à lui',
-    listes.some((x) => x.id === rejete.fiche) && listes.some((x) => x.id === echu.fiche),
-    JSON.stringify(listes.map((x) => [x.id, x.etat])));
+    etatsListes[rejete.fiche] === 'rejected' && etatsListes[echu.fiche] === 'pending',
+    JSON.stringify(etatsListes));
 
   // LA BORNE : le chemin du NOM du gabarit reste fermé. Une fiche existe, donc on retient.
   const z = await monde();
@@ -2619,7 +2653,40 @@ async function repriseRestitueLaFile() {
   check('38b. reprise à la main, même verdict : la file, pas la partance',
     apresRep?.status === 'pending_approval' && apresRep?.block_reason === null, JSON.stringify(apresRep));
 
-  // 3. L'AUTRE MOITIÉ : sans drapeau, rien ne change. C'est ce qui rend la correction sûre.
+  // 3. LE DRAPEAU GELÉ. Il dit ce qui était exigé AU MOMENT DU BLOCAGE, pas ce qui l'est
+  // aujourd'hui : une action bloquée sans approbation, puis une politique passée à `all`, et
+  // elle repartirait `scheduled` sans l'accord désormais exigé. Le drapeau est donc un MINIMUM —
+  // on pose `pending_approval` dès que lui, OU le canal `letter`, OU la politique courante
+  // l'exige. Ça ne peut que durcir, jamais laisser partir davantage. (`relecturePremiersEnvoisRequise`
+  // n'est pas rejouée : elle compte les envois déjà partis, hors de portée d'une mise à jour en masse.)
+  const gel = await monteBloquee(134, { approbation: false, motif: 'post_a_relire' });
+  check('38d. au blocage, aucune approbation n\'était exigée',
+    gel.action?.payload?.requiresApproval === false, JSON.stringify(gel.action?.payload));
+  await q(`update campaigns set approval_policy = '{"mode":"all"}'::jsonb where id = $1`, [gel.m.campagne]);
+  await validerPost(gel.m.ctx, { postId: gel.p.fiche, campagneId: gel.m.campagne });
+  const apresGel = (await q(`select status from actions where id = $1`, [gel.action.id])).rows[0];
+  check('38e. la politique a changé depuis : la relance la met dans la FILE, pas en partance',
+    apresGel?.status === 'pending_approval', JSON.stringify(apresGel));
+
+  // Les deux autres chemins lisent la même expression.
+  for (const [cle, chemin] of [['38f. retour d\'absence', 'absence'], ['38g. reprise à la main', 'manuelle']]) {
+    const g = await monteBloquee(chemin === 'absence' ? 135 : 136, { approbation: false, motif: 'post_a_relire' });
+    await q(`update campaigns set approval_policy = '{"mode":"all"}'::jsonb where id = $1`, [g.m.campagne]);
+    if (chemin === 'absence') {
+      await q(`update enrollments set status = 'paused_absence', resume_at = now() - interval '1 hour',
+                  next_action_at = null where id = $1`, [g.action.inscription]);
+      await reprendreAbsencesEchues(pool, new Date());
+    } else {
+      await q(`update enrollments set status = 'paused', next_action_at = null where id = $1`, [g.action.inscription]);
+      await reprendreInscription(g.m.ctx, { inscriptionId: g.action.inscription });
+    }
+    const apres = (await q(`select status from actions where id = $1`, [g.action.id])).rows[0];
+    check(`${cle} : la politique courante durcit aussi ce chemin-là`,
+      apres?.status === 'pending_approval', JSON.stringify(apres));
+  }
+
+  // 4. L'AUTRE MOITIÉ : sans drapeau ni exigence courante, rien ne change. C'est ce qui rend la
+  // correction sûre — elle durcit, elle ne relâche jamais.
   for (const [cas, approbation] of [['un autre motif de blocage', false], ['sans accord exigé', false]]) {
     const n = cas === 'un autre motif de blocage' ? 132 : 133;
     const autre = await monteBloquee(n, { approbation, motif: cas === 'un autre motif de blocage' ? 'missing_variable' : 'post_a_relire' });
@@ -2632,6 +2699,64 @@ async function repriseRestitueLaFile() {
       autre.action?.block_reason === (cas === 'un autre motif de blocage' ? 'missing_variable' : 'post_a_relire')
         && apres?.status === 'scheduled' && apres?.block_reason === null,
       `${JSON.stringify(apres)} / bloquée en ${autre.action?.block_reason}`);
+  }
+}
+
+/**
+ * Une action APPROUVÉE doit partir.
+ *
+ * Ce lot remplit la file d'attente humaine pour la première fois : une action relâchée restitue
+ * `pending_approval` quand l'accord était exigé. Or une action `approved` ne partait JAMAIS, sur
+ * AUCUN des deux canaux — les balayages filtrent `scheduled`, le gestionnaire email refuse tout
+ * autre statut, `approuverEnvoi` n'enfile rien, et rien ne ramène l'action à `scheduled`. Elle
+ * reste `approved` indéfiniment, sans erreur, pendant que l'écran la compte comme « prévue ».
+ * Livrer la garde sans ça, ce serait envoyer des gens dans une file dont rien ne sort.
+ *
+ * Mesuré : aucune action `approved` ni `pending_approval` n'existe en base aujourd'hui (le seuil
+ * de relecture des premiers envois vaut zéro par défaut), donc la correction ne peut réveiller
+ * aucune ligne.
+ *
+ * LES DEUX SENS, et le second compte le plus : une action qui attend encore un accord ne doit
+ * toujours pas partir, sinon cette correction casserait la règle que l'autre protège.
+ */
+async function approuveePart() {
+  console.log('\n# une action approuvée part ; une action qui attend l\'accord, non');
+  await demarrerBoss();
+
+  for (const canal of ['email', 'linkedin_message']) {
+    for (const statut of ['approved', 'pending_approval']) {
+      const m = await monde();
+      await etapeAvecCorps(m, SANS_ACCROCHE, { canal });
+      const n = canal === 'email' ? 140 : 141;
+      const p = await engageurDUnPost(m, n, { etat: 'approved' });
+      if (canal === 'email') {
+        await q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [p.contact_id, `bob${n}-${Date.now()}@exemple.invalid`]);
+        await expediteurEmail(m.org, `exp${n}-${Date.now()}@exemple.invalid`);
+      }
+      await tourDInscription(m.org);
+      await q(`update enrollments set next_action_at = now() - interval '1 minute' where organization_id = $1 and status = 'active'`, [m.org]);
+      await tickDueEnrollments(pool, new Date());
+      // L'état à éprouver, posé sur l'action que le tick vient de créer, et assez vieille pour
+      // que le balayage la voie (il attend deux minutes que le dispatch normal fasse son travail).
+      const act = (await q(`select id, status from actions where organization_id = $1`, [m.org])).rows[0];
+      await q(`update actions set status = $2, created_at = now() - interval '10 minutes',
+                  dispatched_at = null where id = $1`, [act.id, statut]);
+      await q(`delete from pgboss.job where data->>'organizationId' = $1`, [m.org]);
+      await q(`delete from linkedin_action_queue where organization_id = $1`, [m.org]);
+
+      if (canal === 'email') await rejouerActionsEmailEnAttente({ pool, boss });
+      else await rejouerActionsLinkedInEnAttente({ pool, boss });
+
+      const enfilee = (await q(
+        `select 1 from pgboss.job where name = 'actions.dispatch' and data->>'actionId' = $1`, [act.id])).rowCount;
+      if (statut === 'approved') {
+        check(`39. [${canal}] une action approuvée est enfilée : la file d'attente humaine a une sortie`,
+          enfilee === 1, `${enfilee} job(s) pour l'action ${act.status} -> ${statut}`);
+      } else {
+        check(`39a. [${canal}] une action qui attend encore l'accord n'est PAS enfilée`,
+          enfilee === 0, `${enfilee} job(s)`);
+      }
+    }
   }
 }
 
@@ -2693,7 +2818,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();
