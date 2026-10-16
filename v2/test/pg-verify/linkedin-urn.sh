@@ -41,18 +41,32 @@ insert into contacts (id, organization_id, email, linkedin_provider_id) values
   ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', 'ancien@example.test',   'urn:li:fs_miniProfile:ACoAAB1234567892'),
   ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', 'url@example.test',      'https://www.linkedin.com/in/jeanne-dupont'),
   ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'societe@example.test',  'urn:li:fsd_company:ACoAAB1234567893'),
-  ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', 'vide@example.test',     null);
+  ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', 'vide@example.test',     null),
+  ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', 'uuid@example.test',     '015fc7a2-abd9-500c-a379-b5268f293c13');
+update contacts set linkedin_url = 'https://www.linkedin.com/in/jeanne-dupont' where id = '00000000-0000-0000-0000-000000000007';
 SQL
 
-# Sens 2 d'abord, sur la base seedée : sans l'UPDATE, la migration doit échouer à son contrôle.
-sed '/^update public.contacts/,/;$/d' "$MIG" | psql >/dev/null 2>"$DIR/../.pg-urn-err" && fail "SANS_CORRECTIF_PASSE_A_TORT"
-grep -q "encore un URN LinkedIn complet" "$DIR/../.pg-urn-err" || { rm -f "$DIR/../.pg-urn-err"; fail "SANS_CORRECTIF_MAUVAISE_ERREUR"; }
-rm -f "$DIR/../.pg-urn-err"
-echo "[$tag] sans le correctif, le contrôle échoue : ok"
+# Sens négatif d'abord, sur la base seedée : privée d'un de ses deux UPDATE, la migration doit échouer
+# à son propre contrôle, en une transaction qui se défait (et chaque fois sur le BON message).
+ERR="$DIR/../.pg-urn-err"
+sed '/^-- \[urn\]/,/;$/d' "$MIG" | psql -1 >/dev/null 2>"$ERR" && fail "SANS_UPDATE_URN_PASSE_A_TORT"
+grep -q "encore un URN LinkedIn complet" "$ERR" || { rm -f "$ERR"; fail "SANS_UPDATE_URN_MAUVAISE_ERREUR"; }
+sed '/^-- \[uuid\]/,/;$/d' "$MIG" | psql -1 >/dev/null 2>"$ERR" && fail "SANS_UPDATE_UUID_PASSE_A_TORT"
+grep -q "encore un UUID FullEnrich" "$ERR" || { rm -f "$ERR"; fail "SANS_UPDATE_UUID_MAUVAISE_ERREUR"; }
+echo "[$tag] sans l'un ou l'autre correctif, le contrôle échoue : ok"
+
+# Un UUID sans adresse de profil : la migration refuse d'effacer, et n'a rien touché.
+psql -c "insert into contacts (id, organization_id, email, linkedin_provider_id) values ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000a1', 'orphelin@example.test', '11111111-2222-3333-4444-555555555555')" >/dev/null || fail SEED2_FAIL
+psql -1 < "$MIG" >/dev/null 2>"$ERR" && fail "UUID_SANS_URL_PASSE_A_TORT"
+grep -q "sans linkedin_url" "$ERR" || { rm -f "$ERR"; fail "UUID_SANS_URL_MAUVAISE_ERREUR"; }
+[ "$(psql -tA -c "select linkedin_provider_id from contacts where id = '00000000-0000-0000-0000-000000000001'")" = "urn:li:fsd_profile:ACoAAB1234567890" ] || fail "ECRITURE_PARTIELLE"
+rm -f "$ERR"
+psql -c "delete from contacts where id = '00000000-0000-0000-0000-000000000008'" >/dev/null || fail DEL_FAIL
+echo "[$tag] un UUID sans linkedin_url fait échouer la migration sans rien écrire : ok"
 
 # Sens 1 : la vraie migration.
 psql -1 < "$MIG" >/dev/null || fail "MIGRATION_FAIL: linkedin_urn_normalise"
-ATTENDU='ACoAAB1234567890|ACoAAB1234567891|ACoAAB1234567892|https://www.linkedin.com/in/jeanne-dupont|urn:li:fsd_company:ACoAAB1234567893|'
+ATTENDU='ACoAAB1234567890|ACoAAB1234567891|ACoAAB1234567892|https://www.linkedin.com/in/jeanne-dupont|urn:li:fsd_company:ACoAAB1234567893||'
 LU="$(psql -tA -c "select string_agg(coalesce(linkedin_provider_id, ''), '|' order by id) from contacts" | tr -d '\n')"
 [ "$LU" = "$ATTENDU" ] || fail "ETAT_INATTENDU: $LU"
 # Idempotente : un second passage ne change rien.
