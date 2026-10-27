@@ -40,7 +40,7 @@ import {
   type AchatFullEnrich,
   type DependancesEnrichissementContact,
 } from './enrichment-contact-connu.js';
-import { enqueueEnrichmentContactsConnus } from '../producer.js';
+import { enqueueEnrichmentContactsConnus, AGE_MAX_SIGNAL_JOURS } from '../producer.js';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const CONTACT = '22222222-2222-4222-8222-222222222222';
@@ -68,6 +68,8 @@ interface Options {
   readonly tentativesDeja?: number;
   readonly coutEnregistre?: boolean;
   readonly cle?: string | null;
+  /** Le signal d'origine du contact dépasse l'âge maximal (réponse de la garde d'ancienneté). */
+  readonly signalTropAncien?: boolean;
 }
 
 const RESULTAT_AVEC_EMAIL: FullEnrichContactResult = {
@@ -102,6 +104,9 @@ function monde(opts: Options = {}) {
   const query = vi.fn(async (sql: string, p: unknown[] = []) => {
     etat.sql.push(sql);
     etat.params.push(p);
+    if (/jr:signal_trop_ancien/.test(sql)) {
+      return { rows: [{ trop_ancien: opts.signalTropAncien ?? false }], rowCount: 1 };
+    }
     if (/from contacts/i.test(sql)) {
       return { rows: contact ? [contact] : [], rowCount: contact ? 1 : 0 };
     }
@@ -403,6 +408,29 @@ describe('enrichirContactConnu', () => {
     expect(etat.achats).toEqual([]);
   });
 
+  it('un signal trop ancien refuse l’achat : aucun credit, aucun appel, contact non marque', async () => {
+    const { deps, etat } = monde({ signalTropAncien: true });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('signal_trop_ancien');
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.signalTropAncien(CONTACT, AGE_MAX_SIGNAL_JOURS)}`);
+    expect(etat.sql.some((s2) => /consume_provider_credit/.test(s2))).toBe(false);
+    expect(etat.achats).toEqual([]);
+    // Refus définitif mais sans marque : le contact sera purgé avec son signal, rien à poser dessus.
+    expect(etat.marquesSeules).toBe(0);
+  });
+
+  it('la garde d’ancienneté est interrogée avec l’âge maximal des signaux', async () => {
+    const { deps, etat } = monde();
+    const j = journal();
+    await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    const i = etat.sql.findIndex((s2) => /jr:signal_trop_ancien/.test(s2));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(etat.params[i]).toEqual([CONTACT, ORG, AGE_MAX_SIGNAL_JOURS]);
+  });
+
   it('sans cle FullEnrich, aucun credit n’est consomme', async () => {
     const { deps, etat } = monde({ cle: null });
     const j = journal();
@@ -428,8 +456,10 @@ interface LigneCandidat {
 
 function producteur(candidats: LigneCandidat[]) {
   const sql: string[] = [];
-  const query = vi.fn(async (texte: string) => {
+  const params: unknown[][] = [];
+  const query = vi.fn(async (texte: string, p: unknown[] = []) => {
     sql.push(texte);
+    params.push(p);
     if (/from organization_settings/i.test(texte)) return { rows: [{ value: 'Europe/Paris' }], rowCount: 1 };
     if (/pgboss\./i.test(texte)) return { rows: [{ existe: false }], rowCount: 1 };
     if (/from contacts/i.test(texte)) return { rows: candidats, rowCount: candidats.length };
@@ -437,7 +467,7 @@ function producteur(candidats: LigneCandidat[]) {
   });
   const jobs: { name: string; id: string; data: unknown }[] = [];
   const boss = { insert: async (lot: typeof jobs) => void jobs.push(...lot) };
-  return { pool: { query } as unknown as Pool, boss, jobs, sql };
+  return { pool: { query } as unknown as Pool, boss, jobs, sql, params };
 }
 
 describe('enqueueEnrichmentContactsConnus', () => {
@@ -462,6 +492,17 @@ describe('enqueueEnrichmentContactsConnus', () => {
     // ici on ne vérifie que la file visée, à un caractère de `enrichment.contacts`.
     const requete = sql.find((s) => /from contacts/i.test(s)) ?? '';
     expect(requete).toMatch(/s\.status = 'qualified'/);
+  });
+
+  it('le producteur n’achète que pour un signal récent : la même borne d’âge que le chemin entreprise', async () => {
+    const { pool, boss, sql, params } = producteur([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
+    await enqueueEnrichmentContactsConnus(boss as any, pool);
+    const i = sql.findIndex((s2) => /from contacts/i.test(s2));
+    expect(sql[i]).toMatch(/s\.occurred_at >= now\(\) - make_interval\(days => \$4\)/);
+    // Le quatrième paramètre est l'âge maximal ; les trois premiers n'ont pas bougé.
+    expect(params[i]?.[3]).toBe(AGE_MAX_SIGNAL_JOURS);
+    expect(params[i]).toHaveLength(4);
   });
 
   it('le producteur n’enfile rien pour un contact qui a deja un email', async () => {

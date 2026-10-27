@@ -581,6 +581,9 @@ export async function enqueueEnrichmentForQualified(
  *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
  *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
  *
+ * Un quatrième borne l'ÂGE : le signal d'origine ne dépasse pas `AGE_MAX_SIGNAL_JOURS`,
+ * comme sur le chemin entreprise. On n'achète que pour ce qui arrive maintenant.
+ *
  * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
  * dernière quand le plafond ne permet pas de tout prendre.
  */
@@ -643,6 +646,11 @@ export async function enqueueEnrichmentContactsConnus(
           and c.enriched_at is null
           and c.linkedin_url is not null
           and s.status = 'qualified'
+          -- Ne payer que pour une personne qui arrive MAINTENANT, pas pour l'arriéré : la même
+          -- borne que le chemin entreprise (enqueueEnrichmentForQualified). Sans elle, ce chemin
+          -- rachetait des adresses pour des signaux de plusieurs semaines, dans la limite du
+          -- plafond du jour. Contrôle autoritaire refait dans enrichirContactConnu, qui dépense.
+          and s.occurred_at >= now() - make_interval(days => $4)
           and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
           -- Et ne pas ACHETER une adresse email a une campagne qui n'en enverra jamais : une
           -- sequence 100 % LinkedIn ecrit avec l'URN. Troisieme etage de la meme regle (voir
@@ -661,7 +669,7 @@ export async function enqueueEnrichmentContactsConnus(
       where rang <= $1
       order by rang, organization_id
       limit $2`,
-    [limit, limiteGlobale, lienProfilDeduit('')],
+    [limit, limiteGlobale, lienProfilDeduit(''), AGE_MAX_SIGNAL_JOURS],
   );
 
   let enqueued = 0;

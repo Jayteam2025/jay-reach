@@ -29,8 +29,11 @@
 //       `conflitDAdresse` lève en entier (« duplicate key value violates unique
 //       constraint contacts_org_email_uidx ») : le passage tombe, précisément ce
 //       que le contrôle 24 interdit.
+//  R11. producer.ts : retirer `s.occurred_at >= now() - make_interval(...)` -> 40 rouge.
+//  R12. handler : neutraliser `signalTropAncien` -> 41, 41b et 41c rouges (l'achat PAYANT part).
 import pg from 'pg';
 import {
+  AGE_MAX_SIGNAL_JOURS,
   MSG,
   createRuntime,
   ecarterSignauxTropAnciens,
@@ -812,6 +815,45 @@ async function pannes() {
 
 // ------------------------------- 12. une campagne 100 % LinkedIn n'achete aucune adresse
 
+async function signalAncien() {
+  console.log('on n’achète que pour un signal récent : le producteur ne l’enfile pas, le handler ne le paie pas');
+  const m = await monde();
+  const jobs = [];
+  const faux = { insert: async (lot) => { jobs.push(...lot); } };
+  const pour = (id) => jobs.filter((j) => j.data.contactId === id).length;
+  const dater = (contactId, jours) =>
+    q(`update signals set occurred_at = now() - make_interval(days => $2)
+        where id = (select source_signal_id from contacts where id = $1)`, [contactId, jours]);
+
+  const eva = await engageurQualifie(m, 'eva', 'Eva Recente', 'Directrice commerciale', 'https://www.linkedin.com/in/eva-recente');
+  const fred = await engageurQualifie(m, 'fred', 'Fred Ancien', 'Directeur commercial', 'https://www.linkedin.com/in/fred-ancien');
+  await dater(eva.id, AGE_MAX_SIGNAL_JOURS - 1);
+  await dater(fred.id, AGE_MAX_SIGNAL_JOURS + 2);
+  await enqueueEnrichmentContactsConnus(faux, pool);
+  check('40. le producteur enfile le signal récent (sous la borne) et PAS le signal plus vieux que la borne',
+    pour(eva.id) === 1 && pour(fred.id) === 0, `eva=${pour(eva.id)} fred=${pour(fred.id)} borne=${AGE_MAX_SIGNAL_JOURS} j`);
+
+  // Le handler, lui, refuse un job déposé AUTREMENT que par le producteur. La même personne
+  // sert de témoin : refusée pour son âge, puis rajeunie, elle s'achète — la cause du refus
+  // est donc bien l'âge, et pas l'adresse, le plafond ou la clé.
+  const a = achat();
+  const uAvant = await usage(m.org);
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: fred.id }));
+  const uApres = await usage(m.org);
+  check('41. un job déposé à la main pour un signal trop ancien est refusé AVANT toute dépense',
+    r.valeur === 'signal_trop_ancien' && a.vus.length === 0 && (uApres?.used ?? 0) === (uAvant?.used ?? 0),
+    `${r.valeur} appels=${a.vus.length} used ${uAvant?.used ?? 0}->${uApres?.used ?? 0}`);
+  check('41b. le refus nomme sa cause à l’opérateur',
+    r.lignes.includes(`${MSG.prefixe} ${MSG.signalTropAncien(fred.id, AGE_MAX_SIGNAL_JOURS)}`), r.lignes.join(' | '));
+  const c = (await q(`select email, enriched_at, enrichment_attempts from contacts where id=$1`, [fred.id])).rows[0];
+  check('41c. la personne refusée n’est pas marquée', c.email === null && c.enriched_at === null && c.enrichment_attempts === 0, JSON.stringify(c));
+
+  await dater(fred.id, 1);
+  const r2 = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: m.org, contactId: fred.id }));
+  check('41d. rajeunie, la même personne s’achète : le refus précédent tenait bien à l’âge',
+    r2.valeur === 'achete' && a.vus.length === 1, `${r2.valeur} appels=${a.vus.length}`);
+}
+
 async function campagneLinkedInSeule() {
   console.log('une sequence 100 % LinkedIn n achete pas d adresse email');
   const m = await monde();
@@ -839,7 +881,7 @@ async function campagneLinkedInSeule() {
     (await enFilePour(paul.id)) === 1, `en file = ${await enFilePour(paul.id)}`);
 }
 
-await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes, campagneLinkedInSeule);
+await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes, campagneLinkedInSeule, signalAncien);
 await boss.stop({ graceful: false });
 await pool.end();
 console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);
