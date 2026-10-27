@@ -89,12 +89,13 @@
 //      tri de l'aperçu de la Réception : `nulls first` sans distinguer `en_cours` — 216, 216b ; `nePlusContacter` sans la valeur saisie — 219, 219b ;
 //      garde `do_not_contact` de l'import CSV — 222 ; de l'inscription depuis une liste — 223, 223b ; contrôle de pré-remplissage de la migration 20261016100000
 //      non conditionnel — 224.
-//      NON PROUVES (déclarés) : les filtres d'organisation du balayage des notifications, CHACUN SEUL (la sélection et la prise de marque se couvrent : seuls les deux retirés
-//      ensemble font rougir 215) ; la reprise d'une notification de RECLASSEMENT (`reclasse: true`, message déjà marqué `notifiee: true`) : un échec y fige le curseur, et le
-//      passage suivant ne rejoue plus rien (le corps d'un message LinkedIn arrive avec lui, le cas ne se présente que pour un message sans texte) ; le choix de l'appelant
+//  19. (reprise des trois non-prouvés) reclassement : `completerCorps` sans la remise de la marque `notifiee: false`, ou le handler qui notifie sans `.catch` — 225, 226, 227 ;
+//      filtre d'organisation de la prise de marque, SEUL (`notifierReponseEntrante`) — 228 ; filtre d'organisation de la sélection du balayage, SEUL — 229 (les 55 réponses
+//      étrangères plus anciennes affament le `limit 50`) ; index 20261016130000 rendu inutilisable pour la requête (prédicat `and sent_at is null`) — 230 (EXPLAIN avec
+//      `enable_seqscan = off`, la table de test étant minuscule : prouve l'USAGE POSSIBLE de l'index, pas le choix du planificateur à volume réel).
+//      NON PROUVES (déclarés) : le choix de l'appelant
 //      de ne pas compter une notification échouée comme échec du passage (unitaire seulement) ; la garde `do_not_contact` de `enrollContact` / `inscrireContact` reste prouvée par 96 ;
 //      `sequence.ts:947` (inscription de TEST de l'opérateur sur sa propre adresse) n'a volontairement AUCUNE garde : elle lève même `do_not_contact` pour ce contact-là ;
-//      l'index 20261016130000 (son propre contrôle de forme échoue à la pose, mais le planificateur n'est pas observé).
 //   6 (rappel) : migration 20261016100000 : revenir à `num_nonnulls(...) = 1` pour tout kind — 40 rougit.
 //   6b (sens inverse, tache 12) : même migration, assouplir en `num_nonnulls(...) <= 1` pour TOUS les kinds (la relève sans origine passe, mais
 //      aussi la collecte) : la migration se verifie elle-meme et echoue d'abord (MIGRATION_FAIL, constate le 16/10) ; en relachant AUSSI son
@@ -1777,6 +1778,64 @@ async function filetDesNotifications() {
   await recordInboundReply(pool, ORG_X, { contactId: id(954), channel: 'linkedin_message', body: 'Autre org', providerMessageId: 'urn:li:msg_message:autre', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
   const faites = await balayerReponsesNonNotifiees(pool, ORG_N);
   check('215 le balayage d une organisation ne notifie pas, et ne marque pas, les reponses d une autre', faites === 0 && (await marque('urn:li:msg_message:autre')) === 'false' && (await notifs(ORG_X)) === 0, `${faites} / ${await marque('urn:li:msg_message:autre')} / ${await notifs(ORG_X)}`);
+
+  // 225 a 227. La notification d'un RECLASSEMENT (corps tardif d'un message deja notifie) passe par le meme filet.
+  await contact(955, ORG_N);
+  await recordInboundReply(pool, ORG_N, { contactId: id(955), channel: 'linkedin_message', body: '', headers: { 'auto-submitted': 'auto-replied' }, providerMessageId: 'urn:li:msg_message:reclasse', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
+  await q(`update thread_messages set raw = raw || '{"notifiee": true}'::jsonb where provider_message_id = 'urn:li:msg_message:reclasse'`);
+  const avant = await notifs();
+  const ancienR = new Date(Date.now() - 2 * 3_600_000);
+  await q(`update linkedin_server_sessions set releve_curseur_at = $2 where organization_id = $1`, [ORG_N, ancienR]);
+  await q(`create trigger jr_test_refuse before insert on notifications for each row execute function jr_test_refuse_notifs()`);
+  conversation.elements = [conversationDe(MOI, 'reclasse', 'ACoAAnotif955', 'https://www.linkedin.com/in/n955', recu(), 'I am no longer with Acme.')];
+  const panneR = await erreur(releve());
+  const curseurR = (await lireEtat(pool, ORG_N)).curseur;
+  check('225 notification de reclassement refusee par la base : le passage ne leve pas, le curseur avance, le message est rendu a notifier (marque false)',
+    panneR === null && curseurR.getTime() > ancienR.getTime() + 60_000 && (await marque('urn:li:msg_message:reclasse')) === 'false' && (await notifs()) === avant,
+    JSON.stringify({ panne: panneR?.message, curseurR, marque: await marque('urn:li:msg_message:reclasse'), notifs: await notifs(), avant }));
+  await q(`drop trigger jr_test_refuse on notifications`);
+  conversation.elements = [];
+  await releve();
+  check('226 la base revient : le filet notifie le reclassement au passage suivant (le message est connu, le curseur est passe)', (await notifs()) === avant + 1 && (await marque('urn:li:msg_message:reclasse')) === 'true', `${await notifs()} / ${avant} / ${await marque('urn:li:msg_message:reclasse')}`);
+  await releve();
+  check('227 idempotent : pas de doublon au passage de plus', (await notifs()) === avant + 1, String(await notifs()));
+
+  // 228. Prise de marque : le filtre d'organisation de `notifierReponseEntrante`, SEUL (la selection du balayage ne le couvre pas : on
+  // appelle la fonction directement avec l'identifiant d'une AUTRE organisation).
+  const refusX = await notifierReponseEntrante(pool, ORG_N, 'urn:li:msg_message:autre', 'x');
+  check('228 la prise de marque est bornee a l organisation : un identifiant d une autre organisation ne notifie ni ne marque rien', refusX === false && (await marque('urn:li:msg_message:autre')) === 'false' && (await notifs(ORG_X)) === 0 && (await notifs()) === avant + 1,
+    JSON.stringify([refusX, await marque('urn:li:msg_message:autre'), await notifs(ORG_X)]));
+
+  // 229. Selection du balayage : le filtre d'organisation, SEUL. Sans lui les reponses en attente des AUTRES organisations (plus
+  // anciennes) occupent les 50 places du `limit` et affament l'organisation : la sienne n'est jamais reprise.
+  const filX = (await q(`select thread_id from thread_messages where provider_message_id = 'urn:li:msg_message:autre'`)).rows[0].thread_id;
+  await q(`insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
+           select $1, 'in', 'etranger', 'urn:li:msg_message:etranger-' || g, '{"notifiee": false}'::jsonb, now() - interval '3 days' - g * interval '1 minute' from generate_series(1, 55) g`, [filX]);
+  await recordInboundReply(pool, ORG_N, { contactId: id(951), channel: 'linkedin_message', body: 'Ma reponse a moi', providerMessageId: 'urn:li:msg_message:affamee', receivedAt: new Date(), raw: { source: 'releve_serveur', notifiee: false } });
+  const reprise = await balayerReponsesNonNotifiees(pool, ORG_N);
+  check('229 le balayage ne laisse pas les reponses en attente d une autre organisation (55, plus anciennes) occuper son limit : la sienne est reprise', reprise === 1 && (await marque('urn:li:msg_message:affamee')) === 'true' && (await notifs(ORG_X)) === 0,
+    JSON.stringify([reprise, await marque('urn:li:msg_message:affamee'), await notifs(ORG_X)]));
+  await q(`delete from thread_messages where provider_message_id like 'urn:li:msg_message:etranger-%'`);
+
+  // 230. Le planificateur et l'index 20261016130000 : la requete du filet (texte de production, a l'identique) doit pouvoir s'appuyer
+  // sur l'index partiel. La table de test est minuscule : le planificateur prefererait un parcours sequentiel quel que soit l'index, donc
+  // `enable_seqscan = off` (dit ici : cela prouve que l'index est UTILISABLE par cette requete, pas que le planificateur le choisit a
+  // volume reel).
+  const plan = await pool.connect();
+  try {
+    await plan.query('begin');
+    await plan.query('set local enable_seqscan = off');
+    const ex = (await plan.query(`explain select m.provider_message_id, m.body
+         from thread_messages m join threads t on t.id = m.thread_id
+        where t.organization_id = $1 and m.direction = 'in' and m.raw ->> 'notifiee' = 'false'
+          and m.provider_message_id is not null
+        order by m.sent_at nulls last, m.id
+        limit $2`, [ORG_N, 50])).rows.map((r) => r['QUERY PLAN']).join('\n');
+    await plan.query('rollback');
+    check('230 le plan de la requete du filet utilise l index partiel thread_messages_reponse_non_notifiee_idx (enable_seqscan = off, table minuscule)', ex.includes('thread_messages_reponse_non_notifiee_idx'), ex);
+  } finally {
+    plan.release();
+  }
 }
 
 async function receptionEtOppositions() {
