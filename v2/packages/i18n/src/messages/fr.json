@@ -1746,9 +1746,8 @@
           "detail": "Fermée volontairement : {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Arrêtée : la sortie réseau n'est pas celle attendue.",
-          "detail": "Vue à {ip} ({origine}) au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
-          "detailSansOrigine": "Vue à {ip} au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "phrase": "La connexion LinkedIn ne sort plus par l'adresse prévue : la collecte et les envois sont suspendus.",
+          "detail": "Rien n'est parti vers LinkedIn. L'adresse vue et l'opérateur se lisent dans « Détails techniques ».",
           "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
         }
       },

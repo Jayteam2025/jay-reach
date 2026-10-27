@@ -245,7 +245,7 @@ export default async function AujourdhuiPage() {
           <Carte
             titre={t('caps.title')}
             action={
-              <Link href="/settings" className="jr-lien" style={{ fontSize: 13 }}>
+              <Link href="/settings/limits" className="jr-lien" style={{ fontSize: 13 }}>
                 {t('caps.settings')}
               </Link>
             }

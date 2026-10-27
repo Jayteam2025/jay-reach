@@ -144,12 +144,9 @@ describe('varianteDetailSession', () => {
     expect(varianteDetailSession({ ...base, derniereCollecte: null })).toBe('detailSansCollecte');
   });
 
-  it('sortie inattendue avec IP et opérateur : gabarit complet', () => {
+  it('sortie inattendue avec IP relevée : gabarit complet, quel que soit l’opérateur', () => {
     expect(varianteDetailSession(bloquee('sortie_inattendue'))).toBe('detail');
-  });
-
-  it('sortie inattendue sans opérateur ni pays : gabarit « sans origine »', () => {
-    expect(varianteDetailSession({ ...bloquee('sortie_inattendue'), operateur: null, pays: null })).toBe('detailSansOrigine');
+    expect(varianteDetailSession({ ...bloquee('sortie_inattendue'), operateur: null, pays: null })).toBe('detail');
   });
 
   it('sortie inattendue sans IP relevée : gabarit « sans IP », même si l’opérateur est connu', () => {
@@ -171,7 +168,7 @@ describe('clés de traduction construites dynamiquement', () => {
   const lire = (chemin: string): unknown => chemin.split('.').reduce<unknown>((n, k) => (n as Record<string, unknown> | undefined)?.[k], fr);
 
   const CLES: CleEtatSession[] = ['absente', 'prete', 'defi', 'cookieRefuse', 'disjoncteur', 'revoquee', 'sortieInattendue'];
-  const VARIANTES = ['detail', 'detailSansCollecte', 'detailSansOrigine', 'detailSansIp'] as const;
+  const VARIANTES = ['detail', 'detailSansCollecte', 'detailSansIp'] as const;
 
   it.each(CLES)('reglages.linkedin.etat.%s a sa phrase et son détail', (cle) => {
     expect(typeof lire(`reglages.linkedin.etat.${cle}.phrase`)).toBe('string');
@@ -183,7 +180,6 @@ describe('clés de traduction construites dynamiquement', () => {
       [base, 'prete'],
       [{ ...base, derniereCollecte: null }, 'prete'],
       [bloquee('sortie_inattendue'), 'sortieInattendue'],
-      [{ ...bloquee('sortie_inattendue'), operateur: null, pays: null }, 'sortieInattendue'],
       [{ ...bloquee('sortie_inattendue'), ipVue: null }, 'sortieInattendue'],
       [null, 'absente'],
       [bloquee('defi'), 'defi'],

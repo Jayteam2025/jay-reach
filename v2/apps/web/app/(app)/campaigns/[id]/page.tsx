@@ -188,7 +188,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
               valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.envois.utilise, vue.plafonds.envois.plafond))}
             />
           )}
-          <Link href="/settings" className="jr-lien jr-lien-petit jr-lien-pied">
+          <Link href="/settings/limits" className="jr-lien jr-lien-petit jr-lien-pied">
             {t('overview.caps.settingsLink')}
           </Link>
         </Carte>

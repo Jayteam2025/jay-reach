@@ -23,6 +23,7 @@ import {
   type ResultatConnexion,
 } from '../../app/actions/linkedin-connexion';
 import { ActionDeconnexion } from './ActionDeconnexion';
+import { synchroniserConfirmation, type EtatConfirmationDeconnexion } from './confirmation-deconnexion';
 
 /**
  * La fenêtre de saisie du code, côté web. Elle doit rester égale à `FENETRE_CODE_WEB_MS`
@@ -89,7 +90,16 @@ export function ConnexionLinkedin({
 }: ConnexionLinkedinProps) {
   const [demande, setDemande] = useState<Demande | null>(demandeInitiale);
   const [modaleOuverte, setModaleOuverte] = useState(false);
-  const [deconnexionDemandee, setDeconnexionDemandee] = useState(false);
+  const [confirmation, setConfirmation] = useState<EtatConfirmationDeconnexion>({
+    demandee: false,
+    sessionVue: sessionActive,
+  });
+  // La confirmation parle d'une session : si celle-ci change (déconnexion faite, compte rebranché),
+  // la question se referme (ajustement d'état pendant le rendu, motif documenté de React).
+  const confirmationCourante = synchroniserConfirmation(confirmation, sessionActive);
+  if (confirmationCourante !== confirmation) setConfirmation(confirmationCourante);
+  const deconnexionDemandee = confirmationCourante.demandee;
+  const setDeconnexionDemandee = (demandee: boolean) => setConfirmation({ demandee, sessionVue: sessionActive });
   const [erreur, setErreur] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [restant, setRestant] = useState<number | null>(null);

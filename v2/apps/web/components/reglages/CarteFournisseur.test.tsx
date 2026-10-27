@@ -104,4 +104,17 @@ describe('la carte d’un fournisseur', () => {
     expect(ferme).not.toContain(libelles.placeholderSecret);
     expect(ferme).toContain(libelles.remplacer);
   });
+
+  it('un seul filet au-dessus des détails techniques : le bloc ne double pas celui du repli', () => {
+    const seulTechnique = carte({ masque: { identifiant: 'client_id PAR-jay-1234abcd', masque: '••••' } });
+    // Le repli porte son propre filet ; le bloc qui le contient n'en pose pas un second.
+    expect(seulTechnique).not.toContain('border-top');
+    const avecReglage = carte({
+      providerId: 'salesblink',
+      champsConfig: [{ name: 'sync_interval_min', libelle: 'Fréquence', valeurActuelle: '5' }],
+      masque: { identifiant: 'client_id PAR-jay-1234abcd', masque: '••••' },
+    });
+    // Réglages visibles : le filet du bloc les sépare de la clé, celui du repli les sépare des détails.
+    expect(avecReglage.match(/border-top/g)?.length).toBe(1);
+  });
 });

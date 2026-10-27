@@ -268,7 +268,15 @@ export function CarteFournisseur({
       </div>
 
       {(champsConfig.length > 0 || identifiantVisible) && (
-        <div style={{ borderTop: '1px solid var(--jr-filet)', margin: '12px 18px 0', paddingTop: 12 }}>
+        // Un seul filet : quand le bloc n'a que des détails techniques, le repli (`jr-repli`) pose
+        // déjà le sien ; le filet du bloc n'a de raison d'être qu'au-dessus de réglages visibles.
+        <div
+          style={
+            champsVisibles.length > 0
+              ? { borderTop: '1px solid var(--jr-filet)', margin: '12px 18px 0', paddingTop: 12 }
+              : { margin: '0 18px' }
+          }
+        >
           {champsVisibles.length > 0 && (
             <>
               <span className="jr-libelle">{libelles.reglagesTitre}</span>

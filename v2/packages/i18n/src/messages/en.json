@@ -1746,9 +1746,8 @@
           "detail": "Closed on purpose: {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Stopped: the network exit is not the expected one.",
-          "detail": "Seen at {ip} ({origine}) instead of the expected address. Nothing was sent to LinkedIn.",
-          "detailSansOrigine": "Seen at {ip} instead of the expected address. Nothing was sent to LinkedIn.",
+          "phrase": "The LinkedIn connection no longer goes out through the expected address: collection and sending are suspended.",
+          "detail": "Nothing was sent to LinkedIn. The address seen and the operator are listed under \"Technical details\".",
           "detailSansIp": "The network exit could not be read. Nothing was sent to LinkedIn."
         }
       },

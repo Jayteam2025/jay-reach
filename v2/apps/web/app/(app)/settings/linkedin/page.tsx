@@ -116,7 +116,6 @@ export default async function ReglagesLinkedinPage() {
   const variante = varianteDetailSession(session);
   const envoi = phraseEtatEnvoi(session, prochain, maintenant);
   const inconnu = t('faits.inconnu');
-  const origine = [session?.operateur, session?.pays].filter(Boolean).join(', ');
   // Ce que lit un non-technicien : le genre de sortie et le pays, en toutes lettres. L'adresse IP
   // et l'opérateur restent derrière « Détails techniques ». Le pays est celui relevé à l'ouverture
   // de la session, jamais supposé : sans relevé, la phrase ne cite pas de pays.
@@ -137,7 +136,6 @@ export default async function ReglagesLinkedinPage() {
     ),
     quand: sansPointFinal(session?.bloqueeLe ? dateCourte(session.bloqueeLe.toISOString(), maintenant, fuseau) : inconnu),
     ip: session?.ipVue ?? inconnu,
-    origine,
   });
 
   // « jusqu'à » pour une pause, « prochain envoi » pour un créneau à venir : deux dates

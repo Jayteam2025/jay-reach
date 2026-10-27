@@ -1746,9 +1746,8 @@
           "detail": "Bewust gesloten: {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Gestopt: de netwerkuitgang is niet de verwachte.",
-          "detail": "Gezien op {ip} ({origine}) in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
-          "detailSansOrigine": "Gezien op {ip} in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "phrase": "De LinkedIn-verbinding gaat niet meer via het verwachte adres naar buiten: verzamelen en versturen zijn opgeschort.",
+          "detail": "Er is niets naar LinkedIn gestuurd. Het geziene adres en de operator staan onder \"Technische details\".",
           "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
         }
       },

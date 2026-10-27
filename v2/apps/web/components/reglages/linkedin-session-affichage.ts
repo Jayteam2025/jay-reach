@@ -79,13 +79,12 @@ export function ligneMoteurLinkedIn(
  */
 export function varianteDetailSession(
   session: SessionLinkedIn | null,
-): 'detail' | 'detailSansCollecte' | 'detailSansOrigine' | 'detailSansIp' {
+): 'detail' | 'detailSansCollecte' | 'detailSansIp' {
   const cle = cleDeLaSession(session);
   if (cle === 'prete') return session?.derniereCollecte ? 'detail' : 'detailSansCollecte';
-  if (cle === 'sortieInattendue') {
-    if (!session?.ipVue) return 'detailSansIp';
-    return session.operateur || session.pays ? 'detail' : 'detailSansOrigine';
-  }
+  // L'adresse vue et l'opérateur ne sont plus dans la phrase : ils se lisent sous « Détails techniques »,
+  // comme dans l'état normal. Seule une sortie qu'on n'a pas pu relever change de gabarit.
+  if (cle === 'sortieInattendue') return session?.ipVue ? 'detail' : 'detailSansIp';
   return 'detail';
 }
 
