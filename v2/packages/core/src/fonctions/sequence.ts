@@ -60,7 +60,10 @@ function canalAffiche(channel: string): CanalAffiche {
 
 export interface EtapeVue {
   readonly id: string;
-  /** 1-based (`sequence_steps.position` part de 0), même conversion que `campagnes.ts`/`aujourdhui.ts`. */
+  /**
+   * Le RANG de l'étape dans la séquence, 1-based : « Étape 1 » est la première affichée, quelle que soit sa
+   * `sequence_steps.position` en base (voir `sqlRangEtape`, `etapes-sql.ts`). Jamais `position + 1`.
+   */
   readonly position: number;
   readonly canal: CanalAffiche;
   /** Le canal non collapsé : seul moyen de distinguer une invitation d'un message. */
@@ -80,6 +83,10 @@ export interface VueSequence {
   readonly sources: { readonly providerId: string | null }[];
   readonly qualifies: number;
   readonly etapes: EtapeVue[];
+  /**
+   * Personnes (pas inscriptions) allées au bout de la séquence sans répondre. Une personne réinscrite puis
+   * terminée deux fois compte pour une, et une personne qui a fini puis répondu n'est plus « sans réponse ».
+   */
   readonly finDeSequence: { readonly termines: number };
   /**
    * Liste qui alimente la campagne (point 2, issue #120 ; revue F5, constat
@@ -168,7 +175,16 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
       [campagneId, CANAUX_AFFICHES as unknown as string[]],
     ),
     ctx.ex.query<{ n: number }>(
-      `select count(*)::int as n /* jr:sequence_fin */ from enrollments where campaign_id = $1 and status = 'completed'`,
+      // Des PERSONNES : « 3 contacts sont allés au bout » s'affichait pour une campagne de 2 personnes, parce
+      // que la même personne, réinscrite (9 et 12/10), comptait pour deux inscriptions terminées. Et celle qui
+      // a fini PUIS répondu n'est plus « sans répondre » : `exclureApresReponse` l'a sortie de la campagne.
+      `select count(distinct e.contact_id)::int as n /* jr:sequence_fin */
+         from enrollments e
+        where e.campaign_id = $1 and e.status = 'completed'
+          and not exists (
+            select 1 from enrollments r
+             where r.campaign_id = e.campaign_id and r.contact_id = e.contact_id and r.status = 'replied'
+          )`,
       [campagneId],
     ),
   ]);
@@ -224,7 +240,7 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
     const repondus = repondusParEtape.get(e.id) ?? [];
     return {
       id: e.id,
-      position: e.position + 1,
+      position: index + 1,
       canal: canalAffiche(e.channel),
       canalDetaille: e.channel as CanalEtape,
       titre: titreEtape(e.channel, index, etapesBrutes.length),

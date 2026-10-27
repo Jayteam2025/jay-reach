@@ -19,6 +19,7 @@ import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.j
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
 import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
+import { sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -108,7 +109,8 @@ export interface CampagneResume {
   id: string;
   nom: string;
   statut: 'draft' | 'active' | 'paused' | 'archived';
-  etapes: number;
+  /** Canaux des étapes de la séquence, dans l'ordre : « 2 actions LinkedIn, 1 email » se compte là-dessus. */
+  canauxEtapes: CanalEtapeSequence[];
   boites: number;
   /** Un élément peut être `null` (R70, tour de correction 4) : aucun des trois repères de fournisseur n'a de valeur. */
   sources: (string | null)[];
@@ -290,7 +292,7 @@ interface LigneCampagne {
   id: string;
   name: string;
   status: CampagneResume['statut'];
-  etapes: number;
+  canaux_etapes: CanalEtapeSequence[];
   boites: number;
   sources: (string | null)[] | null;
   contacts: number;
@@ -392,7 +394,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     ),
     ctx.ex.query<LigneAction>(
       `select a.id, a.status, a.dispatched_at, a.delivered_at, a.scheduled_for, a.dispatch_after, a.channel, a.sender_id,
-              c.first_name, c.last_name, camp.name as campagne_nom, st.position as etape, s.identity as expediteur
+              c.first_name, c.last_name, camp.name as campagne_nom, ${sqlRangEtape('st')} as etape, s.identity as expediteur
          from actions a /* jr:file_du_jour */
          join enrollments e on e.id = a.enrollment_id
          left join contacts c on c.id = e.contact_id
@@ -406,7 +408,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     ),
     ctx.ex.query<LigneCampagne>(
       `select c.id, c.name, c.status,
-              (select count(*)::int from sequence_steps ss where ss.campaign_id = c.id) as etapes,
+              ${sqlCanauxEtapes('c.id')} as canaux_etapes,
               (select count(*)::int from senders sd where sd.organization_id = c.organization_id and sd.kind = 'email' and sd.is_active) as boites,
               coalesce((select array_agg(distinct ${SQL_PROVIDER_ID_AFFICHAGE}) from campaign_sources cs join sources so on so.id = cs.source_id where cs.campaign_id = c.id), '{}') as sources,
               -- « Contacts » (point 1, tour de correction 5) : MÊME définition que
@@ -580,8 +582,8 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
       envoye: r.dispatched_at !== null,
       livre: estReellementParti(r.channel, r.dispatched_at, r.delivered_at),
       contactNom: nomComplet(r.first_name, r.last_name),
-      // `sequence_steps.position` part de 0 (première étape = 0, voir la même
-      // conversion dans `apps/web/app/actions/campaigns.ts`) : +1 pour l'humain.
+      // `r.etape` est un RANG 0-based (`sqlRangEtape`, jamais `sequence_steps.position`, qui garde les
+      // trous d'une étape supprimée) : +1 pour l'humain.
       etape: r.etape !== null ? r.etape + 1 : null,
       campagneNom: r.campagne_nom,
       expediteur: r.expediteur,
@@ -617,7 +619,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     id: r.id,
     nom: r.name,
     statut: r.status,
-    etapes: r.etapes,
+    canauxEtapes: r.canaux_etapes,
     boites: r.boites,
     sources: r.sources ?? [],
     contacts: r.contacts,

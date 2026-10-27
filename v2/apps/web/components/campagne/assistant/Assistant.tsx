@@ -10,6 +10,7 @@ import { EtapeQui, type PersonaOptionAssistant } from './EtapeQui';
 import { EtapeSources, type SourceAssistant } from './EtapeSources';
 import { EtapeSequence, type EtapeSequenceEtape, type CleModeleSequence, etapesDepuisModele } from './EtapeSequence';
 import { EtapeEnvoi, type BoiteEnvoiAssistant } from './EtapeEnvoi';
+import { aUneEtapeEmail, compterCanaux, libellesCanaux, resumeCanaux } from '../../../lib/canaux-sequence';
 
 const MODELE_PAR_DEFAUT: CleModeleSequence = 'question_relances';
 
@@ -71,8 +72,22 @@ export function nombreBoitesActives(
   return boites.filter((b) => !boiteIdsDesactivees.has(b.id)).length;
 }
 
+/**
+ * R71 : aucune boîte cochée alors qu'il y en a au moins une de connectée — « Créer et lancer » se désactive.
+ * Seulement pour une séquence qui contient un email : une campagne qui n'écrit que sur LinkedIn n'a besoin
+ * d'aucune boîte, et ne doit pas être bloquée par un choix qu'on ne lui a même pas montré.
+ */
+export function lancementBloqueParLesBoites(
+  canauxEtapes: readonly string[],
+  boites: readonly BoiteEnvoiAssistant[],
+  boiteIdsDesactivees: ReadonlySet<string>,
+): boolean {
+  return aUneEtapeEmail(canauxEtapes) && boites.length > 0 && nombreBoitesActives(boites, boiteIdsDesactivees) === 0;
+}
+
 export function Assistant({ personas, boites }: AssistantProps) {
   const t = useTranslations('campagne.nouvelle');
+  const tCanaux = useTranslations('canauxSequence');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [etapeIndex, setEtapeIndex] = useState(0);
@@ -168,9 +183,12 @@ export function Assistant({ personas, boites }: AssistantProps) {
   const personaNom = personas.find((p) => p.id === personaId)?.nom ?? '—';
   const totalJours = etapes.reduce((somme, e) => somme + e.delaiJours, 0);
   const nbBoitesActives = nombreBoitesActives(boites, boiteIdsDesactivees);
-  // R71 : aucune boîte cochée alors qu'il y en a au moins une de connectée —
-  // « Créer et lancer » se désactive, « Enregistrer en brouillon » reste possible.
-  const aucuneBoiteActive = boites.length > 0 && nbBoitesActives === 0;
+  // Les boîtes d'envoi ne concernent que les étapes email : une campagne qui n'écrit que sur LinkedIn n'en
+  // propose aucune, n'en exige aucune pour se lancer, et n'en compte aucune dans son récapitulatif.
+  const canauxEtapes = etapes.map((e) => e.canal);
+  const avecEmail = aUneEtapeEmail(canauxEtapes);
+  // « Créer et lancer » se désactive (R71), « Enregistrer en brouillon » reste possible.
+  const aucuneBoiteActive = lancementBloqueParLesBoites(canauxEtapes, boites, boiteIdsDesactivees);
 
   return (
     <section className="jr-assistant">
@@ -321,6 +339,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
       {etapeCourante === 'envoi' && (
         <EtapeEnvoi
           boites={boites}
+          afficherBoites={avecEmail}
           boiteIdsDesactivees={boiteIdsDesactivees}
           onToggleBoite={toggleBoite}
           aucuneBoiteActive={aucuneBoiteActive}
@@ -330,8 +349,13 @@ export function Assistant({ personas, boites }: AssistantProps) {
           recapitulatif={{
             persona: t('send.recapPersonaValue', { persona: personaNom, score: Number(scoreMin) || 0 }),
             sources: sources.length === 0 ? t('send.recapSourcesEmpty') : sources.map((s) => s.nom).join(' · '),
-            sequence: t('send.recapSequenceValue', { n: etapes.length, jours: totalJours }),
-            envoi: t('send.recapEnvoiValue', { n: nbBoitesActives, plafond: Number(plafondJour) || 0 }),
+            sequence: t('send.recapSequenceValue', {
+              resume: resumeCanaux(compterCanaux(canauxEtapes), libellesCanaux(tCanaux)),
+              jours: totalJours,
+            }),
+            envoi: avecEmail
+              ? t('send.recapEnvoiValue', { n: nbBoitesActives, plafond: Number(plafondJour) || 0 })
+              : t('send.recapEnvoiSansBoites', { plafond: Number(plafondJour) || 0 }),
           }}
           manques={manques}
           libelles={{

@@ -6,6 +6,7 @@ import type { Locale } from '@jay-reach/i18n';
 import { contexteCourant } from '../../../lib/contexte';
 import { dateRelativeCourte } from '../../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../../lib/nombres';
+import { aUneEtapeEmail } from '../../../lib/canaux-sequence';
 import { Carte, EnTetePage, EtatVide, Puce, Table, TuileLogo } from '../../../components/ui';
 import type { PuceTon } from '../../../components/ui';
 import { PileDeBoites } from '../../../components/campagne/PileDeBoites';
@@ -160,12 +161,15 @@ export default async function CampagnesPage({
                       {t(`status.${campagne.statut}`)}
                     </Puce>
                   ),
-                  boites:
-                    campagne.boites.length === 0 ? (
-                      <span className="jr-secondaire">{t('list.noBoxes')}</span>
-                    ) : (
-                      <PileDeBoites boites={campagne.boites} />
-                    ),
+                  // Les boîtes d'envoi ne concernent que les étapes email : une campagne 100 % LinkedIn
+                  // n'écrit depuis aucune boîte, lui en montrer trois serait faux.
+                  boites: !aUneEtapeEmail(campagne.canauxEtapes) ? (
+                    <span className="jr-secondaire">—</span>
+                  ) : campagne.boites.length === 0 ? (
+                    <span className="jr-secondaire">{t('list.noBoxes')}</span>
+                  ) : (
+                    <PileDeBoites boites={campagne.boites} />
+                  ),
                   contacts: formatNombre(campagne.contacts, locale),
                   sequence: (
                     <>

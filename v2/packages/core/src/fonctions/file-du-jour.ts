@@ -14,6 +14,7 @@ import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
 import type { EtatEnvoi } from './aujourdhui.js';
+import { sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -318,9 +319,11 @@ export interface ApercuEnvoi {
   readonly contactEntreprise: string | null;
   readonly score: number | null;
   readonly pourquoi: { titre: string; detail: string | null } | null;
-  /** 1-based (`sequence_steps.position` part de 0, même conversion que `campagnes.ts`/`aujourdhui.ts`). */
+  /** Le RANG de l'étape, 1-based (`sqlRangEtape`) — jamais `sequence_steps.position + 1`. */
   readonly etapePosition: number;
   readonly etapeNom: string;
+  /** Le canal réel de l'action : le tiroir ne peut pas dire « email » d'une invitation LinkedIn. */
+  readonly canal: CanalEtapeSequence;
   /** ISO de `actions.scheduled_for` — `null` si jamais programmé. */
   readonly heurePrevue: string | null;
   /** Statut réel de l'action (`actions.status`), pour que le tiroir n'affiche les boutons d'action que sur un envoi pas encore parti (R39). */
@@ -333,8 +336,10 @@ interface LigneActionApercu {
   scheduled_for: string | null;
   contact_id: string;
   campaign_id: string;
+  channel: string;
   template_parent_id: string | null;
-  position: number | null;
+  /** RANG 0-based de l'étape (`sqlRangEtape`), `null` si l'étape a été supprimée. */
+  rang: number | null;
   locale: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -356,9 +361,18 @@ function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
 }
 
-/** « Premier email » pour la première étape (position 0), « Relance » ensuite — vocabulaire de la maquette, quel que soit le canal. */
-function nomEtape(position: number): string {
-  return position === 0 ? 'Premier email' : 'Relance';
+/**
+ * Le nom d'une étape selon son rang (0-based) ET son canal : « Premier email » / « Relance » pour un email
+ * (vocabulaire de la maquette, comme `titreEtape` de `sequence.ts`), « Invitation LinkedIn » pour une invitation.
+ * Quel que soit le canal, la première étape s'appelait « Premier email » : l'aperçu d'une invitation LinkedIn
+ * l'annonçait comme un email.
+ */
+function nomEtape(rang: number, canal: string): string {
+  if (canal === 'linkedin_invite') return 'Invitation LinkedIn';
+  if (canal === 'linkedin_message') return rang === 0 ? 'Premier message LinkedIn' : 'Relance LinkedIn';
+  if (canal === 'letter') return 'Courrier';
+  if (canal === 'call') return 'Appel';
+  return rang === 0 ? 'Premier email' : 'Relance';
 }
 
 /**
@@ -377,7 +391,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   const { actionId } = valider(schemaActionId, entree);
 
   const res = await ctx.ex.query<LigneActionApercu>(
-    `select a.id, a.status, a.scheduled_for, e.contact_id, e.campaign_id, st.template_parent_id, st.position,
+    `select a.id, a.status, a.channel, a.scheduled_for, e.contact_id, e.campaign_id, st.template_parent_id, ${sqlRangEtape('st')} as rang,
             c.locale, c.first_name, c.last_name, c.job_title,
             coalesce(ac.name, sig.company_hint) as entreprise,
             s.identity as expediteur,
@@ -417,7 +431,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   const renduCorps = gabarit ? renderTemplate(gabarit.body, valeurs) : { text: '', missing: [] };
   const variablesManquantes = [...new Set([...renduObjet.missing, ...renduCorps.missing])];
 
-  const position = ligne.position ?? 0;
+  const rang = ligne.rang ?? 0;
 
   return {
     objet: renduObjet.text,
@@ -430,8 +444,9 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
     contactEntreprise: ligne.entreprise,
     score: ligne.score,
     pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
-    etapePosition: position + 1,
-    etapeNom: nomEtape(position),
+    etapePosition: rang + 1,
+    etapeNom: nomEtape(rang, ligne.channel),
+    canal: ligne.channel as CanalEtapeSequence,
     heurePrevue: ligne.scheduled_for,
     statut: ligne.status,
   };

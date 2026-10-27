@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import Link from 'next/link';
 import type { EnvoiPrevu, EtatEnvoi } from '@jay-reach/core';
 import { etatAffichage } from '../../lib/file-du-jour';
+import { natureDesCanaux, type NatureCanaux } from '../../lib/canaux-sequence';
 import { Avatar, Puce } from '../ui';
 import type { PuceTon } from '../ui';
 import { BoutonChercherEmail } from './BoutonChercherEmail';
@@ -55,8 +56,8 @@ export interface TableFileDuJourLibelles {
   colonneEtape: string;
   colonneDepuis: string;
   colonneEtat: string;
-  /** Compte d'une tranche (« 4 emails »), pluriel ICU déjà résolu par l'appelant. */
-  groupeCompte: (n: number) => string;
+  /** Compte d'une tranche (« 4 emails », « 2 actions LinkedIn »), pluriel ICU déjà résolu par l'appelant, selon les canaux de la tranche. */
+  groupeCompte: (n: number, nature: NatureCanaux) => string;
   etat: Record<EtatEnvoi, string>;
   livraisonEnAttente: string;
   relire: string;
@@ -221,7 +222,7 @@ export function TableFileDuJour({
           <Fragment key={`groupe-${groupe.heure}`}>
             <tr className="groupe">
               <td colSpan={6}>
-                {intituleTrancheHoraire(groupe.heure)} · {libelles.groupeCompte(groupe.envois.length)}
+                {intituleTrancheHoraire(groupe.heure)} · {libelles.groupeCompte(groupe.envois.length, natureDesCanaux(groupe.envois.map((e) => e.canal)))}
               </td>
             </tr>
             {groupe.envois.map((envoi) => (

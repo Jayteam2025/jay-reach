@@ -7,6 +7,7 @@ import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
+import { libellesCanaux, ligneEtapesEtBoites } from '../../lib/canaux-sequence';
 import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../lib/plafonds-affichage';
 import { ListeDemarrage } from '../../components/accueil/ListeDemarrage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
@@ -52,9 +53,10 @@ export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
   // `tPlafonds` : le gabarit des jauges vit avec l'écran Plafonds, et les trois écrans qui
   // montrent ces jauges le partagent plutôt que d'en recopier chacun une variante.
-  const [t, tPlafonds, locale, a, demarrage] = await Promise.all([
+  const [t, tPlafonds, tCanaux, locale, a, demarrage] = await Promise.all([
     getTranslations('aujourdhui'),
     getTranslations('reglages.plafonds'),
+    getTranslations('canauxSequence'),
     localeCourante(),
     lireAujourdhuiCourant(ctx),
     lireDemarrage(ctx),
@@ -299,7 +301,11 @@ export default async function AujourdhuiPage() {
                         {campagne.nom}
                       </Link>
                     </b>
-                    <small>{t('campaigns.steps', { n: campagne.etapes, boites: campagne.boites })}</small>
+                    <small>
+                      {ligneEtapesEtBoites(campagne.canauxEtapes, campagne.boites, libellesCanaux(tCanaux), (cle, valeurs) =>
+                        t(`campaigns.${cle}`, valeurs),
+                      )}
+                    </small>
                   </span>
                 </div>
               ),

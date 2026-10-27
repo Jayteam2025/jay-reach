@@ -4,6 +4,8 @@ import { apercuEnvoi, ErreurIntrouvable, lireReglages, listerFileDuJour, type En
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../../lib/dates';
 import { etatAffichage } from '../../../../../lib/file-du-jour';
+import { lireVueDEnsembleCourante } from '../../../../../lib/campagne';
+import { natureDesCanaux } from '../../../../../lib/canaux-sequence';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
 import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
 import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
@@ -78,7 +80,7 @@ function construireLibellesTiroir(
   return {
     titre: t('file.drawer.title'),
     fermer: t('file.drawer.close'),
-    emailTitre: t('file.drawer.description'),
+    emailTitre: t('file.drawer.description', { canal: apercu.canal }),
     heureLibelle,
     statut: t(`file.status.${etatEffectif}`),
     statutTon: TON_ETAT[etatEffectif],
@@ -117,8 +119,11 @@ export default async function CampagneFileDuJourPage({
   const enrichissementEnPause = Number(reglages.enrichissements_par_jour) <= 0;
 
   let resultat: Awaited<ReturnType<typeof listerFileDuJour>>;
+  let vueCampagne: Awaited<ReturnType<typeof lireVueDEnsembleCourante>>;
   try {
-    resultat = await listerFileDuJour(ctx, { campagneId: id });
+    // La vue d'ensemble est déjà lue par le layout de campagne (mémoïsée pour ce rendu) : on n'y prend que les
+    // canaux des étapes, pour dire ce que la campagne envoie quand la journée est vide.
+    [resultat, vueCampagne] = await Promise.all([listerFileDuJour(ctx, { campagneId: id }), lireVueDEnsembleCourante(ctx, id)]);
   } catch (err) {
     if (err instanceof ErreurIntrouvable) notFound();
     throw err;
@@ -133,6 +138,11 @@ export default async function CampagneFileDuJourPage({
     ...e,
     etapeTexte: e.etape !== null ? t('file.step', { n: e.etape }) : null,
   }));
+
+  // La nature de ce qui part aujourd'hui (titre, tranches), et celle de la campagne entière (description) :
+  // « 1 email prévu, répartis par SalesBlink » ne se dit pas d'une invitation LinkedIn.
+  const natureCampagne = natureDesCanaux(vueCampagne.campagne.canauxEtapes);
+  const natureDuJour = envois.length > 0 ? natureDesCanaux(envois.map((e) => e.canal)) : natureCampagne;
 
   const compteurs = {
     tous: envois.length,
@@ -174,8 +184,8 @@ export default async function CampagneFileDuJourPage({
     <section className="jr-contenu une-colonne">
       <div className="jr-section-entete">
         <div>
-          <h2>{t('file.title', { n: compteurs.tous })}</h2>
-          <p>{t('file.description')}</p>
+          <h2>{t('file.title', { n: compteurs.tous, nature: natureDuJour })}</h2>
+          <p>{t('file.description', { nature: natureCampagne })}</p>
         </div>
       </div>
 
@@ -205,7 +215,7 @@ export default async function CampagneFileDuJourPage({
               colonneEtape: t('file.columns.stepAndSubject'),
               colonneDepuis: t('file.columns.from'),
               colonneEtat: t('file.columns.status'),
-              groupeCompte: (n: number) => t('file.group.count', { n }),
+              groupeCompte: (n: number, nature: string) => t('file.group.count', { n, nature }),
               etat: etatLibelles,
               livraisonEnAttente: t('file.pendingDelivery'),
               relire: t('file.actions.review'),

@@ -29,6 +29,12 @@
       "post_date": "Publication date of the post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# email} other {# emails}}",
+    "linkedin": "{n, plural, one {# LinkedIn action} other {# LinkedIn actions}}",
+    "courrier": "{n, plural, one {# letter} other {# letters}}",
+    "appel": "{n, plural, one {# call} other {# calls}}"
+  },
   "login": {
     "title": "Sign in",
     "email": "Email",
@@ -281,7 +287,9 @@
         "replies": "Replies",
         "week": "This week"
       },
-      "steps": "{n, plural, one {# email step} other {# email steps}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSteps": "No steps",
       "noSource": "no source",
       "listSource": "{nom}{autres, plural, =0 {} one { and # other} other { and # others}}",
       "status": {
@@ -415,7 +423,7 @@
         "emailVerified": "Email verified",
         "inSequence": "In sequence",
         "pausedSuffix": "· {n} paused",
-        "delivered": "Emails sent",
+        "delivered": "{nature, select, email {Emails sent} linkedin {LinkedIn actions sent} other {Messages sent}}",
         "awaitingSendSuffix": "· {n} awaiting send",
         "replies": "Replies",
         "interested": "Interested"
@@ -450,8 +458,8 @@
         "seeAll": "View all",
         "empty": "No activity yet.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}} · step {etape}} other {{n, plural, one {# send dispatched} other {# sends dispatched}} · step {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}}} other {{n, plural, one {# send dispatched} other {# sends dispatched}}}}"
         }
       }
     },
@@ -560,8 +568,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email scheduled today} other {# emails scheduled today}}",
-      "description": "Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".",
+      "title": "{nature, select, email {{n, plural, one {# email scheduled today} other {# emails scheduled today}}} linkedin {{n, plural, one {# LinkedIn action scheduled today} other {# LinkedIn actions scheduled today}}} other {{n, plural, one {# send scheduled today} other {# sends scheduled today}}}}",
+      "description": "{nature, select, email {Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".} linkedin {Sent from your account's LinkedIn session, within the hours and limits set for LinkedIn. Nothing awaits your approval, except sends marked \"to review\".} other {Emails are spread by SalesBlink across the sending hours and mailboxes set for this campaign, LinkedIn actions go out from your account's session, within the hours and limits set for LinkedIn. Nothing awaits your approval, except sends marked \"to review\".}}",
       "filters": {
         "all": "{n, plural, one {All #} other {All #}}",
         "scheduled": "{n, plural, one {Scheduled #} other {Scheduled #}}",
@@ -579,7 +587,7 @@
         "status": "Status"
       },
       "group": {
-        "count": "{n, plural, one {# email} other {# emails}}"
+        "count": "{nature, select, email {{n, plural, one {# email} other {# emails}}} linkedin {{n, plural, one {# LinkedIn action} other {# LinkedIn actions}}} other {{n, plural, one {# send} other {# sends}}}}"
       },
       "step": "Step {n}",
       "status": {
@@ -609,7 +617,7 @@
       },
       "drawer": {
         "title": "Review before sending",
-        "description": "Email as it will be sent",
+        "description": "{canal, select, email {Email as it will be sent} linkedin_message {LinkedIn message as it will be sent} linkedin_invite {LinkedIn invitation, sent without a note} other {Send as it will go out}}",
         "close": "Close",
         "why": "Why this contact",
         "score": "Score {n}",
@@ -848,7 +856,8 @@
         "sourcesTitle": "Sources",
         "sourcesSubtitle": "{n, plural, one {# source feeds} other {# sources feed}} this campaign, {m, plural, one {# qualified contact} other {# qualified contacts}} to date",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}",
-        "intoSequence": "Qualified contacts with a verified email enter the sequence",
+        "intoSequence": "Qualified contacts enter the sequence. An email step needs a verified email: without one, the contact waits.",
+        "intoSequenceSansEmail": "Qualified contacts enter the sequence: it has no email step, so no email is required.",
         "delayDays": "{n, plural, one {# day after} other {# days after}}",
         "delayHours": "{n, plural, one {# hour after} other {# hours after}}",
         "endTitle": "End of sequence",
@@ -926,8 +935,8 @@
       "previous": "Previous",
       "next": "Next",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}} · step {etape}} other {{n, plural, one {# send dispatched} other {# sends dispatched}} · step {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}}} other {{n, plural, one {# send dispatched} other {# sends dispatched}}}}"
       }
     },
     "reglages": {
@@ -1079,8 +1088,9 @@
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "No source: contacts will be added manually.",
-        "recapSequenceValue": "{n} emails over {jours} days",
+        "recapSequenceValue": "{resume} over {jours, plural, =0 {a single day} one {# day} other {# days}}",
         "recapEnvoiValue": "{n} mailboxes · {plafond} new contacts per day at most",
+        "recapEnvoiSansBoites": "{plafond} new contacts per day at most",
         "boxesTitle": "Sending mailboxes",
         "boxesEmpty": "No active sending mailbox. Connect one in Settings › Senders.",
         "boxesNoneActive": "Choose at least one mailbox.",

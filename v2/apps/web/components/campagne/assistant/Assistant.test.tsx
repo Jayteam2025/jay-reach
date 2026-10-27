@@ -9,7 +9,7 @@ import {
   etatChampsLinkedInDepuisConfig,
   type TypeLinkedIn,
 } from '../../sources/ChampsSourceLinkedIn';
-import { construireEntreeAssistant, nombreBoitesActives } from './Assistant';
+import { construireEntreeAssistant, lancementBloqueParLesBoites, nombreBoitesActives } from './Assistant';
 import {
   construireConfigOffre,
   bandeauBrouillonLinkedin,
@@ -229,6 +229,27 @@ describe('nombreBoitesActives (R71, tour de correction 4)', () => {
 
   it('rend 0 quand toutes les boîtes sont décochées', () => {
     expect(nombreBoitesActives(boites, new Set(['b1', 'b2', 'b3']))).toBe(0);
+  });
+});
+
+describe('lancementBloqueParLesBoites : seul un email a besoin d\'une boîte', () => {
+  const boites = [{ id: 'b1', identite: 'a@exemple.fr', marque: null }];
+  const toutesDecochees = new Set(['b1']);
+
+  it('séquence avec un email et aucune boîte cochée : le lancement est bloqué (R71)', () => {
+    expect(lancementBloqueParLesBoites(['linkedin_invite', 'email'], boites, toutesDecochees)).toBe(true);
+  });
+
+  it('séquence 100 % LinkedIn : aucune boîte cochée ne bloque rien', () => {
+    expect(lancementBloqueParLesBoites(['linkedin_invite', 'linkedin_message'], boites, toutesDecochees)).toBe(false);
+  });
+
+  it('séquence avec un email et une boîte cochée : pas de blocage', () => {
+    expect(lancementBloqueParLesBoites(['email'], boites, new Set())).toBe(false);
+  });
+
+  it('aucune boîte connectée : ce n\'est pas ce garde qui parle (la carte dit déjà d\'en connecter une)', () => {
+    expect(lancementBloqueParLesBoites(['email'], [], new Set())).toBe(false);
   });
 });
 
@@ -577,6 +598,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        afficherBoites
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
         aucuneBoiteActive={false}
@@ -596,6 +618,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[{ id: 'b1', identite: 'boite@outlook.com', marque: 'outlook' }]}
+        afficherBoites
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
         aucuneBoiteActive={false}
@@ -614,6 +637,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        afficherBoites
         boiteIdsDesactivees={new Set(['b1'])}
         onToggleBoite={() => {}}
         aucuneBoiteActive={true}
@@ -632,6 +656,7 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        afficherBoites
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
         aucuneBoiteActive={false}
@@ -646,10 +671,34 @@ describe('EtapeEnvoi — repli tuile « @ » pour une boîte de marque inconnue 
     expect(html).not.toContain(LIBELLES.boitesAucuneActive);
   });
 
+  it('séquence sans étape email : la carte « Boîtes qui enverront » n\'est pas proposée (elle ne concerne que les étapes email)', () => {
+    const html = renderToStaticMarkup(
+      <EtapeEnvoi
+        boites={[{ id: 'b1', identite: 'boite@exemple.fr', marque: null }]}
+        afficherBoites={false}
+        boiteIdsDesactivees={new Set()}
+        onToggleBoite={() => {}}
+        aucuneBoiteActive={false}
+        relecture="5"
+        onRelectureChange={() => {}}
+        disabled={false}
+        recapitulatif={{ persona: '-', sources: '-', sequence: '-', envoi: '-' }}
+        manques={[]}
+        libelles={LIBELLES}
+      />,
+    );
+    expect(html).not.toContain(LIBELLES.boitesTitre);
+    expect(html).not.toContain('boite@exemple.fr');
+    // Le reste de l'étape (relecture, récapitulatif) reste là.
+    expect(html).toContain(LIBELLES.recapTitre);
+    expect(html).toContain('assistant-envoi-relecture');
+  });
+
   it('R66 (tour de correction 2) : le champ de relecture a un id relié à son libellé par un vrai <label>', () => {
     const html = renderToStaticMarkup(
       <EtapeEnvoi
         boites={[]}
+        afficherBoites
         boiteIdsDesactivees={new Set()}
         onToggleBoite={() => {}}
         aucuneBoiteActive={false}

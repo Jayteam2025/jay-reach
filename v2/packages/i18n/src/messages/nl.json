@@ -29,6 +29,12 @@
       "post_date": "Publicatiedatum van de post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# e-mail} other {# e-mails}}",
+    "linkedin": "{n, plural, one {# LinkedIn-actie} other {# LinkedIn-acties}}",
+    "courrier": "{n, plural, one {# brief} other {# brieven}}",
+    "appel": "{n, plural, one {# gesprek} other {# gesprekken}}"
+  },
   "login": {
     "title": "Inloggen",
     "email": "E-mail",
@@ -281,7 +287,9 @@
         "replies": "Reacties",
         "week": "Deze week"
       },
-      "steps": "{n, plural, one {# e-mailstap} other {# e-mailstappen}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSteps": "Geen stappen",
       "noSource": "geen bron",
       "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
       "status": {
@@ -415,7 +423,7 @@
         "emailVerified": "E-mail geverifieerd",
         "inSequence": "In sequentie",
         "pausedSuffix": "· {n} gepauzeerd",
-        "delivered": "Verstuurde e-mails",
+        "delivered": "{nature, select, email {Verstuurde e-mails} linkedin {Uitgevoerde LinkedIn-acties} other {Verstuurde berichten}}",
         "awaitingSendSuffix": "· {n} wachten op verzending",
         "replies": "Reacties",
         "interested": "Geïnteresseerd"
@@ -450,8 +458,8 @@
         "seeAll": "Alles bekijken",
         "empty": "Nog geen activiteit.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}} · stap {etape}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}} · stap {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}}}}"
         }
       }
     },
@@ -560,8 +568,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}",
-      "description": "Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".",
+      "title": "{nature, select, email {{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}} linkedin {{n, plural, one {# LinkedIn-actie gepland voor vandaag} other {# LinkedIn-acties gepland voor vandaag}}} other {{n, plural, one {# verzending gepland voor vandaag} other {# verzendingen gepland voor vandaag}}}}",
+      "description": "{nature, select, email {Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".} linkedin {Verstuurd vanuit de LinkedIn-sessie van je account, binnen de uren en limieten die voor LinkedIn zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".} other {E-mails worden door SalesBlink verdeeld over de verzenduren en mailboxes die voor deze campagne zijn ingesteld, LinkedIn-acties vertrekken vanuit de sessie van je account, binnen de uren en limieten die voor LinkedIn zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".}}",
       "filters": {
         "all": "{n, plural, one {Alle #} other {Alle #}}",
         "scheduled": "{n, plural, one {Gepland #} other {Gepland #}}",
@@ -579,7 +587,7 @@
         "status": "Status"
       },
       "group": {
-        "count": "{n, plural, one {# e-mail} other {# e-mails}}"
+        "count": "{nature, select, email {{n, plural, one {# e-mail} other {# e-mails}}} linkedin {{n, plural, one {# LinkedIn-actie} other {# LinkedIn-acties}}} other {{n, plural, one {# verzending} other {# verzendingen}}}}"
       },
       "step": "Stap {n}",
       "status": {
@@ -609,7 +617,7 @@
       },
       "drawer": {
         "title": "Herzien vóór verzending",
-        "description": "E-mail zoals hij verzonden zal worden",
+        "description": "{canal, select, email {E-mail zoals hij verzonden zal worden} linkedin_message {LinkedIn-bericht zoals het verzonden zal worden} linkedin_invite {LinkedIn-uitnodiging, verzonden zonder notitie} other {Verzending zoals ze vertrekt}}",
         "close": "Sluiten",
         "why": "Waarom dit contact",
         "score": "Score {n}",
@@ -848,7 +856,8 @@
         "sourcesTitle": "Bronnen",
         "sourcesSubtitle": "{n, plural, one {# bron voedt} other {# bronnen voeden}} deze campagne, {m, plural, one {# gekwalificeerd contact} other {# gekwalificeerde contacten}} tot nu toe",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}",
-        "intoSequence": "Gekwalificeerde contacten met een geverifieerde e-mail komen in de sequentie",
+        "intoSequence": "Gekwalificeerde contacten komen in de sequentie. Een e-mailstap vereist een geverifieerde e-mail: zonder die wacht het contact.",
+        "intoSequenceSansEmail": "Gekwalificeerde contacten komen in de sequentie: ze bevat geen e-mailstap, dus geen e-mail vereist.",
         "delayDays": "{n, plural, one {# dag later} other {# dagen later}}",
         "delayHours": "{n, plural, one {# uur later} other {# uur later}}",
         "endTitle": "Einde van de sequentie",
@@ -926,8 +935,8 @@
       "previous": "Vorige",
       "next": "Volgende",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}} · stap {etape}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}} · stap {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}}}}"
       }
     },
     "reglages": {
@@ -1079,8 +1088,9 @@
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "Geen bron: contacten worden handmatig toegevoegd.",
-        "recapSequenceValue": "{n} e-mails over {jours} dagen",
+        "recapSequenceValue": "{resume} over {jours, plural, =0 {één dag} one {# dag} other {# dagen}}",
         "recapEnvoiValue": "{n} mailboxes · maximaal {plafond} nieuwe contacten per dag",
+        "recapEnvoiSansBoites": "maximaal {plafond} nieuwe contacten per dag",
         "boxesTitle": "Verzendende mailboxes",
         "boxesEmpty": "Geen actieve verzendmailbox. Koppel er een in Instellingen › Afzenders.",
         "boxesNoneActive": "Kies minstens één mailbox.",

@@ -339,12 +339,15 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       [campagneId, ctx.organisationId],
     );
     const enrollmentVivante = enrollmentStatus !== null && STATUTS_INSCRIPTION_VIVANTE.has(enrollmentStatus);
-    const etapes: FicheEtape[] = etapesRes.rows.map((e) => ({
-      position: e.position + 1,
+    // `current_step` est un RANG (le séquenceur lit `order by position offset current_step`) : on le compare
+    // au rang de l'étape dans la liste, jamais à `sequence_steps.position`, qui garde les trous d'une étape
+    // supprimée — avec un trou, la fiche montrait la mauvaise étape « en cours ».
+    const etapes: FicheEtape[] = etapesRes.rows.map((_, rang) => ({
+      position: rang + 1,
       etat:
-        currentStep == null || e.position > currentStep
+        currentStep == null || rang > currentStep
           ? 'a_venir'
-          : e.position < currentStep
+          : rang < currentStep
             ? 'faite'
             : enrollmentVivante
               ? 'en_cours'

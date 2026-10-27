@@ -1631,38 +1631,47 @@ describe('lireContraintesSendersDuJour (revue F5, point 10)', () => {
 
 describe('evenementsEnvoisGroupes (point 3.a, fil d’activité, lignes simulées)', () => {
   it('construit une donnée structurée avec étape (1-based) et nombre de boîtes, sans texte français (revue F5, point 4)', () => {
-    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 }]);
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 }]);
     expect(r).toEqual([
       {
-        id: 'envois-2026-09-17T08:00:00.000Z-0',
+        id: 'envois-2026-09-17T08:00:00.000Z-0-email',
         quand: '2026-09-17T08:00:00.000Z',
         type: 'action_sent',
         libelle: null,
         detail: null,
-        donneesEnvois: { n: 24, etape: 1, boites: 3 },
+        donneesEnvois: { n: 24, etape: 1, boites: 3, canal: 'email' },
       },
     ]);
   });
 
   it('sans étape connue (action orpheline), `donneesEnvois.etape` reste `null`', () => {
-    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, n: 2, boites: 1 }]);
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, canal: 'email', n: 2, boites: 1 }]);
     expect(r[0]!.libelle).toBeNull();
-    expect(r[0]!.donneesEnvois).toEqual({ n: 2, etape: null, boites: 1 });
+    expect(r[0]!.donneesEnvois).toEqual({ n: 2, etape: null, boites: 1, canal: 'email' });
   });
 
   it('un groupe par ligne, plusieurs groupes restent distincts', () => {
     const r = evenementsEnvoisGroupes([
-      { heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 },
-      { heure: '2026-09-17T09:00:00.000Z', etape: 1, n: 5, boites: 2 },
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 },
+      { heure: '2026-09-17T09:00:00.000Z', etape: 1, canal: 'email', n: 5, boites: 2 },
     ]);
     expect(r).toHaveLength(2);
-    expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0', 'envois-2026-09-17T09:00:00.000Z-1']);
+    expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0-email', 'envois-2026-09-17T09:00:00.000Z-1-email']);
+  });
+
+  it('une même heure et une même étape, deux canaux : deux groupes, deux identifiants, chacun son canal', () => {
+    const r = evenementsEnvoisGroupes([
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 4, boites: 2 },
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'linkedin_invite', n: 3, boites: 0 },
+    ]);
+    expect(new Set(r.map((e) => e.id)).size).toBe(2);
+    expect(r.map((e) => e.donneesEnvois?.canal)).toEqual(['email', 'linkedin']);
   });
 
   // `date_trunc('hour', a.dispatched_at)` (`timestamptz`) revient de `pg` en objet `Date`, jamais
   // une chaîne (F4, `temps.ts`) : `quand` doit rester une chaîne ISO honnête malgré cette entrée.
   it('accepte un objet `Date` en provenance de `pg`, rend une chaîne ISO (F4, jamais l’objet tel quel)', () => {
-    const r = evenementsEnvoisGroupes([{ heure: new Date('2026-09-17T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }]);
+    const r = evenementsEnvoisGroupes([{ heure: new Date('2026-09-17T08:00:00.000Z'), etape: 0, canal: 'email', n: 24, boites: 3 }]);
     expect(r[0]!.quand).toBe('2026-09-17T08:00:00.000Z');
     expect(typeof r[0]!.quand).toBe('string');
   });
@@ -1706,13 +1715,13 @@ describe('listerActivite', () => {
         'jr:activite_campagne_tout_audit': [
           { id: 'ev-1', created_at: '2026-09-14T07:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée à 10h04.' } },
         ],
-        'jr:activite_campagne_tout_envois': [{ heure: '2026-09-14T08:00:00.000Z', etape: 0, n: 24, boites: 3 }],
+        'jr:activite_campagne_tout_envois': [{ heure: '2026-09-14T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 }],
       });
       const r = await listerActivite(ctx, { campagneId });
       expect(r.total).toBe(2);
       // Le groupe d'envois (8h) est plus récent que le lancement (7h) : en tête.
       expect(r.evenements[0]!.libelle).toBeNull();
-      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3, canal: 'email' });
       expect(r.evenements[1]!.id).toBe('ev-1');
     });
 
@@ -1725,11 +1734,11 @@ describe('listerActivite', () => {
         'jr:activite_campagne_tout_audit': [
           { id: 'ev-1', created_at: new Date('2026-09-14T07:00:00.000Z'), entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée.' } },
         ],
-        'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }],
+        'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, canal: 'email', n: 24, boites: 3 }],
       });
       const r = await listerActivite(ctx, { campagneId });
       expect(r.evenements[0]!.libelle).toBeNull();
-      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3, canal: 'email' });
       expect(r.evenements[1]!.id).toBe('ev-1');
       expect(typeof r.evenements[0]!.quand).toBe('string');
       expect(typeof r.evenements[1]!.quand).toBe('string');
@@ -2120,7 +2129,12 @@ describe('manquesPourLancer', () => {
    */
   it('refuse de lancer une invitation LinkedIn dont le message porte une note', async () => {
     const ctx = faux({
-      'jr:manques_etapes': [{ position: 2, channel: 'linkedin_invite', template_parent_id: 'tpl-note' }],
+      // Positions 0, 4, 7 : la numérotation lue est le RANG (3e étape), pas la position stockée.
+      'jr:manques_etapes': [
+        { position: 0, channel: 'linkedin_invite', template_parent_id: 'tpl-1' },
+        { position: 4, channel: 'linkedin_invite', template_parent_id: 'tpl-1' },
+        { position: 7, channel: 'linkedin_invite', template_parent_id: 'tpl-note' },
+      ],
       'jr:manques_note_invitation': [{ parent: 'tpl-note' }],
       'jr:manques_genres': [],
       'jr:manques_session_linkedin': [{ status: 'active' }],

@@ -29,6 +29,12 @@
       "post_date": "Date de publication du post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# email} other {# emails}}",
+    "linkedin": "{n, plural, one {# action LinkedIn} other {# actions LinkedIn}}",
+    "courrier": "{n, plural, one {# courrier} other {# courriers}}",
+    "appel": "{n, plural, one {# appel} other {# appels}}"
+  },
   "login": {
     "title": "Connexion",
     "email": "Email",
@@ -281,7 +287,9 @@
         "replies": "Réponses",
         "week": "Cette semaine"
       },
-      "steps": "{n, plural, one {# étape email} other {# étapes email}} · {boites, plural, one {# boîte} other {# boîtes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# boîte} other {# boîtes}}",
+      "noSteps": "Aucune étape",
       "noSource": "aucune source",
       "listSource": "{nom}{autres, plural, =0 {} one { et # autre} other { et # autres}}",
       "status": {
@@ -415,7 +423,7 @@
         "emailVerified": "Email vérifié",
         "inSequence": "En séquence",
         "pausedSuffix": "· {n} en pause",
-        "delivered": "Emails partis",
+        "delivered": "{nature, select, email {Emails partis} linkedin {Actions LinkedIn parties} other {Envois partis}}",
         "awaitingSendSuffix": "· {n} en attente d'envoi",
         "replies": "Réponses",
         "interested": "Intéressés"
@@ -450,8 +458,8 @@
         "seeAll": "Tout voir",
         "empty": "Aucune activité pour le moment.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-          "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}} · étape {etape}} other {{n, plural, one {# envoi remis} other {# envois remis}} · étape {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}}} other {{n, plural, one {# envoi remis} other {# envois remis}}}}"
         }
       }
     },
@@ -560,8 +568,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email prévu aujourd'hui} other {# emails prévus aujourd'hui}}",
-      "description": "Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».",
+      "title": "{nature, select, email {{n, plural, one {# email prévu aujourd'hui} other {# emails prévus aujourd'hui}}} linkedin {{n, plural, one {# action LinkedIn prévue aujourd'hui} other {# actions LinkedIn prévues aujourd'hui}}} other {{n, plural, one {# envoi prévu aujourd'hui} other {# envois prévus aujourd'hui}}}}",
+      "description": "{nature, select, email {Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».} linkedin {Envoyées depuis la session LinkedIn de votre compte, aux heures et dans les plafonds réglés pour LinkedIn. Rien n'attend votre accord, sauf les envois marqués « à relire ».} other {Les emails sont répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne, les actions LinkedIn partent de la session de votre compte, aux heures et dans les plafonds réglés pour LinkedIn. Rien n'attend votre accord, sauf les envois marqués « à relire ».}}",
       "filters": {
         "all": "{n, plural, one {Tous #} other {Tous #}}",
         "scheduled": "{n, plural, one {Prévu #} other {Prévus #}}",
@@ -579,7 +587,7 @@
         "status": "État"
       },
       "group": {
-        "count": "{n, plural, one {# email} other {# emails}}"
+        "count": "{nature, select, email {{n, plural, one {# email} other {# emails}}} linkedin {{n, plural, one {# action LinkedIn} other {# actions LinkedIn}}} other {{n, plural, one {# envoi} other {# envois}}}}"
       },
       "step": "Étape {n}",
       "status": {
@@ -609,7 +617,7 @@
       },
       "drawer": {
         "title": "Relire avant envoi",
-        "description": "Email tel qu'il partira",
+        "description": "{canal, select, email {Email tel qu'il partira} linkedin_message {Message LinkedIn tel qu'il partira} linkedin_invite {Invitation LinkedIn, qui part sans note} other {Envoi tel qu'il partira}}",
         "close": "Fermer",
         "why": "Pourquoi ce contact",
         "score": "Score {n}",
@@ -848,7 +856,8 @@
         "sourcesTitle": "Sources",
         "sourcesSubtitle": "{n, plural, one {# source alimente} other {# sources alimentent}} cette campagne, {m, plural, one {# contact qualifié} other {# contacts qualifiés}} à ce jour",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · importée le {date}",
-        "intoSequence": "Les contacts qualifiés avec un email vérifié entrent en séquence",
+        "intoSequence": "Les contacts qualifiés entrent en séquence. Une étape email exige un email vérifié : sans lui, le contact attend.",
+        "intoSequenceSansEmail": "Les contacts qualifiés entrent en séquence : elle ne comporte aucune étape email, aucun email n'est requis.",
         "delayDays": "{n, plural, one {# jour après} other {# jours après}}",
         "delayHours": "{n, plural, one {# heure après} other {# heures après}}",
         "endTitle": "Fin de séquence",
@@ -926,8 +935,8 @@
       "previous": "Précédent",
       "next": "Suivant",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-        "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}} · étape {etape}} other {{n, plural, one {# envoi remis} other {# envois remis}} · étape {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}}} other {{n, plural, one {# envoi remis} other {# envois remis}}}}"
       }
     },
     "reglages": {
@@ -1079,8 +1088,9 @@
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "Aucune source : les contacts seront ajoutés manuellement.",
-        "recapSequenceValue": "{n} emails sur {jours} jours",
+        "recapSequenceValue": "{resume} sur {jours, plural, =0 {un seul jour} one {# jour} other {# jours}}",
         "recapEnvoiValue": "{n} boîtes · {plafond} nouveaux contacts par jour au plus",
+        "recapEnvoiSansBoites": "{plafond} nouveaux contacts par jour au plus",
         "boxesTitle": "Boîtes qui enverront",
         "boxesEmpty": "Aucune boîte d'envoi active. Connectez-en une dans Réglages › Expéditeurs.",
         "boxesNoneActive": "Choisissez au moins une boîte.",

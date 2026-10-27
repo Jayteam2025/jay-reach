@@ -72,8 +72,8 @@ export default async function CampagneActivitePage({
   // clés ICU (`envoisGroupes.withStep`/`withoutStep`), avec ou sans étape connue.
   function libelleEnvoisGroupes(donnees: NonNullable<Evenement['donneesEnvois']>): string {
     return donnees.etape !== null
-      ? t('envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites })
-      : t('envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites });
+      ? t('envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites, canal: donnees.canal })
+      : t('envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites, canal: donnees.canal });
   }
 
   return (

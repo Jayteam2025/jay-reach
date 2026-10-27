@@ -57,6 +57,7 @@ const CAMPAGNE_RH: CampagneListeResume = {
   interesses: 0,
   derniereActivite: null,
   listeSource: { nom: 'RH Jay coach (Smartlead mai-juillet 2026)', autresListes: 0 },
+  canauxEtapes: ['email'],
 };
 
 function vueListe(): VueDEnsemble {

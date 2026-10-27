@@ -353,7 +353,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: 'tpl-1',
-          position: 0,
+          rang: 0,
+          channel: 'email',
           locale: 'fr',
           first_name: 'Nadia',
           last_name: 'Lemaire',
@@ -403,6 +404,7 @@ describe('apercuEnvoi', () => {
       pourquoi: { titre: 'A commenté un post', detail: 'Correspond au persona cible' },
       etapePosition: 1,
       etapeNom: 'Premier email',
+      canal: 'email',
       heurePrevue: '2026-09-15T09:40:00.000Z',
       statut: 'pending_approval',
     });
@@ -418,7 +420,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: 'tpl-1',
-          position: 1,
+          rang: 1,
+          channel: 'email',
           locale: null,
           first_name: 'Karim',
           last_name: null,
@@ -471,7 +474,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: null,
-          position: 0,
+          rang: 0,
+          channel: 'email',
           locale: null,
           first_name: null,
           last_name: null,
@@ -491,5 +495,36 @@ describe('apercuEnvoi', () => {
     expect(r.destinataire).toBeNull();
     expect(r.variablesManquantes).toEqual([]);
     expect(r.statut).toBe('blocked');
+  });
+
+  it('une action LinkedIn se présente comme telle : canal et nom d’étape, jamais « Premier email »', async () => {
+    const ctx = faux({
+      'jr:apercu_lire': [
+        {
+          id: actionId,
+          status: 'scheduled',
+          scheduled_for: null,
+          contact_id: contactId,
+          campaign_id: campagneId,
+          template_parent_id: null,
+          rang: 0,
+          channel: 'linkedin_invite',
+          locale: null,
+          first_name: 'Karim',
+          last_name: null,
+          job_title: null,
+          entreprise: null,
+          expediteur: null,
+          score: null,
+          signal_titre: null,
+          score_reason: null,
+        },
+      ],
+      'jr:valeurs_contact\\b': [],
+    });
+    const r = await apercuEnvoi(ctx, { actionId });
+    expect(r.canal).toBe('linkedin_invite');
+    expect(r.etapeNom).toBe('Invitation LinkedIn');
+    expect(r.etapePosition).toBe(1);
   });
 });

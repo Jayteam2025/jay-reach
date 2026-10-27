@@ -8,6 +8,7 @@ import { marqueSource } from '../../lib/marque-source';
 import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../lib/dates';
 import { CarteEtape } from './CarteEtape';
 import { avertissementsSequence } from './avertissements-sequence';
+import { sequenceSansEmail } from '../../lib/canaux-sequence';
 
 export interface FluxSequenceProps {
   readonly campagneId: string;
@@ -76,7 +77,11 @@ export function FluxSequence({ campagneId, vue }: FluxSequenceProps) {
         </div>
       )}
 
-      <div className="fleche">{t('flow.intoSequence')}</div>
+      {/* La règle d'entrée du moteur : un email n'est exigé que si la séquence contient une étape email
+          (`sqlCampagneSansEmail`, producer.ts). Une séquence qui n'écrit que sur LinkedIn n'en demande aucun. */}
+      <div className="fleche">
+        {t(sequenceSansEmail(vue.etapes.map((e) => e.canalDetaille)) ? 'flow.intoSequenceSansEmail' : 'flow.intoSequence')}
+      </div>
 
       {vue.etapes.map((etape, index) => (
         <Fragment key={etape.id}>
