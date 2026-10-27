@@ -184,6 +184,16 @@ describe('ecarterDuneCampagne', () => {
     expect(String(ecritureActions?.[0])).toMatch(/organization_id = \$2/);
   });
 
+  it('arrête aussi une inscription déjà arrêtée faute de coordonnée, et lui donne le motif `operator_skip` (#179)', async () => {
+    // La forme du SQL seule : la preuve sur Postgres est dans le harnais accroche-post (contrôles 60 à 60c).
+    const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_inscriptions': [] });
+    await ecarterDuneCampagne(ctx, { contactId, campagneId });
+    const sql = String(appelsDe(ctx).find((a) => /jr:ecarter_inscriptions/i.test(String(a[0])))?.[0]);
+    expect(sql).toMatch(/status = 'stopped' and stop_reason = 'not_sendable'/);
+    expect(sql).toMatch(/case when status = 'stopped' then 'operator_skip'/);
+    expect(sql).toMatch(/organization_id = \$3/);
+  });
+
   it('annule les lignes LinkedIn encore en attente de la personne pour CETTE campagne, et écarte leurs actions, filtrées par organisation', async () => {
     // La forme du SQL seule : sa preuve sur Postgres est la section 10 du harnais linkedin-attente-acceptation.
     const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_file_linkedin': [{ action_id: actionId }] });

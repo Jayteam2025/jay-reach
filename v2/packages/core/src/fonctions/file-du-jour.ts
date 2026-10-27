@@ -184,9 +184,12 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
 
   const inscriptionsRes = await ctx.ex.query<{ id: string }>(
     `update enrollments /* jr:ecarter_inscriptions */
-        set status = 'stopped', ended_at = now(), stop_reason = coalesce(stop_reason, 'operator_skip')
+        set status = 'stopped', ended_at = now(),
+            -- Une inscription déjà arrêtée faute de coordonnée ('not_sendable') est reprise automatiquement
+            -- quand la coordonnée arrive : écartée, elle change de motif, et la reprise ne la voit plus (#179).
+            stop_reason = case when status = 'stopped' then 'operator_skip' else coalesce(stop_reason, 'operator_skip') end
       where organization_id = $3 and contact_id = $1 and campaign_id = $2
-        and status in ('active', 'paused', 'paused_absence')
+        and (status in ('active', 'paused', 'paused_absence') or (status = 'stopped' and stop_reason = 'not_sendable'))
       returning id`,
     [contactId, campagneId, ctx.organisationId],
   );

@@ -1124,10 +1124,13 @@ export async function reprendreInscriptionsSansCoordonnee(pool: Pool, limit = 20
                 select 1 from enrollments r
                  where r.organization_id = e.organization_id and r.contact_id = e.contact_id and r.status = 'replied'
               )
-              -- Le signal lié a été écarté depuis (signals.status = 'discarded') : la personne ne revient pas.
+              -- Le signal a été écarté depuis (signals.status = 'discarded') : la personne ne revient pas. Les DEUX
+              -- colonnes qui désignent « son » signal : celle de l'inscription, et celle du contact, que lit Écarter
+              -- ('ecarterDuneCampagne' marque le signal d'origine du contact, pas celui de l'inscription) (#179).
               and not exists (
                 select 1 from signals sg
-                 where sg.organization_id = e.organization_id and sg.id = e.signal_id and sg.status = 'discarded'
+                 where sg.organization_id = e.organization_id and sg.status = 'discarded'
+                   and sg.id in (e.signal_id, ct.source_signal_id)
               )
               -- Désinscrit, rebondi, ou entreprise exclue : même condition que le tick (hasActiveSuppression).
               and not exists (

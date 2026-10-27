@@ -3415,6 +3415,45 @@ async function repriseFauteDeCoordonnee() {
     const e = await etat(x.inscription);
     check(libelle, e.status === attendu, JSON.stringify(e));
   }
+  // #179. Une personne ÉCARTÉE par l'opérateur n'est jamais reprise automatiquement. Écarter lit `contacts.source_signal_id`,
+  // la reprise lisait seulement `enrollments.signal_id` : deux colonnes, deux réponses. Les deux chemins ci-dessous.
+  {
+    // 60. Écarter sur une inscription déjà arrêtée `not_sendable` (l'écran n'offrait pas ce geste avant, la fonction l'accepte).
+    const x = await arretee();
+    await ecarterDuneCampagne(x.m.ctx, { contactId: x.contactId, campagneId: x.m.campagne });
+    const apresEcarter = await etat(x.inscription);
+    check('60. Écarter sur une inscription arrêtée `not_sendable` : le motif devient `operator_skip` (la reprise ne la voit plus)',
+      apresEcarter.status === 'stopped' && apresEcarter.stop_reason === 'operator_skip', JSON.stringify(apresEcarter));
+    await redonnerLEmail(x);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const e = await etat(x.inscription);
+    const a = await actionsDe(x.inscription);
+    check('60a. la coordonnée arrive après Écarter : la personne n\'est PAS reprise, son action bloquée reste',
+      e.status === 'stopped' && e.stop_reason === 'operator_skip' && a.length === 2 && a[1].status === 'blocked', JSON.stringify([e, a]));
+    const lec = await listerContactsCampagne(x.m.ctx, { campagneId: x.m.campagne });
+    check('60b. l\'onglet Contacts la lit « Écarté », plus « en attente d\'une coordonnée »',
+      lec.lignes.find((l) => l.contactId === x.contactId)?.statut === 'ecarte' && lec.compteurs.en_attente_coordonnee === 0, JSON.stringify(lec.compteurs));
+    // 60c. Écarter ne réécrit pas le motif d'une inscription arrêtée pour une AUTRE raison (rebond, réponse) : seul `not_sendable` bascule.
+    const y = await arretee();
+    await q(`update enrollments set stop_reason = 'bounced' where id = $1`, [y.inscription]);
+    await ecarterDuneCampagne(y.m.ctx, { contactId: y.contactId, campagneId: y.m.campagne });
+    check('60c. une inscription arrêtée pour un autre motif (`bounced`) garde son motif',
+      (await etat(y.inscription)).stop_reason === 'bounced', JSON.stringify(await etat(y.inscription)));
+  }
+  // 61. Le signal écarté est celui du CONTACT (`contacts.source_signal_id`), pas celui de l'inscription (`enrollments.signal_id`).
+  for (const [libelle, statutSignal, attendu] of [
+    ['61. le signal d\'origine du CONTACT est `discarded` (l\'inscription n\'a aucun signal) : pas reprise', 'discarded', 'stopped'],
+    ['61a. témoin : le même montage, signal du contact `qualified` : reprise', 'qualified', 'active'],
+  ]) {
+    const x = await arretee();
+    await redonnerLEmail(x);
+    const source = (await q(`insert into sources (organization_id, name, provider_id, config) values ($1, 'Offres reprise contact', 'adzuna', '{}'::jsonb) returning id`, [x.m.org])).rows[0].id;
+    k += 1;
+    const signal = (await q(`insert into signals (organization_id, source_id, external_id, kind, occurred_at, title, status) values ($1, $2, $3, 'job_posting', now(), 'Directeur commercial', $4::signal_status) returning id`, [x.m.org, source, `reprise-contact-${k}`, statutSignal])).rows[0].id;
+    await q(`update contacts set source_signal_id = $2 where id = $1`, [x.contactId, signal]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    check(libelle, (await etat(x.inscription)).status === attendu, JSON.stringify(await etat(x.inscription)));
+  }
   // La coordonnée est celle de l'ÉTAPE : une étape LinkedIn n'est pas débloquée par une adresse email.
   for (const [libelle, colonnes, attendu] of [
     ['57. étape LinkedIn, l\'URL LinkedIn arrive : reprise', { linkedin_url: 'https://www.linkedin.com/in/reprise-lk', email: null }, 'active'],

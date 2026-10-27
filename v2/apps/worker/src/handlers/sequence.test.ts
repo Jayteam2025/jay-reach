@@ -1426,7 +1426,8 @@ describe('reprendreInscriptionsSansCoordonnee', () => {
     await reprendreInscriptionsSansCoordonnee(pool);
     const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
     expect(sql).toMatch(/from enrollments r\s+where r\.organization_id = e\.organization_id and r\.contact_id = e\.contact_id and r\.status = 'replied'/i);
-    expect(sql).toMatch(/from signals sg\s+where sg\.organization_id = e\.organization_id and sg\.id = e\.signal_id and sg\.status = 'discarded'/i);
+    // #179 : les DEUX colonnes (celle de l'inscription ET celle du contact, que lit Écarter), sous l'organisation.
+    expect(sql).toMatch(/from signals sg\s+where sg\.organization_id = e\.organization_id and sg\.status = 'discarded'\s+and sg\.id in \(e\.signal_id, ct\.source_signal_id\)/i);
   });
 
   it('journalise chaque reprise, et une erreur du journal ne fait pas échouer la reprise', async () => {
