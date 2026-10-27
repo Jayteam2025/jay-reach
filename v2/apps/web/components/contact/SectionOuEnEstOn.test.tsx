@@ -67,6 +67,25 @@ describe('SectionOuEnEstOn', () => {
     expect(html).not.toContain('sequence.nextMessage');
   });
 
+  // limiteLe, prochaine vérification et départ tombent trois jours différents à Paris : seule la
+  // date du saut, formatée dans le fuseau de l'organisation, donne « 28 octobre ».
+  it('date de la ligne = limiteLe dans le fuseau, pas la prochaine vérification', () => {
+    const html = renderToStaticMarkup(
+      <SectionOuEnEstOn
+        sequence={sequence({
+          attenteAcceptation: attente({
+            depuisLe: '2026-10-21T08:00:00.000Z',
+            prochaineVerificationLe: '2026-10-25T22:00:00.000Z',
+            limiteLe: '2026-10-27T23:30:00.000Z',
+          }),
+        })}
+        campagneId="camp-1"
+        fuseau="Europe/Paris"
+      />,
+    );
+    expect(html).toContain('awaitingAcceptance:date=28 octobre');
+  });
+
   it('attente d’acceptation sur une inscription en pause -> ligne de pause seule', () => {
     const html = renderToStaticMarkup(
       <SectionOuEnEstOn

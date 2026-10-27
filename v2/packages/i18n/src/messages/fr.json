@@ -541,7 +541,7 @@
         "step": "{n}",
         "pausedLine": "En pause : {motif}",
         "nextMessage": "Prochain message le {date}",
-        "awaitingAcceptance": "Le message LinkedIn attend que l'invitation soit acceptée. Sans acceptation le {date}, il est passé et la séquence continue."
+        "awaitingAcceptance": "Le message LinkedIn attend que l’invitation soit acceptée. Si elle ne l’est pas d’ici le {date}, il est passé et la séquence continue."
       },
       "conversation": {
         "openInInbox": "Ouvrir dans la Réception",
@@ -659,7 +659,7 @@
         "columns": {
           "step": "Étape",
           "invitation": "Invitation envoyée le",
-          "deadline": "Passé sans acceptation le"
+          "deadline": "Limite d’acceptation"
         }
       }
     },

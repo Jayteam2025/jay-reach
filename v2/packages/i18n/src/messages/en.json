@@ -659,7 +659,7 @@
         "columns": {
           "step": "Step",
           "invitation": "Invitation sent",
-          "deadline": "Skipped if not accepted by"
+          "deadline": "Accept by"
         }
       }
     },

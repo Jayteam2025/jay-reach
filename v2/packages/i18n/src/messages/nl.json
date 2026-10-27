@@ -541,7 +541,7 @@
         "step": "{n}",
         "pausedLine": "Gepauzeerd: {motif}",
         "nextMessage": "Volgend bericht op {date}",
-        "awaitingAcceptance": "Het LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd. Zonder acceptatie op {date} wordt het overgeslagen en gaat de reeks verder."
+        "awaitingAcceptance": "Het LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd. Gebeurt dat niet uiterlijk op {date}, dan wordt het overgeslagen en gaat de reeks verder."
       },
       "conversation": {
         "openInInbox": "Openen in de Inbox",
@@ -659,7 +659,7 @@
         "columns": {
           "step": "Stap",
           "invitation": "Uitnodiging verstuurd op",
-          "deadline": "Overgeslagen zonder acceptatie op"
+          "deadline": "Uiterlijk geaccepteerd op"
         }
       }
     },

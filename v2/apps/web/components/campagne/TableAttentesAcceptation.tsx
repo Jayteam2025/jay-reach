@@ -9,6 +9,26 @@ export interface LigneAttenteAcceptation extends AttenteAcceptation {
   limiteTexte: string;
 }
 
+/**
+ * Prépare les lignes (fonction pure, testée) : la date affichée est `limiteLe` — celle que le moteur
+ * applique pour le saut —, jamais `prochaineVerificationLe` ni `depuisLe`, formatée dans le fuseau
+ * réglé de l'organisation : un `limiteLe` à 23 h 30 UTC tombe le lendemain à Paris.
+ */
+export function lignesAttentesAcceptation(
+  attentes: readonly AttenteAcceptation[],
+  textes: { etape: (n: number) => string; sansInvitation: string },
+  locale: string,
+  fuseau: string,
+): LigneAttenteAcceptation[] {
+  const jourMois = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau });
+  return attentes.map((a) => ({
+    ...a,
+    etapeTexte: a.etape !== null ? textes.etape(a.etape) : null,
+    invitationTexte: a.invitationEnvoyeeLe ? jourMois.format(new Date(a.invitationEnvoyeeLe)) : textes.sansInvitation,
+    limiteTexte: jourMois.format(new Date(a.limiteLe)),
+  }));
+}
+
 export interface TableAttentesAcceptationLibelles {
   titre: string;
   explication: string;

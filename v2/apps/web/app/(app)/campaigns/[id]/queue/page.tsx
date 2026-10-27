@@ -9,7 +9,7 @@ import { natureDesCanaux } from '../../../../../lib/canaux-sequence';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
 import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
 import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
-import { TableAttentesAcceptation, type LigneAttenteAcceptation } from '../../../../../components/campagne/TableAttentesAcceptation';
+import { lignesAttentesAcceptation, TableAttentesAcceptation } from '../../../../../components/campagne/TableAttentesAcceptation';
 
 export const revalidate = 0;
 
@@ -141,13 +141,12 @@ export default async function CampagneFileDuJourPage({
   }));
 
   // #183 : état courant, indépendant du jour affiché — dates dans le fuseau réglé de l'organisation.
-  const jourMois = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: String(reglages.fuseau) });
-  const attentes: LigneAttenteAcceptation[] = resultat.enAttenteAcceptation.map((a) => ({
-    ...a,
-    etapeTexte: a.etape !== null ? t('file.step', { n: a.etape }) : null,
-    invitationTexte: a.invitationEnvoyeeLe ? jourMois.format(new Date(a.invitationEnvoyeeLe)) : t('file.awaitingAcceptance.noInvitation'),
-    limiteTexte: jourMois.format(new Date(a.limiteLe)),
-  }));
+  const attentes = lignesAttentesAcceptation(
+    resultat.enAttenteAcceptation,
+    { etape: (n) => t('file.step', { n }), sansInvitation: t('file.awaitingAcceptance.noInvitation') },
+    locale,
+    String(reglages.fuseau || FUSEAU_PAR_DEFAUT),
+  );
 
   // La nature de ce qui part aujourd'hui (titre, tranches), et celle de la campagne entière (description) :
   // « 1 email prévu, répartis par SalesBlink » ne se dit pas d'une invitation LinkedIn.
