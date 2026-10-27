@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import fr from '@jay-reach/i18n/messages/fr.json';
-import { BarreLot, TablePosts, ligneValidable, type LignePostEcran, type TablePostsProps } from './TablePosts';
+import { BarreLot, TablePosts, type TablePostsProps } from './TablePosts';
+import { ligneValidable, type LignePostEcran } from './ligne-post';
 
 // Les actions ne sont pas le sujet : ce test juge ce que l'écran MONTRE.
 vi.mock('../../app/actions/posts', () => ({
