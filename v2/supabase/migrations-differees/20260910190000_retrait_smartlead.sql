@@ -8,11 +8,18 @@
 -- Sauvegarde avant suppression (revue finale, I3) : une table qui n'existe
 -- plus ne coute rien a garder de cote, et le mapping repris du socle v1 ne se
 -- reconstruit pas a la main.
+-- Un `create table ... as` nait sans RLS et herite des droits par defaut du
+-- schema : sans les deux lignes qui suivent, anon lit, modifie et vide la
+-- sauvegarde avec la cle publique du front (alerte Supabase du 25/10/2026).
 do $$
 begin
   if to_regclass('public.smartlead_campaign_mappings') is not null then
     create table if not exists public.smartlead_campaign_mappings_sauvegarde_20260910 as
       select * from public.smartlead_campaign_mappings;
+  end if;
+  if to_regclass('public.smartlead_campaign_mappings_sauvegarde_20260910') is not null then
+    alter table public.smartlead_campaign_mappings_sauvegarde_20260910 enable row level security;
+    revoke all on public.smartlead_campaign_mappings_sauvegarde_20260910 from public, anon, authenticated;
   end if;
 end $$;
 

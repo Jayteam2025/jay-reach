@@ -79,6 +79,16 @@ Versionnement sémantique.
   maintenant » pour une absence) rejoue l'étape sur laquelle l'inscription a buté ; pour un blocage lié à l'email, l'envoi
   revérifie la délivrabilité avant de repartir plutôt que de retenter une adresse toujours invalide.
 
+### Sécurité
+- **La sauvegarde du mapping Smartlead était lisible, modifiable et effaçable avec la clé publique du front.** La migration
+  différée `20260910190000_retrait_smartlead` copiait `smartlead_campaign_mappings` dans
+  `smartlead_campaign_mappings_sauvegarde_20260910` par un `create table ... as` avant de la supprimer. Une table créée ainsi
+  n'a pas la RLS et reçoit les privilèges par défaut du schéma `public` : `anon` et `authenticated` y avaient tous les droits.
+  L'advisor Supabase l'a signalé le 25/10/2026 (`rls_disabled_in_public`). La table ne contenait ni clé ni contact (trois
+  lignes : organisation, persona, identifiant et nom de campagne). La migration différée active désormais la RLS et retire
+  les droits dès la copie, et la migration `20261027120000_fermer_sauvegarde_smartlead` répare les instances qui l'avaient
+  déjà appliquée : elle échoue si la RLS reste inactive ou si un des deux rôles garde un droit.
+
 ### Corrigé
 - **« Créer et lancer » ne refuse plus une campagne dont la clé SalesBlink est pourtant configurée.** La garde de lancement
   lisait le statut du fournisseur sur `credentials_public`, une vue filtrée par `app.user_orgs()` (donc par `auth.uid()`) :
