@@ -157,6 +157,12 @@
 //      qu'aucune campagne ne nomme. Chaque DISJOINT a sa mutation : retirer la branche des
 //      signaux fait rougir 41a seul, retirer celle de `linkedin_posts_traites` fait rougir 41e
 //      (et les sections de rattrapage, qui passent toutes par elle).
+//  76. sequence.ts, `reprendreInscriptionsSansCoordonnee` (section repriseFauteDeCoordonnee), chacune seule :
+//      supprimer l'action bloquée (`and false` sur le delete) — 50b, 51 et 51a rougissent (le tick ignore l'inscription
+//      à vie) ; poser `current_step = 0` à la reprise — 50, 51, 51a, 51b rougissent (l'étape partie serait renvoyée) ;
+//      retirer `ct.status = 'active'` — 52 ; la garde de suppression — 53 ; `c.status = 'active'` — 54 ;
+//      `e.stop_reason = 'not_sendable'` — 55 ; la garde d'une autre inscription vivante — 56 (et 57 en cascade : la
+//      violation de l'index arrête le passage) ; la coordonnée de l'étape — 49 et 57a.
 //  74. producer.ts : retirer le second `not exists` (`enrollments e3`) de `sqlPairesEligibles` — 45 rougit :
 //      une personne dont la séquence est terminée revient dans la même campagne.
 //  75. sequence.ts : retirer le `not exists (select 1 from enrollments where contact_id = $3 and
@@ -189,6 +195,7 @@ import {
   enrichirContactConnu,
   enrollContact,
   tickDueEnrollments,
+  reprendreInscriptionsSansCoordonnee,
   envoiRetenuParUnPost,
   clePost,
   enregistrerEngageur,
@@ -3254,8 +3261,133 @@ async function uneInscriptionParCampagne() {
   check('47. la règle est par campagne : la personne s\'inscrit à une autre campagne', typeof idAutre === 'string' && (await compte(personne.contact_id, autre)) === 1, String(idAutre));
 }
 
+/**
+ * Une inscription arrêtée faute de coordonnée (`stopped / not_sendable`) reprend quand elle arrive
+ * (tâche 8, point de revue « Chercher l'email »). La MÊME ligne repart de son étape courante : ni une
+ * nouvelle inscription (elle renverrait l'étape déjà partie), ni une seconde action pour l'étape.
+ */
+async function repriseFauteDeCoordonnee() {
+  console.log('\n# une inscription arrêtée faute de coordonnée reprend à son étape quand elle arrive');
+  await demarrerBoss();
+  let k = 0;
+  /**
+   * Une campagne email à DEUX étapes, une personne dont la première est PARTIE, puis qui perd son
+   * adresse avant la seconde : le tick l'arrête `not_sendable` sur l'étape de rang 1.
+   */
+  async function arretee() {
+    k += 1;
+    const m = await monde();
+    await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email', position: 0, sujet: 'A', nom: `A${k}` });
+    const etapeB = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'email', position: 1, sujet: 'B', nom: `B${k}` });
+    await expediteurEmail(m.org, `exp-reprise${k}@exemple.invalid`);
+    const adresse = `bob${k}${seq}@exemple.invalid`;
+    const contactId = (
+      await q(
+        `insert into contacts (organization_id, first_name, last_name, persona_id, email, email_status) values ($1, 'Marie', 'Durand', $2, $3, 'valid') returning id`,
+        [m.org, m.persona, adresse],
+      )
+    ).rows[0].id;
+    const inscription = await enrollContact(pool, { organizationId: m.org, campaignId: m.campagne, contactId, signalId: null });
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where id = $1`, [inscription]);
+    await tickDueEnrollments(pool, new Date());
+    // L'étape A est PARTIE : c'est la précondition du tick pour l'étape suivante.
+    await q(`update actions set status = 'dispatched', dispatched_at = now() where enrollment_id = $1`, [inscription]);
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where id = $1`, [inscription]);
+    await q(`update contacts set email = null, email_status = 'unknown' where id = $1`, [contactId]);
+    await tickDueEnrollments(pool, new Date());
+    return { m, contactId, inscription, adresse, etapeB };
+  }
+  const etat = async (id) => (await q(`select status, stop_reason, current_step, ended_at from enrollments where id = $1`, [id])).rows[0];
+  const actionsDe = async (id) => (await q(`select s.position, a.status, a.block_reason from actions a join sequence_steps s on s.id = a.step_id where a.enrollment_id = $1 order by s.position, a.created_at`, [id])).rows;
+  const redonnerLEmail = (s) => q(`update contacts set email = $2, email_status = 'valid' where id = $1`, [s.contactId, s.adresse]);
+
+  // --- la reprise nominale
+  const s = await arretee();
+  const avant = await etat(s.inscription);
+  const actionsAvant = await actionsDe(s.inscription);
+  check('48. précondition : arrêtée `not_sendable` sur l\'étape de rang 1, étape 0 partie, étape 1 bloquée',
+    avant.status === 'stopped' && avant.stop_reason === 'not_sendable' && avant.current_step === 1
+      && actionsAvant.length === 2 && actionsAvant[0].status === 'dispatched' && actionsAvant[1].status === 'blocked' && actionsAvant[1].block_reason === 'not_sendable',
+    JSON.stringify([avant, actionsAvant]));
+
+  await reprendreInscriptionsSansCoordonnee(pool);
+  check('49. témoin : sans la coordonnée, rien n\'est repris', (await etat(s.inscription)).status === 'stopped');
+
+  await redonnerLEmail(s);
+  await reprendreInscriptionsSansCoordonnee(pool);
+  const repris = await etat(s.inscription);
+  const actionsRepris = await actionsDe(s.inscription);
+  check('50. la coordonnée est arrivée : la MÊME inscription est vivante, à la MÊME étape (pas avant)',
+    repris.status === 'active' && repris.stop_reason === null && repris.ended_at === null && repris.current_step === 1,
+    JSON.stringify(repris));
+  check('50a. une seule inscription pour la personne dans la campagne (jamais une nouvelle ligne)',
+    (await q(`select count(*)::int as n from enrollments where contact_id = $1 and campaign_id = $2`, [s.contactId, s.m.campagne])).rows[0].n === 1);
+  check('50b. l\'action bloquée est retirée, l\'étape 0 partie n\'est pas touchée',
+    actionsRepris.length === 1 && actionsRepris[0].position === 0 && actionsRepris[0].status === 'dispatched', JSON.stringify(actionsRepris));
+
+  // L'horloge de la base (Docker) peut avancer de quelques secondes sur celle du harnais : l'échéance
+  // `now()` posée par la reprise serait « dans le futur » pour un tick lu à l'heure du harnais.
+  await tickDueEnrollments(pool, new Date(Date.now() + 60_000));
+  const apres = await etat(s.inscription);
+  const actionsApres = await actionsDe(s.inscription);
+  check('51. le tick recompose UNE action pour l\'étape 1, non bloquée, et l\'étape 0 n\'est pas renvoyée',
+    actionsApres.length === 2 && actionsApres.filter((a) => a.position === 0).length === 1 && actionsApres.filter((a) => a.position === 1).length === 1
+      && actionsApres[1].status !== 'blocked' && actionsApres[1].block_reason === null && actionsApres[0].status === 'dispatched',
+    JSON.stringify(actionsApres));
+  check('51a. l\'invariant de rang tient : l\'étape 1 est la dernière, l\'inscription la dépasse (current_step 2)',
+    apres.current_step === 2, JSON.stringify(apres));
+
+  await reprendreInscriptionsSansCoordonnee(pool);
+  await tickDueEnrollments(pool, new Date(Date.now() + 60_000));
+  check('51b. repasser ne crée rien de plus : toujours deux actions', (await actionsDe(s.inscription)).length === 2);
+
+  // --- une personne sortie entre-temps n'est jamais reprise : le même montage, un seul terme change.
+  const sorties = [
+    ['52. exclue (réponse humaine, ne plus contacter)', (x) => q(`update contacts set status = 'do_not_contact' where id = $1`, [x.contactId])],
+    ['53. désinscrite (suppression active sur son adresse)', (x) => q(`insert into suppressions (organization_id, scope, value, reason) values ($1, 'email', $2, 'unsubscribe')`, [x.m.org, x.adresse])],
+    ['54. campagne qui n\'est plus active', (x) => q(`update campaigns set status = 'paused' where id = $1`, [x.m.campagne])],
+    ['55. arrêtée pour un autre motif (écartée à la main)', (x) => q(`update enrollments set stop_reason = 'operator_skip' where id = $1`, [x.inscription])],
+  ];
+  for (const [libelle, sortir] of sorties) {
+    const x = await arretee();
+    await redonnerLEmail(x);
+    await sortir(x);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const e = await etat(x.inscription);
+    const a = await actionsDe(x.inscription);
+    check(`${libelle} : n'est pas reprise, son action bloquée reste`,
+      e.status === 'stopped' && a.length === 2 && a[1].status === 'blocked', JSON.stringify([e, a]));
+  }
+  // Une autre inscription VIVANTE du contact (autre campagne) : l'index partiel refuserait la reprise.
+  {
+    const x = await arretee();
+    await redonnerLEmail(x);
+    const autre = (await q(`insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Autre', 'active', $2::jsonb) returning id`, [x.m.org, JSON.stringify({ personas: [x.m.persona] })])).rows[0].id;
+    await enrollContact(pool, { organizationId: x.m.org, campaignId: autre, contactId: x.contactId, signalId: null });
+    const { lignes } = await enEcoutant(() => reprendreInscriptionsSansCoordonnee(pool));
+    const e = await etat(x.inscription);
+    check('56. une autre inscription vivante du contact : pas reprise, et sans violation de l\'index (garde, pas rattrapage)',
+      e.status === 'stopped' && !lignes.some((l) => l.includes('inscription vivante')), JSON.stringify([e, lignes]));
+  }
+  // La coordonnée est celle de l'ÉTAPE : une étape LinkedIn n'est pas débloquée par une adresse email.
+  for (const [libelle, colonnes, attendu] of [
+    ['57. étape LinkedIn, l\'URL LinkedIn arrive : reprise', { linkedin_url: 'https://www.linkedin.com/in/reprise-lk', email: null }, 'active'],
+    ['57a. étape LinkedIn, seule une adresse email arrive : pas reprise', { linkedin_url: null, email: 'seulement-email@exemple.invalid' }, 'stopped'],
+  ]) {
+    k += 1;
+    const m = await monde();
+    const etape = await etapeAvecCorps(m, SANS_ACCROCHE, { canal: 'linkedin_message', position: 0, nom: `LK${k}` });
+    const contactId = (await q(`insert into contacts (organization_id, first_name, persona_id, linkedin_url, email) values ($1, 'Lou', $2, $3, $4) returning id`, [m.org, m.persona, colonnes.linkedin_url, colonnes.email])).rows[0].id;
+    const insc = (await q(`insert into enrollments (organization_id, campaign_id, contact_id, status, stop_reason, ended_at, current_step) values ($1, $2, $3, 'stopped', 'not_sendable', now(), 0) returning id`, [m.org, m.campagne, contactId])).rows[0].id;
+    const pas = (await q(`select id from sequence_steps where campaign_id = $1`, [m.campagne])).rows[0].id;
+    await q(`insert into actions (organization_id, enrollment_id, step_id, channel, status, block_reason, idempotency_key) values ($1, $2, $3, 'linkedin_message', 'blocked', 'not_sendable', $4)`, [m.org, insc, pas, `${insc}:${pas}:0`]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    check(libelle, (await etat(insc)).status === attendu && etape !== undefined, JSON.stringify(await etat(insc)));
+  }
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne, uneInscriptionParCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne, uneInscriptionParCampagne, repriseFauteDeCoordonnee);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

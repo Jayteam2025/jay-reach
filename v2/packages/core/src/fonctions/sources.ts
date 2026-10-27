@@ -1743,10 +1743,7 @@ export async function ajouterDepuisListe(
       where not exists (
          select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
        )
-         -- UNE inscription par campagne, quel qu'en soit le statut : l'index partiel et son on conflict
-         -- ne voient que les inscriptions vivantes, et réimporter ce fichier (ou réajouter cette liste)
-         -- réinscrivait une personne dont la séquence était terminée (completed, stopped, replied,
-         -- bounced). Même garde que enrollContact du worker.
+         -- UNE inscription par campagne, quel qu'en soit le statut : voir la garde de l'import CSV ci-dessus.
          and not exists (
            select 1 from enrollments where contact_id = $3 and campaign_id = $2
          )

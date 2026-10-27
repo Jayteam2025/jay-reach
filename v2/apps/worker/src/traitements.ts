@@ -43,7 +43,7 @@ import {
   enrichirContactConnu,
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
-import { inscrireContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { inscrireContact, reprendreInscriptionsSansCoordonnee, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
 import { rejeterFichesPostExpirees } from './linkedin/posts-fiches.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
@@ -1151,6 +1151,13 @@ export async function produire(ctx: Contexte): Promise<Error | null> {
     const i = await enqueueEnrollments(boss, pool);
     if (i > 0) {
       console.log(`[producer] ${i} contact(s) inscrit(s) en campagne`);
+    }
+    // Les inscriptions que le tick a arrêtées faute de coordonnée (« Chercher l'email ») repartent
+    // dès que le contact l'a. Isolé : une panne ici ne doit pas priver le reste de la production.
+    try {
+      await reprendreInscriptionsSansCoordonnee(pool);
+    } catch (err) {
+      console.error('[producer] reprise des inscriptions sans coordonnée échouée', err);
     }
     const e = await enqueueEnrichmentForQualified(boss, pool);
     if (e > 0) {

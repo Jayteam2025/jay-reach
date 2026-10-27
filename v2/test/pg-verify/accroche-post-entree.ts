@@ -47,3 +47,5 @@ export {
   reouvrirPost,
   validerPost,
 } from '../../packages/core/src/fonctions/posts.js';
+// Tache 8 (lot pret pour Alex) : la reprise d'une inscription arretee faute de coordonnee.
+export { reprendreInscriptionsSansCoordonnee } from '../../apps/worker/src/handlers/sequence.js';

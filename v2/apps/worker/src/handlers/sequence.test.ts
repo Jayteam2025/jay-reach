@@ -9,6 +9,7 @@ import {
   chargerContraintesSender,
   compterEntreesDuJour,
   reprendreAbsencesEchues,
+  reprendreInscriptionsSansCoordonnee,
   type EnrollJob,
 } from './sequence.js';
 
@@ -1329,5 +1330,77 @@ describe('enrollContact — une personne n’a qu’UNE inscription par campagne
     expect(garde![0]).toMatch(/campaign_id = \$2/);
     // Le piège : borner la garde aux statuts vivants la rendrait aveugle à `completed`.
     expect(garde![0]).not.toMatch(/status/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reprendreInscriptionsSansCoordonnee — une inscription arrêtée faute de coordonnée reprend
+// quand elle arrive (tâche 8, point de revue « Chercher l'email »)
+// ---------------------------------------------------------------------------
+
+describe('reprendreInscriptionsSansCoordonnee', () => {
+  const REPRISE = /jr:reprise_sans_coordonnee/i;
+  const JOURNAL = /insert into audit_events/i;
+
+  function poolDeReprise(reprises: unknown[]): { pool: Pool; appels: Appel[] } {
+    return creerPoolFactice([
+      // Une reprise par passage : la requête rend une ligne puis plus rien.
+      { motif: REPRISE, repondre: () => ligne(reprises.splice(0, 1)) },
+      { motif: JOURNAL, repondre: () => ligne([]) },
+    ]);
+  }
+
+  it('reprend la MÊME ligne (update, jamais une nouvelle inscription) et supprime l’action bloquée pour que le tick la recompose', async () => {
+    const { pool, appels } = poolDeReprise([{ id: ENROLLMENT_ID, organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }]);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(1);
+
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).not.toMatch(/insert into enrollments/i);
+    expect(sql).toMatch(/update enrollments/i);
+    // L'étape courante n'est jamais touchée : reprendre, c'est repartir de CETTE étape, pas avant.
+    expect(sql).not.toMatch(/current_step\s*=/i);
+    // L'action bloquée de l'étape est retirée : sa clé d'idempotence ferait ignorer l'inscription à vie.
+    expect(sql).toMatch(/delete from actions/i);
+    expect(sql).toMatch(/block_reason = 'not_sendable'/i);
+  });
+
+  it('ne reprend que ce que le tick a arrêté pour ce motif, et jamais une personne sortie entre-temps', async () => {
+    const { pool, appels } = poolDeReprise([]);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(0);
+
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).toMatch(/e\.status = 'stopped'\s+and e\.stop_reason = 'not_sendable'/i);
+    // Campagne vivante, contact non exclu, aucune suppression (désinscription), aucune autre inscription vivante
+    // (l'index partiel la refuserait), coordonnée de l'étape courante présente.
+    expect(sql).toMatch(/c\.status = 'active'/i);
+    expect(sql).toMatch(/ct\.status = 'active'/i);
+    expect(sql).toMatch(/from suppressions/i);
+    expect(sql).toMatch(/o\.status in \('active', 'paused', 'paused_absence'\)/i);
+    expect(sql).toMatch(/st\.channel = 'email' and coalesce\(ct\.email, ''\) <> ''/i);
+    expect(sql).toMatch(/linkedin_invite/i);
+    // Filtrage explicite par organisation sur chaque jointure : le worker tourne avec la clé de service.
+    expect(sql).toMatch(/ct\.organization_id = e\.organization_id/i);
+    expect(sql).toMatch(/c\.organization_id = e\.organization_id/i);
+  });
+
+  it('journalise chaque reprise, et une erreur du journal ne fait pas échouer la reprise', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: REPRISE, repondre: (() => { let n = 0; return () => ligne(n++ === 0 ? [{ id: ENROLLMENT_ID, organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }] : []); })() },
+      { motif: JOURNAL, repondre: () => { throw new Error('journal indisponible'); } },
+    ]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(1);
+    expect(appels.some((a) => JOURNAL.test(a.sql))).toBe(true);
+  });
+
+  it('une violation de l’index d’inscription vivante (autre inscription du contact) arrête le passage sans lever', async () => {
+    const violation = Object.assign(new Error('duplicate key'), { code: '23505' });
+    const { pool } = creerPoolFactice([{ motif: REPRISE, repondre: () => { throw violation; } }]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(reprendreInscriptionsSansCoordonnee(pool)).resolves.toBe(0);
   });
 });

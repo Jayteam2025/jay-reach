@@ -1049,6 +1049,129 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
 }
 
 /**
+ * Reprend les inscriptions que le tick a arrêtées faute de coordonnée (`stopped`, `stop_reason =
+ * 'not_sendable'`) dès que le contact a désormais celle qu'exige leur étape COURANTE : l'adresse
+ * email pour une étape email, l'URL LinkedIn pour une invitation ou un message LinkedIn.
+ *
+ * **Pourquoi.** Le tick arrête l'inscription quand l'étape ne peut pas partir (`composeTick`,
+ * `not_sendable`) et l'écran propose « Chercher l'email » sur la ligne. Quand l'adresse arrive, il
+ * faut que la séquence reparte : avant la garde « une inscription par campagne », le producteur
+ * réinscrivait la personne ; depuis, elle restait arrêtée à jamais et le crédit était payé pour rien.
+ *
+ * **La MÊME ligne, jamais une nouvelle.** Une nouvelle inscription repartirait de l'étape 1 et
+ * renverrait l'invitation déjà partie. `current_step` n'est donc pas touché : `composeTick` laisse
+ * `nextStep = currentStep` à l'arrêt, l'étape précédente est partie (`dispatched`), l'inscription
+ * reprend à son étape courante. L'invariant « après le départ de l'action de rang R, current_step
+ * vaut R + 1 » reste établi par le tick, à la CRÉATION de l'action neuve, comme pour toute inscription.
+ *
+ * **L'action bloquée est supprimée, dans la même instruction.** Sa clé d'idempotence
+ * (`enrollment:étape:0`) est prise : sans cela le tick tenterait d'insérer l'action de l'étape,
+ * trouverait la clé, et ignorerait l'inscription à vie (« due mais l'action existe déjà »). Elle n'a
+ * jamais été envoyée (bloquée, sans `message_id`). Le tick recompose donc une action NEUVE, avec
+ * toutes ses gardes (suppression, approbation, expéditeur, gate de délivrabilité) : une seule action
+ * part, une seule fois. La suppression et la reprise sont UNE instruction (CTE) : un arrêt entre les
+ * deux ne peut laisser ni une inscription vivante sans action à recomposer, ni l'inverse.
+ *
+ * **Une personne sortie entre-temps n'est jamais reprise** : contact exclu ou parti
+ * (`ct.status`, ce que pose une réponse humaine via `exclureApresReponse`, ou « ne plus contacter »),
+ * suppression active (désinscription, rebond), campagne qui n'est plus active. Une autre inscription
+ * VIVANTE du contact l'interdit aussi : l'index partiel `enrollments_one_active_uidx` refuserait la
+ * reprise.
+ *
+ * Une reprise par instruction, jusqu'à épuisement : deux inscriptions arrêtées du même contact (deux
+ * campagnes) ne peuvent pas se reprendre dans la même instruction (index partiel). Une violation de
+ * cet index malgré la garde (course avec le producteur) arrête le passage sans le faire échouer ;
+ * le passage suivant reprend. Filtrage par organisation explicite sur chaque jointure : le worker
+ * tourne avec la clé de service, toutes organisations confondues.
+ *
+ * Rend le nombre d'inscriptions reprises.
+ */
+export async function reprendreInscriptionsSansCoordonnee(pool: Pool, limit = 200): Promise<number> {
+  let reprises = 0;
+  for (let i = 0; i < limit; i += 1) {
+    let reprise: { rows: { id: string; organization_id: string; contact_id: string; campaign_id: string }[] };
+    try {
+      reprise = await pool.query<{ id: string; organization_id: string; contact_id: string; campaign_id: string }>(
+        `with candidats as (
+           select e.id, e.organization_id, st.id as step_id /* jr:reprise_sans_coordonnee */
+             from enrollments e
+             join contacts ct on ct.id = e.contact_id and ct.organization_id = e.organization_id
+             join campaigns c on c.id = e.campaign_id and c.organization_id = e.organization_id
+             -- L'étape COURANTE par son rang (jamais par une égalité de position : les positions ne
+             -- sont pas contiguës). Jointure interne : une étape supprimée entre-temps n'est pas reprise.
+             join lateral (
+               select s.id, s.channel from sequence_steps s
+                where s.campaign_id = e.campaign_id
+                order by s.position asc
+               offset e.current_step limit 1
+             ) st on true
+            where e.status = 'stopped' and e.stop_reason = 'not_sendable'
+              and c.status = 'active'
+              and ct.status = 'active'
+              -- La coordonnée que le tick exigera (sendable : email pour l'email, linkedin_url pour LinkedIn).
+              and ((st.channel = 'email' and coalesce(ct.email, '') <> '')
+                or (st.channel in ('linkedin_invite', 'linkedin_message') and coalesce(ct.linkedin_url, '') <> ''))
+              -- Une autre inscription vivante du contact : l'index partiel refuserait la reprise.
+              and not exists (
+                select 1 from enrollments o
+                 where o.contact_id = e.contact_id and o.id <> e.id
+                   and o.status in ('active', 'paused', 'paused_absence')
+              )
+              -- Désinscrit, rebondi, ou entreprise exclue : même condition que le tick (hasActiveSuppression).
+              and not exists (
+                select 1 from suppressions sp
+                 where sp.organization_id = e.organization_id
+                   and (sp.expires_at is null or sp.expires_at > now())
+                   and ((sp.scope = 'email' and sp.value = ct.email)
+                     or (sp.scope = 'linkedin' and app.url_linkedin_normalisee(sp.value) = app.url_linkedin_normalisee(ct.linkedin_url))
+                     or (sp.scope = 'account' and sp.value = ct.account_id::text))
+              )
+            order by e.ended_at asc nulls last
+            limit 1
+            for update of e skip locked
+         ),
+         supprimee as (
+           delete from actions a using candidats k
+            where a.organization_id = k.organization_id and a.enrollment_id = k.id and a.step_id = k.step_id
+              and a.status = 'blocked' and a.block_reason = 'not_sendable'
+              and (a.payload ->> 'message_id') is null
+         )
+         update enrollments e
+            set status = 'active', stop_reason = null, ended_at = null, resume_at = null, next_action_at = now()
+           from candidats k
+          where e.id = k.id and e.organization_id = k.organization_id and e.status = 'stopped'
+          returning e.id, e.organization_id, e.contact_id, e.campaign_id`,
+      );
+    } catch (err) {
+      const code = typeof err === 'object' && err !== null && 'code' in err ? (err as { code?: unknown }).code : undefined;
+      if (code === '23505') {
+        console.warn('[reprise] inscription arrêtée non reprise : le contact a déjà une inscription vivante, passage suivant');
+        break;
+      }
+      throw err;
+    }
+    const ligne = reprise.rows[0];
+    if (!ligne) break;
+    reprises += 1;
+    try {
+      await ecrireEvenement(pool, {
+        organisationId: ligne.organization_id,
+        entityType: 'contact',
+        entityId: ligne.contact_id,
+        action: 'enrollment_resumed',
+        diff: { libelle: 'Inscription reprise : la coordonnée attendue est arrivée.', campagneId: ligne.campaign_id },
+      });
+    } catch (err) {
+      console.warn('[journal] enrollment_resumed', err);
+    }
+  }
+  if (reprises > 0) {
+    console.log(`[reprise] ${reprises} inscription(s) arrêtée(s) faute de coordonnée reprise(s) : la coordonnée attendue est arrivée`);
+  }
+  return reprises;
+}
+
+/**
  * Traite les inscriptions actives dont `next_action_at <= now`. Pour chacune :
  * charge l'étape courante, décide via `composeTick`, insère l'action (idempotente),
  * met à jour l'inscription, et — pour les envois LinkedIn autorisés — prépare un
