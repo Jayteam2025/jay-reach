@@ -1847,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Visites de profil par semaine",
-          "usage": "{n} sur les sept derniers jours ; au-delà, la collecte qui ouvre des profils s’arrête"
+          "usage": "{n} sur les sept derniers jours, collecte et lecture des réponses comprises ; au-delà, la collecte qui ouvre des profils et la résolution des identifiants de la lecture des réponses s’arrêtent"
         },
         "fichesPostParJour": {
           "nom": "Fiches de post par jour",

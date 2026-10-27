@@ -1847,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Profielweergaven per week",
-          "usage": "{n} in de afgelopen zeven dagen; daarboven stopt het verzamelen dat profielen opent"
+          "usage": "{n} in de afgelopen zeven dagen, inclusief verzamelen en het lezen van reacties; daarboven stoppen het verzamelen dat profielen opent en het opzoeken van profiel-ID’s bij het lezen van reacties"
         },
         "fichesPostParJour": {
           "nom": "Postfiches per dag",

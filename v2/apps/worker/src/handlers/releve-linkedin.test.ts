@@ -78,6 +78,8 @@ const charge = (...msgs: Msg[]) => ({ data: { messengerConversationsBySyncToken:
 interface Monde {
   journal: string[];
   traces: number;
+  /** Traces de nature `resolution_profil` (la part de `traces` qui vient de la resolution des URN). */
+  tracesResolution: number;
   pilote: Pilote;
   fermer: ReturnType<typeof vi.fn>;
   ouvrir: ReturnType<typeof vi.fn>;
@@ -104,6 +106,12 @@ function monde(opts: {
   contactsParUrl?: Record<string, string[]>;
   plafondHoraire?: number;
   requetesDeLHeure?: number;
+  /** Plafond hebdomadaire de visites de profil (defaut : 100, celui de l'application). */
+  plafondVisites?: number;
+  /** Visites de profil deja comptees sur les sept derniers jours (collecte + resolutions). */
+  visitesDeLaSemaine?: number;
+  /** La lecture du plafond hebdomadaire echoue. */
+  plafondVisitesEchoue?: boolean;
   /** L'ecriture de l'URN du contact echoue. */
   urnEchoue?: boolean;
   /** La ligne de session n'existe plus au moment d'ecrire le curseur. */
@@ -124,6 +132,7 @@ function monde(opts: {
   const w: Monde = {
     journal: [],
     traces: 0,
+    tracesResolution: 0,
     pilote: undefined as unknown as Pilote,
     fermer: vi.fn(async () => undefined),
     ouvrir: vi.fn(),
@@ -154,7 +163,21 @@ function monde(opts: {
       w.journal.push('trace');
       return rep([{}]);
     }
-    if (tag === 'plafond_du_jour' || t.includes('organization_settings')) return rep([{ value: String(opts.plafondHoraire ?? 60) }]);
+    if (tag === 'linkedin_resolution_tracer') {
+      w.traces += 1;
+      w.tracesResolution += 1;
+      w.journal.push('trace');
+      return rep([{}]);
+    }
+    if (tag === 'linkedin_visites_profil_compter') {
+      w.journal.push('visites_comptees');
+      if (opts.plafondVisitesEchoue) throw new Error('base indisponible');
+      return rep([{ n: opts.visitesDeLaSemaine ?? 0 }]);
+    }
+    if (tag === 'plafond_du_jour' || t.includes('organization_settings')) {
+      if (params[1] === 'linkedin_visites_profil_par_semaine') return rep([{ value: String(opts.plafondVisites ?? 100) }]);
+      return rep([{ value: String(opts.plafondHoraire ?? 60) }]);
+    }
     if (tag === 'linkedin_requetes_compter') return rep([{ n: opts.requetesDeLHeure ?? 0 }]);
     if (tag === 'releve_urn_a_resoudre') {
       w.journal.push(`candidats org=${String(params[0])} limite=${String(params[1])}`);
@@ -976,6 +999,91 @@ describe('la resolution des URN manquants', () => {
     expect(w.profilsDemandes).toEqual(['a', 'b']);
   });
 
+  it('chaque resolution est tracee sous sa propre nature (resolution_profil), jamais comme une requete de messagerie', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.tracesResolution).toBe(2);
+    expect(w.requetesSql.filter((r) => r.tag === 'linkedin_messagerie_tracer')).toHaveLength(2);
+  });
+});
+
+describe('le plafond hebdomadaire de visites de profil', () => {
+  it('le compte lu porte sur sept jours glissants, et le plafond lu est celui de l ecran Reglages', async () => {
+    const w = monde({ ...base, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    const compte = w.requetesSql.find((r) => r.tag === 'linkedin_visites_profil_compter');
+    expect(compte?.params[0]).toBe(ORG);
+    expect(compte?.params[1]).toEqual(new Date(MAINTENANT.getTime() - 7 * 24 * 3_600_000));
+    expect(w.requetesSql.some((r) => r.params[1] === 'linkedin_visites_profil_par_semaine')).toBe(true);
+  });
+
+  it('il ne reste que deux visites sur la semaine : deux resolutions sur trois candidats', async () => {
+    const w = monde({
+      ...base,
+      plafondVisites: 100,
+      visitesDeLaSemaine: 98,
+      candidats: [cand('c1', 'a'), cand('c2', 'b'), cand('c3', 'c')],
+      profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb'), c: profil('c', 'ACoAAc') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a', 'b']);
+    expect(w.tracesResolution).toBe(2);
+  });
+
+  it('plafond atteint : aucune resolution, aucune lecture de candidats, une seule ligne de journal, le passage reussit et le curseur avance', async () => {
+    const w = monde({ ...base, plafondVisites: 100, visitesDeLaSemaine: 100, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual([]);
+    expect(w.tracesResolution).toBe(0);
+    expect(w.journal.some((l) => l.startsWith('candidats'))).toBe(false);
+    expect(etatEcrit(w)).toHaveLength(1);
+    expect(sortie.error).toEqual([]);
+    expect(sortie.log.filter((l) => l.includes('plafond hebdomadaire de visites de profil'))).toHaveLength(1);
+  });
+
+  it('plafond depasse (reglage abaisse sous le compte) : meme arret, jamais un nombre negatif', async () => {
+    const w = monde({ ...base, plafondVisites: 10, visitesDeLaSemaine: 40, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual([]);
+  });
+
+  it('la relève des messages continue normalement quand le plafond est atteint : conversations lues, curseur avance', async () => {
+    const w = monde({ ...base, plafondVisites: 5, visitesDeLaSemaine: 5 });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.requetes).toContain(URL_CONVERSATIONS);
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+
+  it('le plafond horaire plus serre que le hebdomadaire reste le plus petit des bornes', async () => {
+    const w = monde({
+      ...base,
+      plafondHoraire: 60,
+      requetesDeLHeure: 57,
+      plafondVisites: 100,
+      visitesDeLaSemaine: 0,
+      candidats: [cand('c1', 'a'), cand('c2', 'b')],
+      profils: { a: profil('a', 'ACoAAa'), b: profil('b', 'ACoAAb') },
+    });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.profilsDemandes).toEqual(['a']);
+  });
+
+  it('le budget horaire epuise ne lit meme pas le plafond hebdomadaire, et n annonce pas de plafond hebdomadaire atteint', async () => {
+    const w = monde({ ...base, plafondHoraire: 60, requetesDeLHeure: 58, candidats: [cand('c1', 'a')] });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(w.journal).not.toContain('visites_comptees');
+    expect(sortie.log.join('\n')).not.toContain('plafond hebdomadaire');
+  });
+
+  it('une lecture du plafond hebdomadaire qui echoue n emporte pas le passage et ne resout rien (conservateur)', async () => {
+    const w = monde({ ...base, plafondVisitesEchoue: true, candidats: [cand('c1', 'a')], profils: { a: profil('a', 'ACoAAa') } });
+    await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+    expect(w.profilsDemandes).toEqual([]);
+    expect(etatEcrit(w)).toHaveLength(1);
+  });
+});
+
+describe('la resolution des URN manquants (suite)', () => {
   it('une resolution qui echoue n emporte pas le passage : la suivante est tentee, le curseur avance, rien ne leve', async () => {
     const w = monde({ ...base, candidats: [cand('c1', 'a'), cand('c2', 'b')], profils: { a: { statut: 404 }, b: profil('b', 'ACoAAb') } });
     await expect(traiterReleveLinkedIn(deps(w), JOB)).resolves.toBeUndefined();

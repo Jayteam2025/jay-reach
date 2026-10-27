@@ -27,7 +27,9 @@
  *    puis, à défaut, par l'URL de profil. Beaucoup de contacts n'ont qu'une URL.
  *  - **Un message qui ne correspond à aucun contact n'est jamais stocké** (compté seulement).
  *  - **Après la relève, au plus trois URN manquants sont résolus** (`resoudreUrnManquants`), sous le
- *    budget de requêtes de l'heure. Un échec ou un budget épuisé n'est JAMAIS une erreur du passage :
+ *    budget de requêtes de l'heure ET sous le plafond hebdomadaire de visites de profil (chaque
+ *    résolution ouvre une page de profil : tracée en `resolution_profil`, elle compte dans ce plafond,
+ *    comme la collecte). Un échec, un budget ou un plafond épuisé n'est JAMAIS une erreur du passage :
  *    la relève vient d'être enregistrée, son curseur avance.
  *  - **Le journal du passage porte TOUS les compteurs** (`compteursDuReleve` et les nôtres), jamais
  *    un contenu : deux dérives de forme (`groupChat` partout, unité de `lastActivityAt`) ne lèvent
@@ -52,6 +54,8 @@ import {
   prendreVerrouLinkedIn,
   recordInboundReply,
   tracerRequeteMessagerie,
+  tracerResolutionProfil,
+  compterVisitesProfilLinkedIn,
   bloquerSessionLinkedIn,
   type Contexte,
   type Sortie,
@@ -87,6 +91,7 @@ export const DUREE_VERROU_RELEVE_MS = 5 * 60_000;
 /** Ce qu'un passage coûte au budget de requêtes de l'heure : `/me` et les conversations. */
 export const REQUETES_PAR_RELEVE = 2;
 const UNE_HEURE_MS = 3_600_000;
+const SEPT_JOURS_MS = 7 * 24 * UNE_HEURE_MS;
 /** Conversations lues par passage : le nombre que l'ancienne extension demandait. */
 const NOMBRE_CONVERSATIONS = 20;
 /**
@@ -241,7 +246,10 @@ type CompteursResolution = { candidats: number; tentees: number; resolues: numbe
  * ni d'une résolution qui échoue ni d'un budget épuisé (zéro résolution est un succès).
  *
  * `budget` = requêtes encore permises dans l'heure. Chaque résolution coûte une requête, tracée AVANT
- * son appel, sous le même budget que le reste du canal. Un refus de session (cookie refusé, défi,
+ * son appel, sous le même budget que le reste du canal, et une VISITE de profil du plafond hebdomadaire
+ * (`linkedin_visites_profil_par_semaine`, sept jours glissants) : le nombre de résolutions est le plus
+ * petit de trois nombres, le quota du passage, le budget de l'heure et ce qui reste de la semaine.
+ * Plafond hebdomadaire atteint, ou illisible : rien n'est résolu, une ligne de journal, pas d'erreur. Un refus de session (cookie refusé, défi,
  * limitation) arrête la boucle : insister sur les contacts suivants serait marteler un compte en défaut.
  */
 async function resoudreUrnManquants(
@@ -251,9 +259,18 @@ async function resoudreUrnManquants(
   budget: number,
 ): Promise<CompteursResolution> {
   const c: CompteursResolution = { candidats: 0, tentees: 0, resolues: 0, echecs: 0, interrompu: false };
-  const nombre = Math.min(URN_RESOLUES_PAR_PASSAGE, budget);
-  if (nombre <= 0) return c;
+  if (Math.min(URN_RESOLUES_PAR_PASSAGE, budget) <= 0) return c;
   try {
+    const [plafondVisites, visitesDeLaSemaine] = await Promise.all([
+      lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
+      // Sept jours glissants, comme la collecte : une semaine civile laisserait passer deux pleines charges à cheval sur le lundi.
+      compterVisitesProfilLinkedIn(ctx, new Date(Date.now() - SEPT_JOURS_MS)),
+    ]);
+    const nombre = Math.min(URN_RESOLUES_PAR_PASSAGE, budget, Math.max(0, plafondVisites - visitesDeLaSemaine));
+    if (nombre <= 0) {
+      console.log('[releve-linkedin] plafond hebdomadaire de visites de profil atteint, aucune URN résolue');
+      return c;
+    }
     const lus = await contactsSansUrn(pool, ctx.organisationId, CANDIDATS_LUS);
     const lues = lus.map((l) => ({ id: l.id, url: normaliserUrlProfil(l.linkedin_url) }));
     const retenus = lues.filter((l): l is { id: string; url: string } => l.url !== null);
@@ -263,7 +280,7 @@ async function resoudreUrnManquants(
     for (const cible of retenus.slice(0, nombre)) {
       c.tentees += 1;
       try {
-        await tracerRequeteMessagerie(ctx);
+        await tracerResolutionProfil(ctx);
         const urn = await resoudreProfil(pilote, cible.url);
         await memoriserUrnDuContact(pool, ctx.organisationId, cible.id, urn);
         c.resolues += 1;

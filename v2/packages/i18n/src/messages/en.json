@@ -1847,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Profile views per week",
-          "usage": "{n} over the last seven days; beyond that, collection that opens profiles stops"
+          "usage": "{n} over the last seven days, collection and reply reading included; beyond that, collection that opens profiles and the profile ID lookups of reply reading stop"
         },
         "fichesPostParJour": {
           "nom": "Post sheets per day",
