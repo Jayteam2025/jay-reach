@@ -208,4 +208,41 @@ describe('classification des réponses', () => {
       expect(classifyByRules('Je suis absent jusqu’au 26 août. Unsubscribe', RECU_17_09)?.classification).toBe('auto_absence');
     });
   });
+  describe('demande d’arrêt en tête : prioritaire sur l’absence et le départ lus dans la citation', () => {
+    it.each([
+      'Stop message\n\nDe : Alexandre\nObjet : prospection\n\nJe suis en congés jusqu’au 20 octobre.',
+      'Stop\n\n> Je suis de retour le 3 novembre.',
+      'Unsubscribe\n\nOn 14 Oct, someone wrote:\n> I no longer work at Acme.',
+      'Ne me contactez plus.\n\nLe 14 oct., Alexandre a écrit : je suis absent jusqu’au 20.',
+    ])('« %s » reste une réponse humaine', (corps) => {
+      expect(classifyByRules(corps, RECU_17_09)?.classification).toBe('human_reply');
+      expect(classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('une absence suivie d’un « Unsubscribe » en fin reste une absence', () => {
+      expect(classifyByRules('Je suis absent jusqu’au 26 août. Unsubscribe', RECU_17_09)?.classification).toBe('auto_absence');
+    });
+  });
+
+  describe('demande d’arrêt : tournures françaises à la 2e personne et à l’impératif', () => {
+    it.each([
+      'Ne me contactez plus, merci.',
+      'Ne m’envoyez plus de messages.',
+      'Ne m\'écrivez plus.',
+      'Merci de ne plus m’envoyer de courriels.',
+      'Merci de ne plus m’écrire.',
+      'Arrêtez de m’envoyer vos messages.',
+      'Arrêtez de me contacter.',
+      'Retirez-moi de votre liste.',
+      'Supprimez-moi de vos listes de diffusion.',
+      'Enlevez-moi de votre liste, s’il vous plaît.',
+    ])('« %s » est une réponse humaine malgré l’en-tête automatique', (corps) => {
+      expect(classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('la même tournure enfouie après la fenêtre de lecture ne compte pas', () => {
+      const corps = 'Intéressant, parlons-en jeudi.\n\n' + 'x'.repeat(400) + '\nRetirez-moi de votre liste.';
+      expect(classifyByRules(corps, RECU_17_09)).toBeNull();
+    });
+  });
 });

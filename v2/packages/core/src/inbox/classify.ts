@@ -37,12 +37,47 @@ const LEFT_COMPANY = /\b(ne (suis|travaille) plus|n'est plus (en poste|dans l'en
  * « vous désinscrire » : c'est le pied de page d'un courriel, pas une demande.
  */
 const DEMANDE_ARRET_EN_TETE = /^\W*(stop|unsubscribe|desinscri\w*|desabonn\w*|uitschrijven|opt[- ]?out)\b/;
-const DEMANDE_ARRET_PHRASE = /\b(me (desinscri|desabonn)\w*|unsubscribe me|remove me|take me off|schrijf me uit|ne (souhaite|veux) plus (recevoir|etre contacte)|ne plus (me )?(contacter|recevoir|envoyer|ecrire)|(do not|don'?t|stop) (contact|email|emailing|sending|contacting) me|stop (emailing|sending|contacting))\b/;
+const DEMANDE_ARRET_PHRASE = new RegExp(
+  '\\b(' +
+    [
+      'me (desinscri|desabonn)\\w*',
+      'unsubscribe me',
+      'remove me',
+      'take me off',
+      'schrijf me uit',
+      // Français : constat, impératif et vouvoiement (accents déjà retirés, apostrophes droites).
+      'ne (souhaite|veux) plus (recevoir|etre contacte)',
+      'ne (me |m\'|nous )(contactez|contacte|ecrivez|ecris|envoyez|envoie) plus',
+      'ne plus (me |m\')?(contacter|recevoir|envoyer|ecrire)',
+      'arretez? de (me |m\')(contacter|envoyer|ecrire)',
+      '(retirez|retire|supprimez|supprime|enlevez|enleve|effacez|efface)[- ]moi (de|des) (votre|vos|la|cette|ces|toutes?)',
+      '(do not|don\'?t|stop) (contact|email|emailing|sending|contacting) me',
+      'stop (emailing|sending|contacting)',
+    ].join('|') +
+    ')\\b',
+);
 /** Caractères lus au début du message : au-delà, signature, citation ou mentions légales. */
 const FENETRE_DEMANDE_ARRET = 240;
+/**
+ * Fenêtre de la demande « forte », celle qui passe AVANT l'absence et le départ : ces deux-là se lisent sur tout
+ * le corps, citation et signature comprises (« congés », « de retour le » dans le message cité), alors qu'une
+ * demande d'arrêt écrite en première ligne est ce que la personne a voulu dire.
+ */
+const FENETRE_DEMANDE_FORTE = 100;
 
+function debutNormalise(texte: string, longueur: number): string {
+  return texte.slice(0, longueur).normalize('NFD').replace(/\p{M}/gu, '').replace(/[’‘]/g, "'").toLowerCase();
+}
+
+/** Mot d'arrêt en tête de message, ou tournure d'arrêt dans ses cent premiers caractères. */
+function estUneDemandeDArretEnTete(texte: string): boolean {
+  const debut = debutNormalise(texte, FENETRE_DEMANDE_FORTE);
+  return DEMANDE_ARRET_EN_TETE.test(debut) || DEMANDE_ARRET_PHRASE.test(debut);
+}
+
+/** Demande d'arrêt lue sur les 240 premiers caractères : s'applique APRÈS l'absence et le départ. */
 function estUneDemandeDArret(texte: string): boolean {
-  const debut = texte.slice(0, FENETRE_DEMANDE_ARRET).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const debut = debutNormalise(texte, FENETRE_DEMANDE_ARRET);
   return DEMANDE_ARRET_EN_TETE.test(debut) || DEMANDE_ARRET_PHRASE.test(debut);
 }
 
@@ -233,6 +268,9 @@ function resoudreReprise(body: string, reference: Date): number {
 export function classifyByRules(body: string, referenceDate: Date): ClassifyResult | null {
   // Un corps relevé en UTF-8 relu en Windows-1252 (« dÃ©sinscrire ») doit se lire comme la forme juste.
   const text = reparerMojibake(body ?? '');
+  // Avant l'absence et le départ : voir FENETRE_DEMANDE_FORTE. Une demande d'arrêt est une réponse humaine, quoi
+  // que dise l'en-tête ou la citation.
+  if (estUneDemandeDArretEnTete(text)) return { classification: 'human_reply' };
   if (LEFT_COMPANY.test(text)) return { classification: 'auto_left_company' };
   if (ABSENCE.test(text)) return { classification: 'auto_absence', resumeInDays: resoudreReprise(text, referenceDate) };
   // Une demande d'arrêt est une réponse humaine, quoi que dise l'en-tête : sans cette règle, un « Stop »

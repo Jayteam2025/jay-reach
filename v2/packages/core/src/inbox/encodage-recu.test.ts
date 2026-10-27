@@ -46,4 +46,19 @@ describe('réparation d’un texte UTF-8 relu en Windows-1252', () => {
     const une = reparerMojibake(abimer('Préservez l’environnement'));
     expect(reparerMojibake(une)).toBe(une);
   });
+  it('« à » abîmé (Ã + espace insécable) est réparé : c’est voulu, l’octet 0xA0 devient U+00A0', () => {
+    expect(reparerMojibake('voil\u00C3\u00A0 !')).toBe('voilà !');
+    expect(reparerMojibake('\u00C3\u00A0 bient\u00C3\u00B4t')).toBe('à bientôt');
+  });
+
+  it('ambiguïté connue : un « Å » majuscule suivi d’une espace insécable se lit comme l’octet C5 A0 (« Š »)', () => {
+    // Un vrai « Å\u00A0 » ne se rencontre pas en français ; le comportement est figé pour qu'un changement soit voulu.
+    expect(reparerMojibake('\u00C5\u00A0')).toBe('\u0160');
+  });
+
+  it('double mojibake : une couche est pelée par passage, pas deux', () => {
+    const unePasse = reparerMojibake(abimer(abimer('é')));
+    expect(unePasse).toBe(abimer('é'));
+    expect(reparerMojibake(unePasse)).toBe('é');
+  });
 });
