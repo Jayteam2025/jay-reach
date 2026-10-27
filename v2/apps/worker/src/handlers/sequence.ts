@@ -26,6 +26,7 @@ import {
   applyLeadTime,
   poserEcheanceDepuisDispatch,
   avancerApresRejeuParti,
+  CODE_INVITATION_NON_ACCEPTEE,
   echeanceEtapeSuivante,
   plafondDuJour,
   relectureRequise,
@@ -1265,12 +1266,16 @@ export async function tickDueEnrollments(pool: Pool, now: Date = new Date(), lim
     if (row.current_step > 0) {
       const etapePrecedente = stepsRes.rows[row.current_step - 1];
       if (etapePrecedente) {
-        const precedente = await pool.query<{ status: string }>(
-          `select status from actions where enrollment_id = $1 and step_id = $2`,
+        const precedente = await pool.query<{ status: string; error: string | null }>(
+          `select status, error from actions where enrollment_id = $1 and step_id = $2`,
           [row.id, etapePrecedente.id],
         );
         const statutPrecedent = precedente.rows[0]?.status;
-        if (statutPrecedent !== 'dispatched' && statutPrecedent !== 'delivered') {
+        // Un message LinkedIn SAUTÉ (l'invitation n'a pas été acceptée à temps) a rendu la main à
+        // la séquence : c'est ce qui fait partir l'étape suivante. Seul ce motif y autorise ;
+        // un `skipped` d'une inscription sortie (`enrollment_inactive`) ne rouvre rien.
+        const sautee = statutPrecedent === 'skipped' && precedente.rows[0]?.error === CODE_INVITATION_NON_ACCEPTEE;
+        if (statutPrecedent !== 'dispatched' && statutPrecedent !== 'delivered' && !sautee) {
           console.warn(
             `[tick] inscription ${row.id} due mais l'action de l'étape précédente n'est pas partie (statut ${statutPrecedent ?? 'introuvable'}) — ignorée`,
           );

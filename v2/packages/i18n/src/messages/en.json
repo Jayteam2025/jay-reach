@@ -1079,7 +1079,7 @@
         "channelLinkedinInvite": "LinkedIn invitation",
         "channelLinkedinMessage": "LinkedIn message",
         "inviteSansNote": "The invitation goes out without a note: server-side sending cannot carry one yet.",
-        "messageAfterInvitation": "This message only reaches people who have accepted your invitation. Jay Reach does not wait for that acceptance: if it has not happened by the time of sending, LinkedIn refuses the message and this person's sequence is paused. Leave a long enough delay after the invitation.",
+        "messageAfterInvitation": "This message only reaches people who have accepted your invitation. Jay Reach waits for that acceptance: until it happens, the message is retried once a day. After the delay set in Settings › Limits (7 days by default) without acceptance, it is skipped and the sequence carries on with the next step.",
         "subject": "Subject",
         "body": "Body",
         "delay": "Delay since the previous step",
@@ -1361,6 +1361,11 @@
         "ageMaxOffresJours": {
           "nom": "Maximum posting age",
           "description": "default for sources · in days",
+          "suffixe": "days"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Wait for LinkedIn acceptance",
+          "description": "a LinkedIn message waits for the invitation to be accepted, then is skipped · in days",
           "suffixe": "days"
         }
       },

@@ -48,6 +48,8 @@ import {
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
   prochainEnvoiLinkedIn,
+  ecrireEvenement,
+  reglerMessagePasEncoreRelation,
   reclamerProchaineAction,
   REQUETES_PAR_ENVOI,
   reparerLignesCoincees,
@@ -503,10 +505,66 @@ export async function regler(d: DependancesEnvoi, ctx: Contexte, action: ActionR
     await remettre(false);
     return;
   }
+  if (code === 'cannot_message' && action.origine !== 'reponse') {
+    // Le refus du message d'une SÉQUENCE : la personne n'a (sans doute) pas encore accepté
+    // l'invitation. C'est une attente, pas un échec : la ligne repart demain, ou l'étape est sautée
+    // passé le délai réglé. Aucun risque pour le compte : LinkedIn n'a rien reçu, et une vérification
+    // n'a lieu qu'une fois par jour et par personne, sous le rythme et les plafonds de requêtes de
+    // tous les envois (la vérification compte dans l'intervalle entre deux passages).
+    if (await attendreAcceptation(d, ctx, action)) return;
+  }
   // Refus définitif : le rejouer ne produirait que le même refus.
   console.warn(`[envoi-linkedin] action refusée (${code})`);
   await enregistrer(d, { ...base, status: 'failed', errorCode: code, errorMessage: MOTIFS[code] });
   await arreterSequence(d, ctx, action.id, code, MOTIFS[code]);
+}
+
+/**
+ * Un message de séquence refusé faute de relation : replanifie la vérification au lendemain (minuit
+ * suivant dans le fuseau d'envoi, la fenêtre horaire fait le reste) ou, le délai écoulé, saute
+ * l'étape. Rend `false` quand ce n'est pas une action de séquence : l'appelant applique alors
+ * l'échec ordinaire. Retentée comme l'enregistrement : la ligne est `processing`, et un échec ici la
+ * laisserait `resultat_indetermine` à tort, alors que rien n'est parti.
+ */
+async function attendreAcceptation(d: DependancesEnvoi, ctx: Contexte, action: ActionReclamee): Promise<boolean> {
+  const maintenant = new Date();
+  const prochaineVerification = minuitSuivant(await lireFuseauLinkedIn(ctx), maintenant);
+  for (let essai = 1; ; essai += 1) {
+    try {
+      const sortie = await reglerMessagePasEncoreRelation(d.pool, {
+        organizationId: ctx.organisationId,
+        queueId: action.id,
+        maintenant,
+        prochaineVerification,
+      });
+      if (sortie.issue === 'sans_sequence') return false;
+      if (sortie.issue === 'saute') {
+        console.warn('[envoi-linkedin] invitation non acceptée dans le délai : message sauté');
+        // Trace lisible dans l'historique de la personne. Un journal qui échoue ne défait rien.
+        try {
+          await ecrireEvenement(d.pool, {
+            organisationId: ctx.organisationId,
+            entityType: 'contact',
+            entityId: sortie.contactId,
+            action: 'action_skipped',
+            diff: {
+              libelle: `Message LinkedIn passé : l’invitation n’a pas été acceptée en ${sortie.jours} jours.`,
+              detail: 'La séquence continue à l’étape suivante.',
+            },
+          });
+        } catch (err) {
+          console.warn(`[envoi-linkedin] trace du message sauté non écrite (${nomDe(err)})`);
+        }
+      } else {
+        console.log('[envoi-linkedin] message en attente de l’acceptation de l’invitation');
+      }
+      return true;
+    } catch (err) {
+      if (essai >= TENTATIVES_ENREGISTREMENT) throw err;
+      console.error(`[envoi-linkedin] attente d’acceptation à retenter (${nomDe(err)})`);
+      await d.pause(ATTENTE_ENREGISTREMENT_MS);
+    }
+  }
 }
 
 /**

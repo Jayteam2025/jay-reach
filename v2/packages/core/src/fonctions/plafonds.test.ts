@@ -571,6 +571,29 @@ describe('linkedin_releve_intervalle_min — intervalle de relève', () => {
   });
 });
 
+describe('linkedin_attente_acceptation_jours — attente de l’acceptation d’une invitation', () => {
+  const CLE = 'linkedin_attente_acceptation_jours';
+
+  it('le défaut est de 7 jours et aucune variable d’environnement ne le porte', async () => {
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(7);
+    expect(CLES_REGLAGES.find((r) => r.cle === CLE)?.env).toBeUndefined();
+  });
+
+  it('écrit et relit la valeur réglée à l’écran', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: CLE, value: 10 }] });
+    await ecrireReglage(ctx, { cle: CLE, valeur: 10 });
+    expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/insert into organization_settings/i), expect.any(Array));
+    expect((await lireReglages(ctx))[CLE]).toBe(10);
+  });
+
+  it('accepte 0 (ne pas attendre) et 90, refuse 91 et une chaîne', () => {
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 0 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 90 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 91 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: '7' }).success).toBe(false);
+  });
+});
+
 describe('schemaEcrireReglage — les plafonds d envoi LinkedIn sont bornes', () => {
   /**
    * Le moteur rabote ces deux plafonds a HARD_CAP_7_DAYS. Sans borne a l'ecriture,

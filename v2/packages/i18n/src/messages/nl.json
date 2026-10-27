@@ -1079,7 +1079,7 @@
         "channelLinkedinInvite": "LinkedIn-uitnodiging",
         "channelLinkedinMessage": "LinkedIn-bericht",
         "inviteSansNote": "De uitnodiging vertrekt zonder notitie: de server kan er nog geen meesturen.",
-        "messageAfterInvitation": "Dit bericht bereikt alleen mensen die uw uitnodiging hebben geaccepteerd. Jay Reach wacht niet op die acceptatie: als die op het moment van verzenden niet heeft plaatsgevonden, weigert LinkedIn het bericht en wordt de sequentie van deze persoon gepauzeerd. Laat na de uitnodiging voldoende tijd verstrijken.",
+        "messageAfterInvitation": "Dit bericht bereikt alleen mensen die uw uitnodiging hebben geaccepteerd. Jay Reach wacht op die acceptatie: zolang die uitblijft, wordt het bericht één keer per dag opnieuw geprobeerd. Na de termijn die u instelt onder Instellingen › Limieten (standaard 7 dagen) zonder acceptatie wordt het overgeslagen en gaat de sequentie verder met de volgende stap.",
         "subject": "Onderwerp",
         "body": "Inhoud",
         "delay": "Vertraging sinds de vorige stap",
@@ -1361,6 +1361,11 @@
         "ageMaxOffresJours": {
           "nom": "Maximale leeftijd van vacatures",
           "description": "standaard voor bronnen · in dagen",
+          "suffixe": "dagen"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Wachten op LinkedIn-acceptatie",
+          "description": "een LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd en wordt daarna overgeslagen · in dagen",
           "suffixe": "dagen"
         }
       },

@@ -43,6 +43,7 @@ export type ClePlafond =
   | 'linkedin_fiches_post_par_jour'
   | 'linkedin_fenetre_validation_post_jours'
   | 'linkedin_releve_intervalle_min'
+  | 'linkedin_attente_acceptation_jours'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -60,6 +61,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_fiches_post_par_jour',
   'linkedin_fenetre_validation_post_jours',
   'linkedin_releve_intervalle_min',
+  'linkedin_attente_acceptation_jours',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -106,6 +108,11 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // requête de plus vers LinkedIn : 30 laisse une réponse visible en moins d'une heure sans
   // fréquenter la messagerie en continu. Bornes [5, 1440] posées par `schemaEcrireReglage`.
   { cle: 'linkedin_releve_intervalle_min', defaut: 30, env: 'LINKEDIN_RELEVE_INTERVAL_MIN' },
+  // Combien de jours un message LinkedIn attend que l'invitation soit acceptée avant d'être SAUTÉ
+  // (la séquence passe alors à l'étape suivante). Le délai se compte depuis l'envoi de
+  // l'invitation, ou depuis l'arrivée sur l'étape quand la personne n'a jamais été invitée.
+  // 7 : le délai de Gojiberry. Une DURÉE, pas un plafond de trafic : aucune variable d'environnement.
+  { cle: 'linkedin_attente_acceptation_jours', defaut: 7 },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -307,6 +314,9 @@ function fuseauValide(valeur: string): boolean {
   }
 }
 
+/** Borne haute de l'attente d'acceptation : au-delà, « sauter après N jours » n'a plus de sens. */
+const ATTENTE_ACCEPTATION_MAX_JOURS = 90;
+
 /**
  * La `valeur` doit correspondre au type attendu de la `cle` visée (un entier pour un plafond, une
  * chaîne non vide pour `fuseau`) — sinon `organization_settings` accumulerait des lignes du mauvais
@@ -375,6 +385,15 @@ export const schemaEcrireReglage = z
           code: z.ZodIssueCode.custom,
           path: ['valeur'],
           message: "L'intervalle de relève doit être compris entre 5 et 1440 minutes.",
+        });
+      }
+    }
+    if (entree.cle === 'linkedin_attente_acceptation_jours' && typeof entree.valeur === 'number') {
+      if (entree.valeur > ATTENTE_ACCEPTATION_MAX_JOURS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['valeur'],
+          message: `L'attente de l'acceptation ne peut pas dépasser ${ATTENTE_ACCEPTATION_MAX_JOURS} jours.`,
         });
       }
     }

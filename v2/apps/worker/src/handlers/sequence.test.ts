@@ -132,7 +132,7 @@ const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and
 const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
 // Garde départ réel (issue #111) : statut de l'action de l'étape PRÉCÉDENTE.
-const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 and step_id = \$2/i;
+const ACTION_PRECEDENTE = /select status(?:, error)? from actions where enrollment_id = \$1 and step_id = \$2/i;
 // `rattraperEcheancesManquantes` (tour de correction 2, issue #111) : une
 // seule requête (jointure latérale sur l'étape précédente puis sur `actions`)
 // renvoie déjà les vraies candidates, plus de requête par ligne.
@@ -560,6 +560,41 @@ describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
       .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
       .map((g) =>
         g.motif === ACTION_PRECEDENTE ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'failed' }]) } : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(false);
+    expect(avertissement).toHaveBeenCalledTimes(1);
+
+    avertissement.mockRestore();
+  });
+
+  it('action précédente `skipped` pour `invitation_non_acceptee` (message LinkedIn sauté, #169) : l’inscription avance normalement', async () => {
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE
+          ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'skipped', error: 'invitation_non_acceptee' }]) }
+          : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(true);
+    expect(appels.some((a) => UPDATE_AVANCEMENT.test(a.sql))).toBe(true);
+  });
+
+  it('action précédente `skipped` pour une AUTRE raison (`enrollment_inactive`) : la garde bloque toujours', async () => {
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE
+          ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'skipped', error: 'enrollment_inactive' }]) }
+          : g,
       );
     const { pool, appels } = creerPoolFactice(gestionnaires);
 

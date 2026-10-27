@@ -12,6 +12,7 @@
 import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { cloreDepartReel } from '../sequencer/echeance.js';
+import { versInstant } from '../temps.js';
 import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
 import { balayerReponsesSansSort, existeReponseSansSort } from './reponse-manuelle.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
@@ -27,6 +28,15 @@ import {
 /** Texte écrit sur une action serveur dont on ignore si elle est partie : elle n'est jamais rejouée. */
 export const MESSAGE_RESULTAT_INDETERMINE =
   'LinkedIn a peut-être reçu cette action avant l’arrêt du worker : vérifiez sur LinkedIn, elle ne sera pas rejouée.';
+
+/**
+ * Code posé sur une ligne `pending` dont le message attend que l'invitation soit acceptée. Il sert
+ * de MARQUE : l'ordre des candidates (les neuves d'abord) et le rythme (une vérification compte
+ * comme un passage) le lisent. Il disparaît à l'envoi (`enregistrerResultat` réécrit le code).
+ */
+export const CODE_ATTENTE_ACCEPTATION = 'attente_acceptation';
+/** Code d'une ligne `cancelled` et d'une action `skipped` : l'invitation n'a pas été acceptée à temps. */
+export const CODE_INVITATION_NON_ACCEPTEE = 'invitation_non_acceptee';
 
 export interface ActionReclamee {
   readonly id: string;
@@ -123,10 +133,20 @@ async function chargerStatsRythme(ex: Executeur, orgId: string, now: Date): Prom
      group by kind`,
     [orgId, sevenDaysAgo, oneDayAgo],
   );
-  const last = await ex.query<{ sent_at: string | Date }>(
-    `select sent_at from linkedin_action_queue
-     where organization_id = $1 and status = 'sent' /* jr:linkedin_dernier_envoi_toutes_origines */
-     order by sent_at desc limit 1`,
+  // Le dernier passage vers LinkedIn : un envoi parti, OU la vérification d'un message qui attend
+  // l'acceptation de l'invitation (ligne `pending` portant `attente_acceptation`, datée par son
+  // `updated_at`). Une vérification est une requête de plus sur le compte : sans elle, vingt
+  // messages en attente seraient vérifiés l'un derrière l'autre, sans l'intervalle de 1 à 20 minutes
+  // qui rend le rythme humain.
+  const last = await ex.query<{ sent_at: string | Date | null }>(
+    `select max(t) as sent_at /* jr:linkedin_dernier_envoi_toutes_origines */
+       from (
+         select sent_at as t from linkedin_action_queue
+          where organization_id = $1 and status = 'sent'
+         union all
+         select updated_at as t from linkedin_action_queue
+          where organization_id = $1 and status = 'pending' and error_code = '${CODE_ATTENTE_ACCEPTATION}'
+       ) passages`,
     [orgId],
   );
   const r = settings.rows[0];
@@ -313,7 +333,11 @@ async function prochainesCandidates(
         where q.organization_id = $1 and q.status = 'pending'
           and q.method = 'serveur' and q.scheduled_for <= $2
           and (q.action_id is null or camp.status = 'active')
-        order by q.kind, (q.origine = 'reponse') desc, q.scheduled_for asc, q.id asc
+        -- Une ligne qui ATTEND l'acceptation d'une invitation passe après celles qui n'ont jamais été
+        -- essayées : sa vérification quotidienne ne doit pas retenir un message neuf, dont l'invitation
+        -- est peut-être déjà acceptée.
+        order by q.kind, (q.origine = 'reponse') desc,
+                 coalesce(q.error_code = '${CODE_ATTENTE_ACCEPTATION}', false) asc, q.scheduled_for asc, q.id asc
      ) par_type
      order by (origine = 'reponse') desc, scheduled_for asc, id asc`,
     [organisationId, now.toISOString()],
@@ -606,6 +630,117 @@ export async function remettreActionEnAttente(
     [queueId, organisationId, options.comptee, options.maxTentatives ?? 3],
   );
   return res.rows[0]?.status ?? null;
+}
+
+export interface EntreeMessagePasEncoreRelation {
+  readonly organizationId: string;
+  readonly queueId: string;
+  /** L'horloge du passage, la même que celle de la réclamation. */
+  readonly maintenant: Date;
+  /** Où replanifier la vérification (minuit suivant, dans le fuseau de l'envoi) : au plus une par jour. */
+  readonly prochaineVerification: Date;
+}
+
+export type SortieMessagePasEncoreRelation =
+  /** Le message attend : la ligne est de nouveau `pending`, replanifiée, l'action reste `scheduled`. */
+  | { readonly issue: 'en_attente'; readonly jours: number }
+  /** Délai écoulé : l'étape est sautée et l'inscription passe à la suivante. */
+  | { readonly issue: 'saute'; readonly jours: number; readonly contactId: string | null }
+  /** Pas une action de séquence (réponse de l'opérateur, ligne de l'extension) : l'appelant applique l'échec ordinaire. */
+  | { readonly issue: 'sans_sequence' };
+
+/**
+ * LinkedIn a refusé un message de séquence (`cannot_message`) : la personne n'est, en règle générale,
+ * pas encore une relation de premier degré. Ce n'est pas un échec de la séquence, c'est une attente.
+ * Rien n'est parti (le refus est le fait de LinkedIn), la réessayer plus tard ne risque pas de doublon.
+ *
+ *  - Avant `linkedin_attente_acceptation_jours` jours (compté depuis l'envoi de l'invitation à cette
+ *    personne, sinon depuis l'arrivée de l'étape) : la ligne redevient `pending`, replanifiée à
+ *    `prochaineVerification`, l'action reste `scheduled` et l'inscription n'est PAS touchée
+ *    (`current_step` est déjà avancé par le tick, `next_action_at` reste nul : rien ne la rejoue).
+ *    `attempts` rend la tentative, pour qu'une attente de plusieurs jours n'épuise pas le budget
+ *    des échecs de lecture (`remettreActionEnAttente`).
+ *  - Passé ce délai : la ligne est `cancelled / invitation_non_acceptee`, l'action `skipped` avec le
+ *    même motif, et l'échéance de l'étape suivante est posée comme au départ réel (même fonction,
+ *    donc même invariant sur `current_step`, y compris après un rejeu).
+ *
+ * Le délai n'est jugé QU'APRÈS une vérification réelle : une personne invitée il y a longtemps
+ * dans une autre campagne est d'abord essayée, elle a pu accepter depuis.
+ *
+ * Tout dans une transaction, sur une ligne verrouillée encore `processing` : une personne sortie
+ * entre-temps (ligne annulée par `annulerEnvoisEnFile`, action écartée) n'est ni replanifiée ni avancée.
+ */
+export async function reglerMessagePasEncoreRelation(
+  ex: Executeur,
+  entree: EntreeMessagePasEncoreRelation,
+): Promise<SortieMessagePasEncoreRelation> {
+  const jours = await plafondDuJour(ex, entree.organizationId, 'linkedin_attente_acceptation_jours');
+  return dansUneTransaction(ex, async (tx): Promise<SortieMessagePasEncoreRelation> => {
+    const lue = await tx.query<{
+      action_id: string;
+      contact_id: string | null;
+      arrivee_le: string | Date;
+      invitation_le: string | Date | null;
+    }>(
+      `select q.action_id, q.contact_id, q.created_at as arrivee_le,
+              (select max(i.sent_at) from linkedin_action_queue i
+                where i.organization_id = q.organization_id and i.contact_id = q.contact_id
+                  and i.kind = 'invite' and i.status = 'sent') as invitation_le /* jr:linkedin_attente_lecture */
+         from linkedin_action_queue q
+         join actions a on a.id = q.action_id and a.organization_id = q.organization_id
+        where q.id = $1 and q.organization_id = $2 and q.status = 'processing'
+          and q.kind = 'message' and q.origine = 'sequence'
+          and a.channel = 'linkedin_message' and a.status in ('scheduled', 'approved')
+        for update of q`,
+      [entree.queueId, entree.organizationId],
+    );
+    const ligne = lue.rows[0];
+    if (!ligne) return { issue: 'sans_sequence' };
+
+    const depuis = new Date(versInstant(ligne.invitation_le ?? ligne.arrivee_le) ?? entree.maintenant.getTime());
+    const echeance = depuis.getTime() + jours * 24 * 3_600_000;
+
+    if (entree.maintenant.getTime() < echeance) {
+      await tx.query(
+        `update linkedin_action_queue /* jr:linkedin_attente_replanifier */
+            set status = 'pending', scheduled_for = $3, attempts = greatest(attempts - 1, 0),
+                error_code = $4, error_message = $5, processing_started_at = null, updated_at = now()
+          where id = $1 and organization_id = $2 and status = 'processing'`,
+        [
+          entree.queueId,
+          entree.organizationId,
+          entree.prochaineVerification.toISOString(),
+          CODE_ATTENTE_ACCEPTATION,
+          MESSAGE_ATTENTE_ACCEPTATION,
+        ],
+      );
+      return { issue: 'en_attente', jours };
+    }
+
+    await tx.query(
+      `update linkedin_action_queue /* jr:linkedin_attente_sauter_file */
+          set status = 'cancelled', error_code = $3, error_message = $4, updated_at = now()
+        where id = $1 and organization_id = $2 and status = 'processing'`,
+      [entree.queueId, entree.organizationId, CODE_INVITATION_NON_ACCEPTEE, messageInvitationNonAcceptee(jours)],
+    );
+    const sautee = await tx.query(
+      `update actions set status = 'skipped', error = $3 /* jr:linkedin_attente_sauter_action */
+        where id = $1 and organization_id = $2 and status in ('scheduled', 'approved')`,
+      [ligne.action_id, entree.organizationId, CODE_INVITATION_NON_ACCEPTEE],
+    );
+    // Même geste qu'au départ réel : l'étape suivante devient due `delay_hours` après CE moment.
+    if ((sautee.rowCount ?? 0) > 0) await poserEcheanceApresDepartDepuisAction(tx, ligne.action_id, entree.maintenant);
+    return { issue: 'saute', jours, contactId: ligne.contact_id };
+  });
+}
+
+/** Texte écrit sur la ligne de file qui attend : lisible, jamais un extrait de réponse LinkedIn. */
+export const MESSAGE_ATTENTE_ACCEPTATION =
+  'La personne n’a pas encore accepté l’invitation : le message attend, avec une vérification par jour.';
+
+/** Texte écrit quand le délai est écoulé : il nomme la durée réglée. */
+export function messageInvitationNonAcceptee(jours: number): string {
+  return `L’invitation n’a pas été acceptée en ${jours} jours : le message est passé, la séquence continue.`;
 }
 
 /**

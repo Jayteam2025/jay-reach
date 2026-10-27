@@ -122,7 +122,7 @@ function poolAvecEtat(
         return rep([{ mode, send_days: [1, 2, 3, 4, 5], send_from_hour: 9, send_to_hour: 18, timezone: 'Europe/Paris' }]);
       }
       if (/count\(\*\) filter/i.test(sql)) return rep([]);
-      if (/order by sent_at desc/i.test(sql)) return rep([]);
+      if (/jr:linkedin_dernier_envoi_toutes_origines/.test(sql)) return rep([]);
       throw new Error(`requete inattendue : ${sql.slice(0, 60)}`);
     }),
   } as unknown as Pool;

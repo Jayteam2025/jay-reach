@@ -1079,7 +1079,7 @@
         "channelLinkedinInvite": "Invitation LinkedIn",
         "channelLinkedinMessage": "Message LinkedIn",
         "inviteSansNote": "L’invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.",
-        "messageAfterInvitation": "Ce message n'atteint que les personnes qui ont accepté votre invitation. Jay Reach n'attend pas cette acceptation : si elle n'a pas eu lieu à l'heure de l'envoi, LinkedIn refuse le message et la séquence de cette personne est mise en pause. Laissez un délai assez long après l'invitation.",
+        "messageAfterInvitation": "Ce message n'atteint que les personnes qui ont accepté votre invitation. Jay Reach attend cette acceptation : tant qu'elle n'a pas eu lieu, le message est retenté une fois par jour. Au bout du délai réglé dans Réglages › Plafonds (7 jours par défaut) sans acceptation, il est sauté et la séquence continue à l'étape suivante.",
         "subject": "Objet",
         "body": "Corps",
         "delay": "Délai depuis l'étape précédente",
@@ -1361,6 +1361,11 @@
         "ageMaxOffresJours": {
           "nom": "Âge maximal des offres",
           "description": "défaut des sources · en jours",
+          "suffixe": "jours"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Attente de l’acceptation LinkedIn",
+          "description": "un message LinkedIn attend l’invitation acceptée, puis est passé · en jours",
           "suffixe": "jours"
         }
       },
