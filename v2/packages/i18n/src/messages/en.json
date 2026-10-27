@@ -540,7 +540,8 @@
         "sentBy": "Sent by {boite} · linked to this mailbox for the whole sequence",
         "step": "{n}",
         "pausedLine": "Paused: {motif}",
-        "nextMessage": "Next message on {date}"
+        "nextMessage": "Next message on {date}",
+        "awaitingAcceptance": "The LinkedIn message is waiting for the invitation to be accepted. If it is not accepted by {date}, it is skipped and the sequence continues."
       },
       "conversation": {
         "openInInbox": "Open in the Inbox",
@@ -649,6 +650,16 @@
           "blocked": "blocked",
           "cancelled": "cancelled",
           "skipped": "skipped"
+        }
+      },
+      "awaitingAcceptance": {
+        "title": "{n, plural, one {# LinkedIn message waiting for the invitation to be accepted} other {# LinkedIn messages waiting for the invitation to be accepted}}",
+        "explanation": "Each message goes out as soon as the person accepts the invitation. Jay Reach checks once a day. If it is not accepted by the deadline, the step is skipped and the sequence continues.",
+        "noInvitation": "No invitation sent",
+        "columns": {
+          "step": "Step",
+          "invitation": "Invitation sent",
+          "deadline": "Skipped if not accepted by"
         }
       }
     },

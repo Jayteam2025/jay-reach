@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { FicheSequence } from '@jay-reach/core';
+import type { AttenteAcceptation, FicheSequence } from '@jay-reach/core';
 
 /**
  * `SectionOuEnEstOn` appelle `useTranslations` directement (contrairement à
@@ -11,6 +11,7 @@ import type { FicheSequence } from '@jay-reach/core';
  * ambiguïté une ligne de l'autre dans les assertions.
  */
 vi.mock('next-intl', () => ({
+  useLocale: () => 'fr-FR',
   useTranslations:
     (namespace: string) =>
     (cle: string, valeurs?: Record<string, string | number>) => {
@@ -36,7 +37,50 @@ function sequence(overrides: Partial<FicheSequence> = {}): FicheSequence {
   };
 }
 
+function attente(overrides: Partial<AttenteAcceptation> = {}): AttenteAcceptation {
+  return {
+    actionId: 'act-1',
+    queueId: 'q-1',
+    inscriptionId: 'ins-1',
+    campagneId: 'camp-1',
+    campagneNom: 'Directeur commercial',
+    contactId: 'ct-1',
+    contactNom: 'Camille Martin',
+    etape: 2,
+    invitationEnvoyeeLe: '2026-10-20T08:00:00.000Z',
+    depuisLe: '2026-10-20T08:00:00.000Z',
+    jours: 7,
+    limiteLe: '2026-10-27T08:00:00.000Z',
+    prochaineVerificationLe: '2026-10-27T22:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('SectionOuEnEstOn', () => {
+  // #183 : sans cette ligne, une inscription qui attend l'acceptation n'affiche AUCUN statut
+  // (`prochainMessageLe` est nul) — l'opérateur ne sait ni qu'un message attend, ni jusqu'à quand.
+  it('message LinkedIn en attente d’acceptation -> ligne avec la date limite du saut', () => {
+    const html = renderToStaticMarkup(
+      <SectionOuEnEstOn sequence={sequence({ attenteAcceptation: attente() })} campagneId="camp-1" fuseau="Europe/Paris" />,
+    );
+    expect(html).toContain('campagne.fiche.sequence.awaitingAcceptance:date=27 octobre');
+    expect(html).not.toContain('sequence.nextMessage');
+  });
+
+  it('attente d’acceptation sur une inscription en pause -> ligne de pause seule', () => {
+    const html = renderToStaticMarkup(
+      <SectionOuEnEstOn
+        sequence={sequence({
+          attenteAcceptation: attente(),
+          pause: { inscriptionId: 'ins-1', motif: 'manuel', repriseLe: null },
+        })}
+        campagneId="camp-1"
+        fuseau="Europe/Paris"
+      />,
+    );
+    expect(html).not.toContain('awaitingAcceptance');
+  });
+
   // F11 : rougirait si la ligne « Prochain message » disparaissait ou si elle n'était plus
   // placée sous l'emplacement existant (`sequence.nextMessage`, même bloc que `pausedLine`).
   it('inscription active avec une échéance -> ligne « Prochain message » affichée', () => {

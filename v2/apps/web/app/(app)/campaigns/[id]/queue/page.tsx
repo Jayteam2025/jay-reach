@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { apercuEnvoi, ErreurIntrouvable, lireReglages, listerFileDuJour, type EnvoiPrevu, type EtatEnvoi } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { FUSEAU_PAR_DEFAUT } from '../../../../../lib/dates';
@@ -9,6 +9,7 @@ import { natureDesCanaux } from '../../../../../lib/canaux-sequence';
 import { Carte, EtatVide, Puce } from '../../../../../components/ui';
 import { TableFileDuJour, TON_ETAT, type LigneTableFileDuJour } from '../../../../../components/campagne/TableFileDuJour';
 import { TiroirRelecture, type TiroirRelectureLibelles } from '../../../../../components/campagne/TiroirRelecture';
+import { TableAttentesAcceptation, type LigneAttenteAcceptation } from '../../../../../components/campagne/TableAttentesAcceptation';
 
 export const revalidate = 0;
 
@@ -113,7 +114,7 @@ export default async function CampagneFileDuJourPage({
 }) {
   const { id } = await params;
   const ctx = await contexteCourant();
-  const [t, sp, reglages] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx)]);
+  const [t, sp, reglages, locale] = await Promise.all([getTranslations('campagne'), searchParams, lireReglages(ctx), getLocale()]);
   // Constat produit (18/09, tour de correction G4) : voir le commentaire équivalent dans
   // `contacts/page.tsx` — chargé une fois ici, jamais par ligne de `TableFileDuJour`.
   const enrichissementEnPause = Number(reglages.enrichissements_par_jour) <= 0;
@@ -137,6 +138,15 @@ export default async function CampagneFileDuJourPage({
   const lignes: LigneTableFileDuJour[] = envois.map((e) => ({
     ...e,
     etapeTexte: e.etape !== null ? t('file.step', { n: e.etape }) : null,
+  }));
+
+  // #183 : état courant, indépendant du jour affiché — dates dans le fuseau réglé de l'organisation.
+  const jourMois = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: String(reglages.fuseau) });
+  const attentes: LigneAttenteAcceptation[] = resultat.enAttenteAcceptation.map((a) => ({
+    ...a,
+    etapeTexte: a.etape !== null ? t('file.step', { n: a.etape }) : null,
+    invitationTexte: a.invitationEnvoyeeLe ? jourMois.format(new Date(a.invitationEnvoyeeLe)) : t('file.awaitingAcceptance.noInvitation'),
+    limiteTexte: jourMois.format(new Date(a.limiteLe)),
   }));
 
   // La nature de ce qui part aujourd'hui (titre, tranches), et celle de la campagne entière (description) :
@@ -232,6 +242,20 @@ export default async function CampagneFileDuJourPage({
           />
         </Carte>
       )}
+
+      <TableAttentesAcceptation
+        attentes={attentes}
+        campagneId={id}
+        libelles={{
+          titre: t('file.awaitingAcceptance.title', { n: attentes.length }),
+          explication: t('file.awaitingAcceptance.explanation'),
+          colonneContact: t('file.columns.contact'),
+          colonneEtape: t('file.awaitingAcceptance.columns.step'),
+          colonneInvitation: t('file.awaitingAcceptance.columns.invitation'),
+          colonneLimite: t('file.awaitingAcceptance.columns.deadline'),
+          ecarter: t('file.actions.discard'),
+        }}
+      />
 
       {tiroir && (
         <TiroirRelecture

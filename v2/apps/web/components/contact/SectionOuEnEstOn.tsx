@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import type { FicheSequence } from '@jay-reach/core';
 import { libelleMotifPause, libelleProchainMessage } from '../../lib/motif-pause';
 import { BoutonReprendre } from '../campagne/BoutonReprendre';
@@ -29,6 +29,16 @@ export function SectionOuEnEstOn({ sequence, campagneId, fuseau }: SectionOuEnEs
   const t = useTranslations('campagne.fiche');
   const tPause = useTranslations('motifsPause');
   const tActions = useTranslations('campagne.contacts.actions');
+  const locale = useLocale();
+
+  // #183 : `lireFiche` garantit `prochainMessageLe` nul quand ce champ est posé — c'est lui qui dit
+  // pourquoi rien n'est prévu. La date est `limiteLe`, celle que le moteur appliquera pour le saut.
+  const attente = sequence && !sequence.pause ? sequence.attenteAcceptation : null;
+  const attenteAffichee = attente
+    ? t('sequence.awaitingAcceptance', {
+        date: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', timeZone: fuseau }).format(new Date(attente.limiteLe)),
+      })
+    : null;
 
   const motifAffiche = sequence?.pause
     ? libelleMotifPause(sequence.pause.motif, sequence.pause.repriseLe, (cle, valeurs) => tPause(cle, valeurs), fuseau)
@@ -68,6 +78,11 @@ export function SectionOuEnEstOn({ sequence, campagneId, fuseau }: SectionOuEnEs
           {!sequence.pause && prochainMessageAffiche && (
             <p className="jr-secondaire" style={{ margin: '8px 0 0', fontSize: 13.5 }}>
               {prochainMessageAffiche}
+            </p>
+          )}
+          {attenteAffichee && (
+            <p className="jr-secondaire" style={{ margin: '8px 0 0', fontSize: 13.5 }}>
+              {attenteAffichee}
             </p>
           )}
         </>

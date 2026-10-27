@@ -540,7 +540,8 @@
         "sentBy": "Verzonden door {boite} · gekoppeld aan deze mailbox voor de hele sequentie",
         "step": "{n}",
         "pausedLine": "Gepauzeerd: {motif}",
-        "nextMessage": "Volgend bericht op {date}"
+        "nextMessage": "Volgend bericht op {date}",
+        "awaitingAcceptance": "Het LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd. Zonder acceptatie op {date} wordt het overgeslagen en gaat de reeks verder."
       },
       "conversation": {
         "openInInbox": "Openen in de Inbox",
@@ -649,6 +650,16 @@
           "blocked": "geblokkeerd",
           "cancelled": "geannuleerd",
           "skipped": "overgeslagen"
+        }
+      },
+      "awaitingAcceptance": {
+        "title": "{n, plural, one {# LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd} other {# LinkedIn-berichten wachten tot de uitnodiging is geaccepteerd}}",
+        "explanation": "Elk bericht vertrekt zodra de persoon de uitnodiging accepteert. Jay Reach controleert één keer per dag. Wordt ze niet geaccepteerd vóór de uiterste datum, dan wordt de stap overgeslagen en gaat de reeks verder.",
+        "noInvitation": "Geen uitnodiging verstuurd",
+        "columns": {
+          "step": "Stap",
+          "invitation": "Uitnodiging verstuurd op",
+          "deadline": "Overgeslagen zonder acceptatie op"
         }
       }
     },
