@@ -95,3 +95,17 @@ export function erreurEtapeQui(
   if (personas.length > 0 && !etat.personaId) return 'persona';
   return null;
 }
+
+/**
+ * Applique une modification à une étape. Passer à « Invitation LinkedIn » vide l'objet et le corps : une
+ * invitation part sans note, et le serveur refuse (« Une invitation part sans note ») un corps resté là
+ * depuis un email déjà rédigé. Ce qu'on a écrit pour l'email est perdu en changeant de canal : l'écran
+ * ne montre plus de champ à corriger, il ne doit donc rien en garder en cachette.
+ */
+export function appliquerModificationEtape(
+  etape: EtapeSequenceEtape,
+  patch: Partial<Omit<EtapeSequenceEtape, 'cle'>>,
+): EtapeSequenceEtape {
+  const suivante = { ...etape, ...patch };
+  return suivante.canal === 'linkedin_invite' ? { ...suivante, sujet: '', corps: '' } : suivante;
+}

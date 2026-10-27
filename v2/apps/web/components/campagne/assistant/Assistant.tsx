@@ -12,6 +12,7 @@ import { EtapeSequence, type EtapeSequenceEtape, type CleModeleSequence, etapesD
 import { EtapeEnvoi, type BoiteEnvoiAssistant } from './EtapeEnvoi';
 import {
   ajouterEtapeALaSequence,
+  appliquerModificationEtape,
   erreurEtapeQui,
   personaInitial,
   premiereEtapeIncomplete,
@@ -60,7 +61,12 @@ export function construireEntreeAssistant(
     minScore: Number(etat.scoreMin) || 0,
     dailyCap: Math.min(PLAFOND_JOUR_MAX, Math.max(1, Number(etat.plafondJour) || 1)),
     sources: etat.sources.map((s) => ({ providerId: s.providerId, nom: s.nom, config: s.config })),
-    etapes: etat.etapes.map((e) => ({ canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 })),
+    // Une invitation part sans note : jamais d'objet ni de corps, même si l'état en garde un (le serveur le refuse).
+    etapes: etat.etapes.map((e) =>
+      e.canal === 'linkedin_invite'
+        ? { canal: e.canal, sujet: '', corps: '', delaiHeures: e.delaiJours * 24 }
+        : { canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 },
+    ),
     relecturePremiersEnvois: Number(etat.relecture) || 0,
     // [] veut dire « toutes les boîtes » (`resoudreBoites`, packages/core) : dès
     // qu'une boîte est décochée on enregistre la liste explicite de celles qui
@@ -140,7 +146,7 @@ export function Assistant({ personas, boites, relectureDefaut, linkedinConnecte 
     setEtapeOuverte(cleOuverte);
   }
   function modifierEtape(cle: string, patch: Partial<Omit<EtapeSequenceEtape, 'cle'>>) {
-    setEtapes((precedent) => precedent.map((e) => (e.cle === cle ? { ...e, ...patch } : e)));
+    setEtapes((precedent) => precedent.map((e) => (e.cle === cle ? appliquerModificationEtape(e, patch) : e)));
   }
   function supprimerEtape(cle: string) {
     setEtapes((precedent) => precedent.filter((e) => e.cle !== cle));

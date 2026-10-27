@@ -1,10 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { schemaCreerCampagneComplete } from '@jay-reach/core';
+import { construireEntreeAssistant } from './Assistant';
 import { EtapeEnvoi, type EtapeEnvoiLibelles } from './EtapeEnvoi';
 import { EtapeQui, PLAFOND_JOUR_MAX, type EtapeQuiLibelles } from './EtapeQui';
 import { EtapeSequence, type EtapeSequenceEtape, type EtapeSequenceLibelles } from './EtapeSequence';
 import {
   ajouterEtapeALaSequence,
+  appliquerModificationEtape,
   canalParDefaut,
   erreurEtapeQui,
   personaInitial,
@@ -288,5 +291,49 @@ describe('EtapeEnvoi : la relecture montre la valeur reçue', () => {
     );
     expect(html).toMatch(/id="assistant-envoi-relecture"[^>]*value="0"|value="0"[^>]*id="assistant-envoi-relecture"/);
     expect(html).toContain('File du jour');
+  });
+});
+
+describe('un email rédigé puis basculé en invitation LinkedIn', () => {
+  const redige = etape('a', { sujet: 'Objet rédigé', corps: 'Bonjour {{prenom}}' });
+
+  it('appliquerModificationEtape vide l\u2019objet et le corps au passage à l\u2019invitation', () => {
+    const suivante = appliquerModificationEtape(redige, { canal: 'linkedin_invite' });
+    expect(suivante).toMatchObject({ canal: 'linkedin_invite', sujet: '', corps: '' });
+  });
+
+  it('le passage à un message LinkedIn ou à un email garde le texte écrit', () => {
+    expect(appliquerModificationEtape(redige, { canal: 'linkedin_message' }).corps).toBe('Bonjour {{prenom}}');
+    expect(appliquerModificationEtape(redige, { delaiJours: 4 })).toMatchObject({ corps: 'Bonjour {{prenom}}', delaiJours: 4 });
+  });
+
+  it('modifier le texte d\u2019une invitation ne le fait pas reparaître : le canal décide', () => {
+    const invitation = etape('i', { canal: 'linkedin_invite', sujet: '', corps: '' });
+    expect(appliquerModificationEtape(invitation, { corps: 'Texte' }).corps).toBe('');
+  });
+
+  it('même si l\u2019état garde un corps, l\u2019entrée envoyée au serveur n\u2019en porte pas et passe son vrai schéma', () => {
+    const entree = construireEntreeAssistant(
+      {
+        nom: 'Campagne',
+        personaId: null,
+        scoreMin: '70',
+        plafondJour: '30',
+        sources: [],
+        etapes: [{ ...redige, canal: 'linkedin_invite' }, etape('b', { canal: 'linkedin_message', corps: 'Merci' })],
+        relecture: '0',
+        boiteIdsDesactivees: new Set(),
+        boites: [],
+      },
+      false,
+    );
+    expect(() => schemaCreerCampagneComplete.parse(entree)).not.toThrow();
+    // Preuve par retrait : l'ancien corps dans une invitation est bien refusé par ce schéma.
+    expect(() =>
+      schemaCreerCampagneComplete.parse({
+        ...schemaCreerCampagneComplete.parse(entree),
+        etapes: [{ canal: 'linkedin_invite', sujet: '', corps: 'Bonjour', delaiHeures: 0 }],
+      }),
+    ).toThrow();
   });
 });
