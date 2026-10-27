@@ -1420,6 +1420,15 @@ describe('reprendreInscriptionsSansCoordonnee', () => {
     expect(sql).toMatch(/c\.organization_id = e\.organization_id/i);
   });
 
+  it('une réponse rend la main : jamais de reprise d’un contact dont une inscription est `replied`, ni d’un signal écarté', async () => {
+    // La forme du SQL seule (le pool factice n'exécute rien) : preuve sur Postgres dans accroche-post.mjs, contrôles 58 et 59.
+    const { pool, appels } = poolDeReprise([]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).toMatch(/from enrollments r\s+where r\.organization_id = e\.organization_id and r\.contact_id = e\.contact_id and r\.status = 'replied'/i);
+    expect(sql).toMatch(/from signals sg\s+where sg\.organization_id = e\.organization_id and sg\.id = e\.signal_id and sg\.status = 'discarded'/i);
+  });
+
   it('journalise chaque reprise, et une erreur du journal ne fait pas échouer la reprise', async () => {
     const { pool, appels } = creerPoolFactice([
       { motif: REPRISE, repondre: (() => { let n = 0; return () => ligne(n++ === 0 ? [{ id: ENROLLMENT_ID, organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }] : []); })() },

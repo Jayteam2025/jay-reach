@@ -43,6 +43,7 @@ export type StatutContactCampagne =
   | 'a_repondu'
   | 'interesse'
   | 'ecarte'
+  | 'en_attente_coordonnee'
   | 'termine'
   | 'rebond'
   | 'ne_plus_contacter';
@@ -54,6 +55,7 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
   'interesse',
   'a_repondu',
   'ecarte',
+  'en_attente_coordonnee',
   'termine',
   'en_pause',
   'en_sequence',
@@ -87,7 +89,11 @@ export const CASE_STATUT_DERIVE = `case
         select 1 from threads t where t.contact_id = c.id and t.interest = 'interested'
       ) then 'interesse'
       when e.status = 'replied' then 'a_repondu'
-      when s.status = 'discarded' or e.status = 'stopped' then 'ecarte'
+      when s.status = 'discarded' then 'ecarte'
+      -- Arrêtée faute de coordonnée (email ou URL LinkedIn manquante) : le producteur la reprend tout seul quand
+      -- elle arrive (reprendreInscriptionsSansCoordonnee). Ce n'est pas un écart, l'opérateur n'a rien décidé.
+      when e.status = 'stopped' and e.stop_reason = 'not_sendable' then 'en_attente_coordonnee'
+      when e.status = 'stopped' then 'ecarte'
       when e.status = 'completed' then 'termine'
       when e.status in ('paused', 'paused_absence') then 'en_pause'
       when e.status = 'active' then 'en_sequence'

@@ -847,6 +847,16 @@ describe('les refus de LinkedIn', () => {
       expect(w.journal.some((j) => j.startsWith('autre insert into audit_events'))).toBe(true);
     });
 
+    it('une ligne déjà réglée (réponse de la transaction perdue après le commit) : rien n\'est écrit, pas d\'échec, pas de pause', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'deja_reglee' });
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(mocks.attente).toHaveBeenCalledTimes(1);
+      expect(enregistrements()).toEqual([]);
+      expect(arretsSequence(w)).toEqual([]);
+    });
+
     it('un journal qui échoue ne défait pas le saut', async () => {
       mocks.attente.mockResolvedValue({ issue: 'saute', jours: 7, contactId: 'contact-1' });
       const w = monde({ reponses: refus });

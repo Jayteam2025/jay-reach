@@ -538,6 +538,12 @@ async function attendreAcceptation(d: DependancesEnvoi, ctx: Contexte, action: A
         prochaineVerification,
       });
       if (sortie.issue === 'sans_sequence') return false;
+      if (sortie.issue === 'deja_reglee') {
+        // Un règlement précédent a commité mais sa réponse s'est perdue : l'échec ordinaire arrêterait à tort
+        // la séquence d'une personne dont l'attente (ou le saut) est déjà posée.
+        console.log('[envoi-linkedin] attente d’acceptation déjà réglée : rien à écrire');
+        return true;
+      }
       if (sortie.issue === 'saute') {
         console.warn('[envoi-linkedin] invitation non acceptée dans le délai : message sauté');
         // Trace lisible dans l'historique de la personne. Un journal qui échoue ne défait rien.

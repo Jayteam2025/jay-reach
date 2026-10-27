@@ -21,6 +21,14 @@
 //      de l'action : 9b.
 //  12. file.ts, `prochainesCandidates`, tri EXTÉRIEUR : retirer `en_attente asc` : 2c (invitation neuve devant message en attente).
 //  11. file.ts : durée en dur (7) au lieu du réglage : 7a, 7b, 7c.
+//  Vague de la revue finale (27/10), chacune seule :
+//  13. file-du-jour.ts, `ecarterDuneCampagne` : neutraliser l'annulation des lignes LinkedIn (`where false`) : 10a, 10a-bis.
+//  14. file.ts, garde de séquence (6 ter) : (a) la neutraliser (`and false`) : 10a2, 10a3, 10a4, 10b, 10b-bis ; (b) retirer la
+//      condition sur le statut de l'action : 10a4 ; (c) retirer celle sur le statut de l'inscription : 10a3, 10b, 10b-bis ;
+//      (d) retirer `replied` de la liste : 10b-ter ; (e) y ajouter `completed` : 10d.
+//  15. file.ts, `prochainesCandidates` : retirer `e.status is distinct from 'paused_absence'` : 10c, 10c-ter. (Faire annuler
+//      `paused_absence` par la garde est INATTEIGNABLE : le filtre des candidates l'écarte avant, aucun contrôle ne peut le voir.)
+//  16. file.ts, `reglerMessagePasEncoreRelation` : rendre `sans_sequence` au lieu de `deja_reglee` : 9c, 11b.
 import pg from 'pg';
 import {
   tickDueEnrollments,
@@ -32,6 +40,10 @@ import {
   annulerEnvoisEnFile,
   lireFiche,
   reglerMessagePasEncoreRelation,
+  ecarterDuneCampagne,
+  traiterEvenementEmail,
+  recordInboundReply,
+  reprendreAbsencesEchues,
 } from './_attente-acceptation-bundle.mjs';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -403,10 +415,151 @@ async function gardesDuCoeur() {
 
   const c = await personne(m, { invitationIlYa: 8, prenom: 'Pending' });
   const sc = await appeler(c.queue); // ligne `pending`, jamais réclamée
-  check('9c. une ligne qui n\'est pas `processing` n\'est pas touchée', sc.issue === 'sans_sequence' && (await file(c.queue)).status === 'pending', JSON.stringify(sc));
+  check('9c. une ligne de séquence qui n\'est plus `processing` n\'est pas touchée : `deja_reglee`, distincte de `sans_sequence`', sc.issue === 'deja_reglee' && (await file(c.queue)).status === 'pending', JSON.stringify(sc));
 }
 
-await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur);
+// ---------------------------------------------------------------- 11. réponse de la transaction perdue
+async function reponseDeLaTransactionPerdue() {
+  console.log('\n11. la transaction a commité mais sa réponse est perdue : la tentative suivante ne casse rien');
+  const m = await monde();
+  const p = await personne(m, { invitationIlYa: 2 });
+  const r = await reclamerProchaineAction(pool, m.org, dans(120_000));
+  await regler(deps(), m.ctx, r.action, { type: 'refus', code: 'cannot_message' }); // commite : la ligne attend
+  const avant = await file(p.queue);
+  // Le handler, qui n'a pas lu la réponse, retente le MÊME règlement sur la même action réclamée.
+  await regler(deps(), m.ctx, r.action, { type: 'refus', code: 'cannot_message' });
+  const apres = await file(p.queue);
+  const insc = await inscriptionDe(p.inscription);
+  const act = await action(p.inscription, 1);
+  check('11a. la ligne est intacte (toujours en attente, même échéance, même tentative)',
+    apres.status === 'pending' && apres.error_code === 'attente_acceptation' && apres.attempts === avant.attempts
+      && new Date(apres.scheduled_for).getTime() === new Date(avant.scheduled_for).getTime(), JSON.stringify({ avant, apres }));
+  check('11b. l\'action n\'est PAS en échec et l\'inscription n\'est PAS en pause',
+    act?.status === 'scheduled' && act?.error === null && insc.status === 'active' && insc.stop_reason === null, JSON.stringify({ act, insc }));
+
+  // Même chose après un SAUT commité : ligne annulée, action sautée, inscription active.
+  const m2 = await monde();
+  const s = await personne(m2, { invitationIlYa: 8 });
+  const r2 = await reclamerProchaineAction(pool, m2.org, dans(120_000));
+  await regler(deps(), m2.ctx, r2.action, { type: 'refus', code: 'cannot_message' });
+  await regler(deps(), m2.ctx, r2.action, { type: 'refus', code: 'cannot_message' });
+  const fs = await file(s.queue);
+  const is = await inscriptionDe(s.inscription);
+  const as = await action(s.inscription, 1);
+  check('11c. après un saut commité, la reprise ne le transforme pas en échec (ligne annulée, action sautée, inscription active)',
+    fs.status === 'cancelled' && fs.error_code === 'invitation_non_acceptee' && as?.status === 'skipped' && as?.error === 'invitation_non_acceptee'
+      && is.status === 'active' && is.stop_reason === null, JSON.stringify({ fs, as, is }));
+}
+
+// ---------------------------------------------------------------- 10. sorties qui ne passent pas par la réponse
+const emailDe = async (contact) => (await q(`select email from contacts where id = $1`, [contact])).rows[0].email;
+const ctxAdmin = (m) => ({ ...m.ctx, role: 'admin' });
+
+async function sortiesPendantLAttente() {
+  console.log('\n10. une ligne en attente ne survit pas à une sortie qui ne passe pas par une réponse');
+
+  // (a) Écarter dans la File du jour pendant l'attente.
+  const a = await monde();
+  const pa = await personne(a, { invitationIlYa: 2, prenom: 'Ecartee' });
+  await essayerEtRefuser(a);
+  check('0. précondition : la ligne attend (pending / attente_acceptation)', (await file(pa.queue)).status === 'pending' && (await file(pa.queue)).error_code === 'attente_acceptation');
+  await ecarterDuneCampagne(ctxAdmin(a), { contactId: pa.contact, campagneId: a.campagne });
+  const fa = await file(pa.queue);
+  check('10a. Écarter annule la ligne en attente (cancelled)', fa.status === 'cancelled', JSON.stringify(fa));
+  const lend = await reclamerProchaineAction(pool, a.org, dans(2 * JOUR_MS));
+  check('10a-bis. le lendemain, rien n\'est réclamé : aucun message ne part vers une personne écartée',
+    lend.action === null && lend.motif === 'queue_empty', lend.motif ?? 'réclamée');
+  check('10a-ter. l\'action reste `skipped` (jamais `dispatched`) et l\'inscription `stopped`',
+    (await action(pa.inscription, 1))?.status === 'skipped' && (await inscriptionDe(pa.inscription)).status === 'stopped');
+
+  // (a2) Même sortie, mais la ligne a échappé à l'annulation (cas des chemins qui ne l'annulent pas) :
+  // c'est la GARDE de la réclamation qui l'arrête. Trois variantes, chacune sur UNE seule condition.
+  const g = await monde();
+  const stopperInscription = (insc) =>
+    q(`update enrollments set status = 'stopped', stop_reason = 'operator_skip', next_action_at = null, ended_at = now() where id = $1`, [insc]);
+  const g1 = await personne(g, { invitationIlYa: 2, prenom: 'GardeUn' });
+  await essayerEtRefuser(g);
+  await stopperInscription(g1.inscription);
+  await q(`update actions set status = 'skipped', error = 'operator_skip' where enrollment_id = $1 and status = 'scheduled'`, [g1.inscription]);
+  const r1 = await reclamerProchaineAction(pool, g.org, dans(2 * JOUR_MS));
+  check('10a2. inscription arrêtée ET action sautée, ligne restée `pending` : la garde l\'annule, rien n\'est réclamé',
+    r1.action === null && (await file(g1.queue)).status === 'cancelled' && (await action(g1.inscription, 1))?.status === 'skipped', JSON.stringify({ motif: r1.motif, f: await file(g1.queue) }));
+  check('10a2-bis. aucun message n\'est parti pour elle', (await q(`select count(*)::int n from linkedin_action_queue where contact_id = $1 and status = 'sent' and kind = 'message'`, [g1.contact])).rows[0].n === 0);
+
+  const g2 = await personne(g, { invitationIlYa: 2, prenom: 'GardeDeux' });
+  await essayerEtRefuser(g, dans(3 * JOUR_MS));
+  await stopperInscription(g2.inscription); // l'action reste `scheduled` : seule l'inscription dit « arrêtée »
+  const r2 = await reclamerProchaineAction(pool, g.org, dans(5 * JOUR_MS));
+  check('10a3. inscription arrêtée, action encore `scheduled` : la garde l\'annule et écarte l\'action',
+    r2.action === null && (await file(g2.queue)).status === 'cancelled' && (await action(g2.inscription, 1))?.status === 'skipped', JSON.stringify({ motif: r2.motif, f: await file(g2.queue), a: await action(g2.inscription, 1) }));
+
+  const g3 = await personne(g, { invitationIlYa: 2, prenom: 'GardeTrois' });
+  await essayerEtRefuser(g, dans(6 * JOUR_MS));
+  await q(`update actions set status = 'skipped', error = 'enrollment_inactive' where enrollment_id = $1 and status = 'scheduled'`, [g3.inscription]); // inscription ACTIVE
+  const r3 = await reclamerProchaineAction(pool, g.org, dans(8 * JOUR_MS));
+  check('10a4. action plus `scheduled` (inscription encore active) : la garde l\'annule aussi',
+    r3.action === null && (await file(g3.queue)).status === 'cancelled', JSON.stringify({ motif: r3.motif, f: await file(g3.queue) }));
+
+  // (b) Rebond et départ de l'entreprise, par les VRAIS chemins d'écriture.
+  const b = await monde();
+  const rebond = await personne(b, { invitationIlYa: 2, prenom: 'Rebond' });
+  await essayerEtRefuser(b);
+  await traiterEvenementEmail(pool, b.org, { type: 'rebond', email: await emailDe(rebond.contact), aMs: Date.now() }, 'harnais');
+  check('0. précondition : le rebond arrête l\'inscription sans toucher la ligne', (await inscriptionDe(rebond.inscription)).status === 'bounced' && (await file(rebond.queue)).status === 'pending');
+  const rr = await reclamerProchaineAction(pool, b.org, dans(2 * JOUR_MS));
+  check('10b. un rebond pendant l\'attente : plus de réclamation, ligne annulée',
+    rr.action === null && (await file(rebond.queue)).status === 'cancelled', JSON.stringify({ motif: rr.motif, f: await file(rebond.queue) }));
+
+  const parti = await personne(b, { invitationIlYa: 2, prenom: 'Partie' });
+  await essayerEtRefuser(b, dans(3 * JOUR_MS));
+  const rep = await recordInboundReply(pool, b.org, { contactId: parti.contact, channel: 'email', body: 'Bonjour, je ne travaille plus chez Exemple SA.', receivedAt: new Date() });
+  check('0. précondition : la réponse est lue comme un départ, l\'inscription est arrêtée, la ligne reste',
+    rep.classification === 'auto_left_company' && (await inscriptionDe(parti.inscription)).status === 'stopped' && (await file(parti.queue)).status === 'pending', JSON.stringify({ c: rep.classification, i: await inscriptionDe(parti.inscription) }));
+  const rp = await reclamerProchaineAction(pool, b.org, dans(5 * JOUR_MS));
+  check('10b-bis. un départ de l\'entreprise pendant l\'attente : plus de réclamation, ligne annulée',
+    rp.action === null && (await file(parti.queue)).status === 'cancelled', JSON.stringify({ motif: rp.motif, f: await file(parti.queue) }));
+
+  // (b3) Inscription `replied` dont le contact est resté `active` (données d'avant la règle du 16/10).
+  const rpl = await personne(b, { invitationIlYa: 2, prenom: 'Repondue' });
+  await essayerEtRefuser(b, dans(6 * JOUR_MS));
+  await q(`update enrollments set status = 'replied', next_action_at = null, ended_at = now() where id = $1`, [rpl.inscription]);
+  const rrp = await reclamerProchaineAction(pool, b.org, dans(8 * JOUR_MS));
+  check('10b-ter. une inscription `replied` (contact encore actif) : plus de réclamation, ligne annulée',
+    rrp.action === null && (await file(rpl.queue)).status === 'cancelled', JSON.stringify({ motif: rrp.motif, f: await file(rpl.queue) }));
+
+  // (c) Une absence : la ligne n'est PAS réclamée, reste `pending`, et repart à la reprise.
+  const c = await monde();
+  const abs = await personne(c, { invitationIlYa: 2, prenom: 'Absente' });
+  await essayerEtRefuser(c);
+  const ra = await recordInboundReply(pool, c.org, { contactId: abs.contact, channel: 'email', body: 'Je suis absent du bureau, de retour la semaine prochaine.', receivedAt: new Date() });
+  check('0. précondition : la réponse est une absence, l\'inscription est en pause d\'absence',
+    ra.classification === 'auto_absence' && (await inscriptionDe(abs.inscription)).status === 'paused_absence', JSON.stringify({ c: ra.classification, i: await inscriptionDe(abs.inscription) }));
+  const pendant = await reclamerProchaineAction(pool, c.org, dans(2 * JOUR_MS));
+  check('10c. pendant l\'absence : la ligne n\'est PAS réclamée, ni annulée (elle reste en attente)',
+    pendant.action === null && (await file(abs.queue)).status === 'pending' && (await file(abs.queue)).error_code === 'attente_acceptation', JSON.stringify({ motif: pendant.motif, f: await file(abs.queue) }));
+  check('10c-bis. et elle ne retient pas la file : une ligne neuve d\'une autre personne reste réclamable',
+    await (async () => {
+      const autre = await personne(c, { invitationIlYa: 2, prenom: 'Autre' });
+      const r = await reclamerProchaineAction(pool, c.org, dans(2 * JOUR_MS + 30 * 60_000));
+      return r.action?.id === autre.queue;
+    })());
+  await reprendreAbsencesEchues(pool, dans(30 * JOUR_MS));
+  check('0. précondition : la reprise a réactivé l\'inscription', (await inscriptionDe(abs.inscription)).status === 'active', JSON.stringify(await inscriptionDe(abs.inscription)));
+  const apresReprise = await reclamerProchaineAction(pool, c.org, dans(31 * JOUR_MS));
+  check('10c-ter. après la reprise, la ligne est réclamable',
+    apresReprise.action?.id === abs.queue, apresReprise.motif ?? `réclamée=${apresReprise.action?.id}`);
+
+  // (d) Une inscription `completed` (message en dernière étape) reste légitime : la garde ne l'arrête pas.
+  const d = await monde({ etapes: ['linkedin_invite', 'linkedin_message'] });
+  const der = await personne(d, { invitationIlYa: 2, prenom: 'Derniere' });
+  const avantD = await inscriptionDe(der.inscription);
+  await essayerEtRefuser(d);
+  const rd = await reclamerProchaineAction(pool, d.org, dans(2 * JOUR_MS));
+  check('10d. dernière étape : l\'inscription est `completed` dès la création de l\'action, et sa ligne en attente EST réclamée',
+    avantD.status === 'completed' && rd.action?.id === der.queue, JSON.stringify({ avantD, motif: rd.motif }));
+}
+
+await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue);
 
 await pool.end();
 console.log(failures === 0 ? '\nTOUS LES CONTRÔLES PASSENT' : `\n${failures} CONTRÔLE(S) EN ÉCHEC`);

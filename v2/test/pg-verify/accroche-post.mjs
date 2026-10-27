@@ -163,6 +163,10 @@
 //      retirer `ct.status = 'active'` — 52 ; la garde de suppression — 53 ; `c.status = 'active'` — 54 ;
 //      `e.stop_reason = 'not_sendable'` — 55 ; la garde d'une autre inscription vivante — 56 (et 57 en cascade : la
 //      violation de l'index arrête le passage) ; la coordonnée de l'étape — 49 et 57a.
+//  77. sequence.ts, `reprendreInscriptionsSansCoordonnee`, chacune seule : retirer la garde « une inscription replied du
+//      contact » (`and false`) — 58 rougit ; retirer la garde « signal lié discarded » — 59 rougit (59a est le témoin).
+//  78. campagnes.ts, `CASE_STATUT_DERIVE` : retirer la branche `stopped / not_sendable` -> 48a rougit ; l'élargir à tout
+//      `stopped` -> 48b rougit (une personne écartée à la main se lirait « en attente d'une coordonnée »).
 //  74. producer.ts : retirer le second `not exists` (`enrollments e3`) de `sqlPairesEligibles` — 45 rougit :
 //      une personne dont la séquence est terminée revient dans la même campagne.
 //  75. sequence.ts : retirer le `not exists (select 1 from enrollments where contact_id = $3 and
@@ -218,6 +222,7 @@ import {
   corrigerSujetDePost,
   achatRetenuParUnPost,
   listerFileDuJour,
+  listerContactsCampagne,
   listerPostsDeCampagne,
   rejouerActionsEmailEnAttente,
   rejouerActionsLinkedInEnAttente,
@@ -3310,6 +3315,19 @@ async function repriseFauteDeCoordonnee() {
       && actionsAvant.length === 2 && actionsAvant[0].status === 'dispatched' && actionsAvant[1].status === 'blocked' && actionsAvant[1].block_reason === 'not_sendable',
     JSON.stringify([avant, actionsAvant]));
 
+  // Ce que l'opérateur lit dans l'onglet Contacts : une personne en attente d'une coordonnée n'est PAS « Écartée ».
+  const lecture = await listerContactsCampagne(s.m.ctx, { campagneId: s.m.campagne });
+  const saLigne = lecture.lignes.find((l) => l.contactId === s.contactId);
+  check('48a. arrêtée `not_sendable` (reprise automatique) : statut distinct `en_attente_coordonnee`, pas `ecarte`',
+    saLigne?.statut === 'en_attente_coordonnee' && lecture.compteurs.en_attente_coordonnee === 1 && lecture.compteurs.ecarte === 0,
+    JSON.stringify({ statut: saLigne?.statut, compteurs: lecture.compteurs }));
+  const ecartee = await arretee();
+  await q(`update enrollments set stop_reason = 'operator_skip' where id = $1`, [ecartee.inscription]);
+  const lectureEcartee = await listerContactsCampagne(ecartee.m.ctx, { campagneId: ecartee.m.campagne });
+  check('48b. arrêtée pour un autre motif (écartée à la main) : toujours `ecarte`',
+    lectureEcartee.lignes.find((l) => l.contactId === ecartee.contactId)?.statut === 'ecarte' && lectureEcartee.compteurs.en_attente_coordonnee === 0,
+    JSON.stringify(lectureEcartee.compteurs));
+
   await reprendreInscriptionsSansCoordonnee(pool);
   check('49. témoin : sans la coordonnée, rien n\'est repris', (await etat(s.inscription)).status === 'stopped');
 
@@ -3368,6 +3386,34 @@ async function repriseFauteDeCoordonnee() {
     const e = await etat(x.inscription);
     check('56. une autre inscription vivante du contact : pas reprise, et sans violation de l\'index (garde, pas rattrapage)',
       e.status === 'stopped' && !lignes.some((l) => l.includes('inscription vivante')), JSON.stringify([e, lignes]));
+  }
+  // Une réponse rend la main : un contact encore `active` dont une inscription (d'une AUTRE campagne) est `replied`
+  // (données d'avant le 16/10, qui ne l'excluaient pas) n'est jamais repris.
+  {
+    const x = await arretee();
+    await redonnerLEmail(x);
+    const autre = (await q(`insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Autre reponse', 'active', $2::jsonb) returning id`, [x.m.org, JSON.stringify({ personas: [x.m.persona] })])).rows[0].id;
+    await q(`insert into enrollments (organization_id, campaign_id, contact_id, status, ended_at, current_step) values ($1, $2, $3, 'replied', now(), 1)`, [x.m.org, autre, x.contactId]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const e = await etat(x.inscription);
+    const a = await actionsDe(x.inscription);
+    check('58. une inscription `replied` du contact (contact encore actif) : pas reprise, son action bloquée reste',
+      e.status === 'stopped' && a.length === 2 && a[1].status === 'blocked', JSON.stringify([e, a]));
+  }
+  // Le signal lié à l'inscription : écarté, il n'est pas repris ; non écarté, il l'est (le témoin qui rend 59 non trivial).
+  for (const [libelle, statutSignal, attendu] of [
+    ['59. le signal lié est `discarded` : pas reprise', 'discarded', 'stopped'],
+    ['59a. témoin : le même signal, `qualified` : reprise', 'qualified', 'active'],
+  ]) {
+    const x = await arretee();
+    await redonnerLEmail(x);
+    const source = (await q(`insert into sources (organization_id, name, provider_id, config) values ($1, 'Offres reprise', 'adzuna', '{}'::jsonb) returning id`, [x.m.org])).rows[0].id;
+    k += 1;
+    const signal = (await q(`insert into signals (organization_id, source_id, external_id, kind, occurred_at, title, status) values ($1, $2, $3, 'job_posting', now(), 'Directeur commercial', $4::signal_status) returning id`, [x.m.org, source, `reprise-${k}`, statutSignal])).rows[0].id;
+    await q(`update enrollments set signal_id = $2 where id = $1`, [x.inscription, signal]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const e = await etat(x.inscription);
+    check(libelle, e.status === attendu, JSON.stringify(e));
   }
   // La coordonnée est celle de l'ÉTAPE : une étape LinkedIn n'est pas débloquée par une adresse email.
   for (const [libelle, colonnes, attendu] of [

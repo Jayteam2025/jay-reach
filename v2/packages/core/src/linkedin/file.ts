@@ -82,7 +82,8 @@ export type MotifRefus =
   | 'race_retry'
   | 'canal_en_pause'
   | 'session_inactive'
-  | 'contact_exclu';
+  | 'contact_exclu'
+  | 'sequence_arretee';
 
 export type ResultatReclamation =
   | { readonly action: ActionReclamee; readonly motif: null }
@@ -334,6 +335,9 @@ async function prochainesCandidates(
         where q.organization_id = $1 and q.status = 'pending'
           and q.method = 'serveur' and q.scheduled_for <= $2
           and (q.action_id is null or camp.status = 'active')
+          -- Une personne en pause d'absence n'est pas relancée : sa ligne reste pending (jamais annulée,
+          -- elle repart à la reprise) et ne retient pas les autres, qui passent devant dans la même requête.
+          and e.status is distinct from 'paused_absence'
         -- Une ligne qui ATTEND l'acceptation d'une invitation passe après celles qui n'ont jamais été
         -- essayées : sa vérification quotidienne ne doit pas retenir un message neuf, dont l'invitation
         -- est peut-être déjà acceptée.
@@ -479,6 +483,41 @@ export async function reclamerProchaineAction(
       );
     }
     return { action: null, motif: 'contact_exclu' };
+  }
+
+  // 6 ter. Garde de séquence : une ligne de séquence dont l'inscription est sortie (arrêtée, rebond,
+  // réponse) ou dont l'action n'est plus `scheduled`/`approved` (écartée, sautée, échouée) ne part JAMAIS.
+  // Sans elle, une ligne qui attend l'acceptation d'une invitation (jusqu'à N jours, 90 au plus) survit à
+  // « Écarter », à un rebond ou à un départ de l'entreprise, et le message part à quelqu'un d'écarté. Elle
+  // vit ici, avec 6 bis, pour que worker, MCP et écran la partagent. ANNULÉE et non laissée `pending` :
+  // plus ancienne de son type elle serait choisie à chaque tick. `completed` n'est PAS une sortie : le
+  // tick pose `completed` dès la création de l'action de la dernière étape, qui doit partir. Une pause
+  // d'absence n'arrive pas jusqu'ici : `prochainesCandidates` ne la propose pas.
+  const arretee = await ex.query<{ action_id: string }>(
+    `update linkedin_action_queue q /* jr:linkedin_garde_sequence_arretee */
+        set status = 'cancelled', error_code = 'sequence_arretee', updated_at = now()
+      where q.id = $1 and q.organization_id = $2 and q.status = 'pending'
+        and q.origine = 'sequence' and q.action_id is not null
+        and exists (select 1 from actions a
+                      left join enrollments e on e.id = a.enrollment_id and e.organization_id = a.organization_id
+                     where a.id = q.action_id and a.organization_id = q.organization_id
+                       and (a.status not in ('scheduled', 'approved')
+                            or e.status in ('stopped', 'bounced', 'replied')))
+      returning q.action_id`,
+    [id, orgId],
+  );
+  if (arretee.rows.length > 0) {
+    const actionId = arretee.rows[0]?.action_id;
+    if (actionId) {
+      // Une action déjà `skipped`/`failed`/... n'est pas retouchée : seuls les statuts qui peuvent
+      // encore partir sont écartés (même motif que 6 bis).
+      await ex.query(
+        `update actions set status = 'skipped', error = 'enrollment_inactive'
+          where organization_id = $1 and id = $2 and status in ('scheduled', 'approved')`,
+        [orgId, actionId],
+      );
+    }
+    return { action: null, motif: 'sequence_arretee' };
   }
 
   // 7. Claim atomique.
@@ -649,7 +688,13 @@ export type SortieMessagePasEncoreRelation =
   /** Délai écoulé : l'étape est sautée et l'inscription passe à la suivante. */
   | { readonly issue: 'saute'; readonly jours: number; readonly contactId: string | null }
   /** Pas une action de séquence (réponse de l'opérateur, ligne de l'extension) : l'appelant applique l'échec ordinaire. */
-  | { readonly issue: 'sans_sequence' };
+  | { readonly issue: 'sans_sequence' }
+  /**
+   * La ligne de séquence existe mais n'est plus `processing` : un règlement précédent a déjà commité (la réponse
+   * de la transaction s'est perdue), ou la personne est sortie entre-temps. Rien n'est écrit, l'appelant ne
+   * doit PAS appliquer l'échec ordinaire (il arrêterait la séquence d'une personne dont l'attente est réglée).
+   */
+  | { readonly issue: 'deja_reglee' };
 
 /**
  * LinkedIn a refusé un message de séquence (`cannot_message`) : la personne n'est, en règle générale,
@@ -697,7 +742,16 @@ export async function reglerMessagePasEncoreRelation(
       [entree.queueId, entree.organizationId],
     );
     const ligne = lue.rows[0];
-    if (!ligne) return { issue: 'sans_sequence' };
+    if (!ligne) {
+      // Une ligne de séquence qui n'est plus `processing` n'est pas « sans séquence » : elle a déjà été réglée.
+      const reglee = await tx.query(
+        `select 1 from linkedin_action_queue q /* jr:linkedin_attente_deja_reglee */
+          where q.id = $1 and q.organization_id = $2 and q.status <> 'processing'
+            and q.kind = 'message' and q.origine = 'sequence' and q.action_id is not null`,
+        [entree.queueId, entree.organizationId],
+      );
+      return { issue: (reglee.rowCount ?? 0) > 0 ? 'deja_reglee' : 'sans_sequence' };
+    }
 
     const depuis = new Date(versInstant(ligne.invitation_le ?? ligne.arrivee_le) ?? entree.maintenant.getTime());
     const echeance = depuis.getTime() + jours * 24 * 3_600_000;
@@ -770,6 +824,7 @@ export async function existeActionServeurEnAttente(
            where q.organization_id = $1 and q.status = 'pending' and q.method = 'serveur'
              and q.scheduled_for <= $2
              and (q.action_id is null or camp.status = 'active')
+             and e.status is distinct from 'paused_absence'
         )
         and not exists (
           select 1 from linkedin_server_sessions s

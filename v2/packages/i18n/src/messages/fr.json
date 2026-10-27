@@ -496,6 +496,7 @@
         "a_repondu": "A répondu",
         "interesse": "Intéressé",
         "ecarte": "Écarté",
+        "en_attente_coordonnee": "En attente d’une coordonnée",
         "termine": "Terminé",
         "rebond": "Rebond",
         "ne_plus_contacter": "Ne plus contacter"
@@ -2002,6 +2003,7 @@
       "a_repondu": "A répondu",
       "interesse": "Intéressé",
       "ecarte": "Écarté",
+      "en_attente_coordonnee": "En attente d’une coordonnée",
       "termine": "Terminé",
       "rebond": "Rebond",
       "ne_plus_contacter": "Ne plus contacter"

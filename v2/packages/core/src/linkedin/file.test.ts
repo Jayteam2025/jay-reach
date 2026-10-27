@@ -8,6 +8,7 @@ import {
   mettreEnPauseEnvoiLinkedIn,
   enregistrerResultat,
   lireVolumeEnvoiLinkedIn,
+  reglerMessagePasEncoreRelation,
   type TypeActionLinkedIn,
 } from './file.js';
 
@@ -125,6 +126,9 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       }
       // La garde d'exclusion ne trouve personne d'exclu ; son SQL est prouve sur Postgres (releve-linkedin.mjs, 119 a 122).
       if (/jr:linkedin_garde_contact_exclu/.test(sql)) return rep([]) as never;
+      // Idem pour la garde de séquence (inscription sortie, action plus partante) : prouvée sur Postgres
+      // (linkedin-attente-acceptation.mjs, section 10).
+      if (/jr:linkedin_garde_sequence_arretee/.test(sql)) return rep([]) as never;
       if (/set status = 'processing'/i.test(sql)) {
         return rep([{ id: 'file-1', kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null }]) as never;
       }
@@ -269,6 +273,75 @@ describe('reclamerProchaineAction', () => {
     expect(await reclamerProchaineAction(ex, ORG, NOW)).toEqual({ action: null, motif: 'queue_empty' });
     const serveur = creerExecuteur();
     expect((await reclamerProchaineAction(serveur.ex, ORG, NOW)).action?.id).toBe('file-1');
+  });
+});
+
+describe('reclamerProchaineAction : une personne en pause d absence n est pas relancee', () => {
+  it('la requete des candidates exclut une inscription paused_absence, sans annuler la ligne', async () => {
+    // Forme du SQL seule : la preuve du comportement est la section 10 (10c) du harnais linkedin-attente-acceptation.
+    const { ex, appels } = creerExecuteur();
+    await reclamerProchaineAction(ex, ORG, NOW);
+    const candidates = appels.find((a) => /jr:linkedin_candidates_par_type/i.test(a.sql));
+    expect(candidates?.sql).toMatch(/e\.status is distinct from 'paused_absence'/);
+  });
+
+  it('la garde de sequence annule (jamais `paused_absence`) une ligne dont l inscription est sortie ou l action plus partante', async () => {
+    const { ex, appels } = creerExecuteur();
+    await reclamerProchaineAction(ex, ORG, NOW);
+    const garde = appels.find((a) => /jr:linkedin_garde_sequence_arretee/i.test(a.sql));
+    expect(garde?.sql).toMatch(/q\.origine = 'sequence'/);
+    expect(garde?.sql).toMatch(/e\.status in \('stopped', 'bounced', 'replied'\)/);
+    expect(garde?.sql).toMatch(/a\.status not in \('scheduled', 'approved'\)/);
+    expect(garde?.sql).not.toMatch(/paused_absence|completed/);
+    expect(garde?.sql).toMatch(/q\.organization_id = \$2/);
+  });
+});
+
+describe('reglerMessagePasEncoreRelation : une ligne deja reglee', () => {
+  /** Un executeur qui ne rend la ligne a regler que si `aRegler`, et dit si la ligne de sequence existe hors `processing`. */
+  function faux(opts: { aRegler: boolean; existeReglee: boolean }) {
+    const ecritures: string[] = [];
+    const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
+    const ex: Executeur = {
+      async query(sql: string) {
+        if (/from organization_settings/i.test(sql)) return rep([{ value: 7 }]) as never;
+        if (/jr:linkedin_attente_lecture/.test(sql)) {
+          return rep(opts.aRegler ? [{ action_id: 'a-1', contact_id: 'c-1', arrivee_le: NOW.toISOString(), invitation_le: null }] : []) as never;
+        }
+        if (/jr:linkedin_attente_deja_reglee/.test(sql)) return rep(opts.existeReglee ? [{ '?column?': 1 }] : []) as never;
+        ecritures.push(sql);
+        return rep([]) as never;
+      },
+    };
+    return { ex, ecritures };
+  }
+  const entree = { organizationId: ORG, queueId: 'q-1', maintenant: NOW, prochaineVerification: new Date(NOW.getTime() + 86_400_000) };
+
+  it('une ligne de sequence qui n est plus processing rend `deja_reglee` et n ecrit RIEN', async () => {
+    const { ex, ecritures } = faux({ aRegler: false, existeReglee: true });
+    expect(await reglerMessagePasEncoreRelation(ex, entree)).toEqual({ issue: 'deja_reglee' });
+    expect(ecritures).toEqual([]);
+  });
+
+  it('une ligne qui n est pas une action de sequence reste `sans_sequence`', async () => {
+    const { ex, ecritures } = faux({ aRegler: false, existeReglee: false });
+    expect(await reglerMessagePasEncoreRelation(ex, entree)).toEqual({ issue: 'sans_sequence' });
+    expect(ecritures).toEqual([]);
+  });
+
+  it('la lecture de l existence est filtree par organisation', async () => {
+    const appels: unknown[][] = [];
+    const ex: Executeur = {
+      async query(sql: string, values?: unknown[]) {
+        appels.push([sql, values]);
+        if (/from organization_settings/i.test(sql)) return { rows: [{ value: 7 }], rowCount: 1 } as never;
+        return { rows: [], rowCount: 0 } as never;
+      },
+    };
+    await reglerMessagePasEncoreRelation(ex, entree);
+    const existence = appels.find((a) => /jr:linkedin_attente_deja_reglee/.test(String(a[0])));
+    expect(String(existence?.[0])).toMatch(/q\.organization_id = \$2/);
+    expect(existence?.[1]).toEqual(['q-1', ORG]);
   });
 });
 

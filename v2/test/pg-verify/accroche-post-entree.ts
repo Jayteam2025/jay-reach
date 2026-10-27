@@ -23,7 +23,7 @@ export { ecrireReglage } from '../../packages/core/src/fonctions/plafonds.js';
 // L'objet d'un email se replie sur le NOM du gabarit : `apercuEnvoi` fait ce repli sur de vraies donnees.
 export { apercuEnvoi } from '../../packages/core/src/fonctions/file-du-jour.js';
 // Et la File du jour, troisieme lecteur du meme repli : elle lit la colonne brute du gabarit.
-export { listerFileDuJour } from '../../packages/core/src/fonctions/campagnes.js';
+export { listerFileDuJour, listerContactsCampagne } from '../../packages/core/src/fonctions/campagnes.js';
 // Les deux rejeux LinkedIn et le rejeu email : eux aussi rendent le corps APRES coup.
 export { rejouerActionsEmailEnAttente, rejouerActionsLinkedInEnAttente, rejouerActionsLinkedInReprises } from '../../apps/worker/src/traitements.js';
 // Les DEUX autres chemins qui debloquent une action : ils ecrivaient `scheduled` en dur.

@@ -184,6 +184,19 @@ describe('ecarterDuneCampagne', () => {
     expect(String(ecritureActions?.[0])).toMatch(/organization_id = \$2/);
   });
 
+  it('annule les lignes LinkedIn encore en attente de la personne pour CETTE campagne, et écarte leurs actions, filtrées par organisation', async () => {
+    // La forme du SQL seule : sa preuve sur Postgres est la section 10 du harnais linkedin-attente-acceptation.
+    const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_file_linkedin': [{ action_id: actionId }] });
+    await ecarterDuneCampagne(ctx, { contactId, campagneId });
+    const ecriture = appelsDe(ctx).find((a) => /jr:ecarter_file_linkedin/i.test(String(a[0])));
+    expect(ecriture?.[1]).toEqual([contactId, campagneId, 'org-1']);
+    const sql = String(ecriture?.[0]);
+    expect(sql).toMatch(/status = 'cancelled'/);
+    expect(sql).toMatch(/q\.status = 'pending'/);
+    expect(sql).toMatch(/q\.organization_id = \$3/);
+    expect(sql).toMatch(/e\.campaign_id = \$2/);
+  });
+
   it('n’écrit aucune annulation d’action quand le contact n’a aucune inscription active', async () => {
     const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_inscriptions': [] });
     await ecarterDuneCampagne(ctx, { contactId, campagneId });

@@ -1118,6 +1118,17 @@ export async function reprendreInscriptionsSansCoordonnee(pool: Pool, limit = 20
                  where o.contact_id = e.contact_id and o.id <> e.id
                    and o.status in ('active', 'paused', 'paused_absence')
               )
+              -- Une réponse rend la main : un contact resté actif dont une inscription (de n'importe quelle
+              -- campagne) est replied, donnée d'avant le 16/10 qui n'excluait pas la personne, n'est jamais repris.
+              and not exists (
+                select 1 from enrollments r
+                 where r.organization_id = e.organization_id and r.contact_id = e.contact_id and r.status = 'replied'
+              )
+              -- Le signal lié a été écarté depuis (signals.status = 'discarded') : la personne ne revient pas.
+              and not exists (
+                select 1 from signals sg
+                 where sg.organization_id = e.organization_id and sg.id = e.signal_id and sg.status = 'discarded'
+              )
               -- Désinscrit, rebondi, ou entreprise exclue : même condition que le tick (hasActiveSuppression).
               and not exists (
                 select 1 from suppressions sp

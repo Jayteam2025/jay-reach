@@ -496,6 +496,7 @@
         "a_repondu": "Replied",
         "interesse": "Interested",
         "ecarte": "Discarded",
+        "en_attente_coordonnee": "Waiting for contact details",
         "termine": "Finished",
         "rebond": "Bounced",
         "ne_plus_contacter": "Do not contact"
@@ -2002,6 +2003,7 @@
       "a_repondu": "Replied",
       "interesse": "Interested",
       "ecarte": "Discarded",
+      "en_attente_coordonnee": "Waiting for contact details",
       "termine": "Finished",
       "rebond": "Bounced",
       "ne_plus_contacter": "Do not contact"

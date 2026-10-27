@@ -37,9 +37,10 @@ const ORDRE_LIGNES: readonly ClePlafond[] = [
 
 /**
  * Les plafonds qui bornent un VOLUME produit : à zéro, ils arrêtent la machine, et l'écran doit
- * le montrer. Les trois autres lignes sont des seuils (score minimum, relecture, âge des offres) :
- * un zéro y est une valeur ordinaire, et `relecture_premiers_envois_defaut` vaut même zéro par
- * défaut. Les confondre ferait crier l'écran sur une organisation parfaitement saine.
+ * le montrer. Les quatre autres lignes sont des seuils ou des délais (score minimum, relecture, âge
+ * des offres, jours d'attente de l'acceptation d'une invitation) : un zéro y est une valeur ordinaire,
+ * et `relecture_premiers_envois_defaut` vaut même zéro par défaut. Les confondre ferait crier l'écran
+ * sur une organisation parfaitement saine.
  */
 const PLAFONDS_DE_VOLUME: ReadonlySet<string> = new Set<ClePlafond>([
   'scoring_par_jour',

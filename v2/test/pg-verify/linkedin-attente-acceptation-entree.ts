@@ -7,3 +7,7 @@ export { regler } from '../../apps/worker/src/handlers/envoi-linkedin.js';
 export { reclamerProchaineAction, enregistrerResultat, reglerMessagePasEncoreRelation } from '../../packages/core/src/linkedin/file.js';
 export { annulerEnvoisEnFile } from '../../packages/core/src/inbox/exclusion-sur-reponse.js';
 export { lireFiche } from '../../packages/core/src/fonctions/contacts.js';
+export { ecarterDuneCampagne } from '../../packages/core/src/fonctions/file-du-jour.js';
+export { traiterEvenementEmail } from '../../packages/core/src/inbox/evenements-email.js';
+export { recordInboundReply } from '../../packages/core/src/inbox/record-reply.js';
+export { reprendreAbsencesEchues } from '../../apps/worker/src/handlers/sequence.js';

@@ -767,7 +767,7 @@ export interface ContactGlobal extends ContactCampagne {
 
 export const schemaListerContactsGlobal = z.object({
   filtre: z
-    .enum(['tous', 'a_contacter', 'sans_email', 'en_pause', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'termine', 'rebond', 'ne_plus_contacter'])
+    .enum(['tous', 'a_contacter', 'sans_email', 'en_pause', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'en_attente_coordonnee', 'termine', 'rebond', 'ne_plus_contacter'])
     .default('tous'),
   campagneId: z.string().uuid().optional(),
   source: z.enum(['adzuna', 'francetravail', 'linkedin', 'manuel']).optional(),
@@ -1246,6 +1246,7 @@ const LIBELLES_STATUT_CSV: Record<StatutContactCampagne, string> = {
   a_repondu: 'A répondu',
   interesse: 'Intéressé',
   ecarte: 'Écarté',
+  en_attente_coordonnee: 'En attente d’une coordonnée',
   termine: 'Terminé',
   rebond: 'Rebond',
   ne_plus_contacter: 'Ne plus contacter',

@@ -204,6 +204,26 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
     );
   }
 
+  // Les lignes LinkedIn encore EN FILE de cette personne pour cette campagne. Une ligne qui attend
+  // l'acceptation d'une invitation vit jusqu'à N jours : écartée, elle ne doit plus jamais partir. Hors du
+  // bloc ci-dessus : une inscription `completed` (message en dernière étape) n'est pas arrêtée ici, sa ligne
+  // l'est quand même. Seules les lignes `pending` : une ligne `processing` est en train de partir. La garde
+  // de la réclamation (`reclamerProchaineAction`, 6 ter) reste le filet des chemins qui n'annulent pas.
+  await ctx.ex.query(
+    `with annulees as (
+       update linkedin_action_queue q /* jr:ecarter_file_linkedin */
+          set status = 'cancelled', error_code = 'operator_skip', updated_at = now()
+        where q.organization_id = $3 and q.status = 'pending' and q.origine = 'sequence'
+          and q.action_id in (select a.id from actions a
+                                join enrollments e on e.id = a.enrollment_id and e.organization_id = a.organization_id
+                               where a.organization_id = $3 and e.contact_id = $1 and e.campaign_id = $2)
+       returning q.action_id)
+     update actions set status = 'skipped', error = coalesce(error, 'operator_skip')
+      where organization_id = $3 and id in (select action_id from annulees)
+        and status in ('scheduled', 'approved', 'pending_approval')`,
+    [contactId, campagneId, ctx.organisationId],
+  );
+
   await ecrireEvenementEnvoi(ctx, 'action_skipped', contactId, 'Contact écarté de la campagne.', { campagneId });
 }
 

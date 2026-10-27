@@ -496,6 +496,7 @@
         "a_repondu": "Heeft gereageerd",
         "interesse": "Geïnteresseerd",
         "ecarte": "Afgewezen",
+        "en_attente_coordonnee": "Wacht op contactgegevens",
         "termine": "Afgerond",
         "rebond": "Bounce",
         "ne_plus_contacter": "Niet meer contacteren"
@@ -2002,6 +2003,7 @@
       "a_repondu": "Heeft gereageerd",
       "interesse": "Geïnteresseerd",
       "ecarte": "Afgewezen",
+      "en_attente_coordonnee": "Wacht op contactgegevens",
       "termine": "Afgerond",
       "rebond": "Bounce",
       "ne_plus_contacter": "Niet meer contacteren"

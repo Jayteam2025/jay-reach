@@ -4,6 +4,7 @@ import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import {
+  CASE_STATUT_DERIVE,
   ORDRE_STATUTS,
   archiver,
   creerCampagne,
@@ -207,12 +208,26 @@ describe('ORDRE_STATUTS', () => {
       'interesse',
       'a_repondu',
       'ecarte',
+      'en_attente_coordonnee',
       'termine',
       'en_pause',
       'en_sequence',
       'sans_email',
       'a_contacter',
     ]);
+  });
+});
+
+describe('CASE_STATUT_DERIVE : une inscription arrêtée faute de coordonnée', () => {
+  it('se lit `en_attente_coordonnee`, distincte de `ecarte`, après le signal écarté et avant l\u2019arrêt ordinaire', () => {
+    // Forme du SQL seule : le résultat réel est prouvé sur Postgres (accroche-post.mjs, contrôles 48a et 48b).
+    const sql = CASE_STATUT_DERIVE;
+    const iSignal = sql.indexOf("when s.status = 'discarded' then 'ecarte'");
+    const iAttente = sql.indexOf("when e.status = 'stopped' and e.stop_reason = 'not_sendable' then 'en_attente_coordonnee'");
+    const iArret = sql.indexOf("when e.status = 'stopped' then 'ecarte'");
+    expect(iSignal).toBeGreaterThan(-1);
+    expect(iAttente).toBeGreaterThan(iSignal);
+    expect(iArret).toBeGreaterThan(iAttente);
   });
 });
 
