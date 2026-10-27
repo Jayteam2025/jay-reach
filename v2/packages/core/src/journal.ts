@@ -93,6 +93,33 @@ export type ActionJournal =
   | 'linkedin.deconnexion_terminee'
   | 'linkedin.expediteur_compte_change';
 
+/**
+ * Événements dont le texte n'est PAS stocké : `diff` porte un `code` et ses `parametres`, l'écran les traduit
+ * (`campagne.fiche.history.codes.<code>` dans `packages/i18n`, fr/en/nl). Les événements plus anciens gardent
+ * leur `diff.libelle` français, affiché tel quel en repli (#181). Un code absent de cette liste est ignoré à la lecture.
+ */
+export const CODES_EVENEMENT = ['linkedin_message_saute'] as const;
+export type CodeEvenement = (typeof CODES_EVENEMENT)[number];
+export type ParametresEvenement = Readonly<Record<string, string | number>>;
+
+/**
+ * Lit le code d'un `audit_events.diff` : `{ code, parametres }` si le diff porte un code CONNU et des paramètres
+ * scalaires, `null` sinon (événement ancien en texte libre, code inconnu : l'appelant retombe sur `libelle`).
+ */
+export function lireCodeEvenement(diff: unknown): { code: CodeEvenement; parametres: ParametresEvenement } | null {
+  if (typeof diff !== 'object' || diff === null) return null;
+  const { code, parametres } = diff as { code?: unknown; parametres?: unknown };
+  const connu = CODES_EVENEMENT.find((c) => c === code);
+  if (!connu) return null;
+  const lus: Record<string, string | number> = {};
+  if (typeof parametres === 'object' && parametres !== null) {
+    for (const [cle, valeur] of Object.entries(parametres)) {
+      if (typeof valeur === 'string' || typeof valeur === 'number') lus[cle] = valeur;
+    }
+  }
+  return { code: connu, parametres: lus };
+}
+
 export interface EvenementJournal {
   readonly organisationId: string;
   readonly entityType: 'source' | 'campaign' | 'contact' | 'engine' | 'sender';

@@ -18,6 +18,7 @@
 import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { classifyReply, type ClassifyResult } from './classify.js';
+import { reparerMojibake } from './encodage-recu.js';
 import { exclureApresReponse } from './exclusion-sur-reponse.js';
 
 /** Statuts d'inscription qu'une réponse peut encore interrompre. */
@@ -363,7 +364,10 @@ async function completerCorps(
  * tour : sans cette garde, un seul message rouvrirait le fil et renotifierait
  * l'opérateur indéfiniment.
  */
-export async function recordInboundReply(ex: Executeur, org: string, reply: InboundReply): Promise<RecordedReply> {
+export async function recordInboundReply(ex: Executeur, org: string, entrant: InboundReply): Promise<RecordedReply> {
+  // Le corps entre ici pour TOUS les canaux : c'est le seul endroit où le réparer une fois pour toutes
+  // (« PrÃ©servez » relevé tel quel de Graph, stocké tel quel le 14/10 et affiché ainsi).
+  const reply: InboundReply = { ...entrant, body: reparerMojibake(entrant.body) };
   // Une seule lecture de l'horloge, réutilisée pour classer (date de reprise
   // d'une absence, cf. classify.ts) et pour horodater le message : la date de
   // RÉCEPTION du message doit primer sur l'instant du traitement quand les

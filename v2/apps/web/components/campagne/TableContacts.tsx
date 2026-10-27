@@ -97,6 +97,7 @@ export const TON_STATUT: Record<StatutContactCampagne, PuceTon> = {
   interesse: 'bon',
   a_repondu: 'bon',
   ecarte: 'gris',
+  en_attente_coordonnee: 'attention',
   termine: 'gris',
   en_pause: 'attention',
   en_sequence: 'accent',

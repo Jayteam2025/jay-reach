@@ -8,6 +8,10 @@ import {
   mettreEnPauseEnvoiLinkedIn,
   enregistrerResultat,
   lireVolumeEnvoiLinkedIn,
+  reglerMessagePasEncoreRelation,
+  echeanceAttenteAcceptation,
+  lireAttentesAcceptation,
+  SQL_INVITATION_ENVOYEE_LE,
   type TypeActionLinkedIn,
 } from './file.js';
 
@@ -114,7 +118,7 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
           })),
         ) as never;
       }
-      if (/select sent_at from linkedin_action_queue/i.test(sql)) return rep([]) as never;
+      if (/jr:linkedin_dernier_envoi_toutes_origines/.test(sql)) return rep([]) as never;
       if (/jr:linkedin_candidates_par_type/i.test(sql)) {
         const demandee = /q\.method = '([a-z_]+)'/.exec(sql)?.[1] ?? null;
         if (demandee !== etat.methodeDeLaLigne) return rep([]) as never;
@@ -125,6 +129,9 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
       }
       // La garde d'exclusion ne trouve personne d'exclu ; son SQL est prouve sur Postgres (releve-linkedin.mjs, 119 a 122).
       if (/jr:linkedin_garde_contact_exclu/.test(sql)) return rep([]) as never;
+      // Idem pour la garde de séquence (inscription sortie, action plus partante) : prouvée sur Postgres
+      // (linkedin-attente-acceptation.mjs, section 10).
+      if (/jr:linkedin_garde_sequence_arretee/.test(sql)) return rep([]) as never;
       if (/set status = 'processing'/i.test(sql)) {
         return rep([{ id: 'file-1', kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null }]) as never;
       }
@@ -272,6 +279,75 @@ describe('reclamerProchaineAction', () => {
   });
 });
 
+describe('reclamerProchaineAction : une personne en pause n est pas relancee', () => {
+  it('la requete des candidates exclut une inscription paused ou paused_absence, sans annuler la ligne', async () => {
+    // Forme du SQL seule : la preuve du comportement est dans le harnais linkedin-attente-acceptation (10c, 15a à 15d).
+    const { ex, appels } = creerExecuteur();
+    await reclamerProchaineAction(ex, ORG, NOW);
+    const candidates = appels.find((a) => /jr:linkedin_candidates_par_type/i.test(a.sql));
+    expect(candidates?.sql).toMatch(/e\.status not in \('paused', 'paused_absence'\)/);
+  });
+
+  it('la garde de sequence annule (jamais `paused_absence`) une ligne dont l inscription est sortie ou l action plus partante', async () => {
+    const { ex, appels } = creerExecuteur();
+    await reclamerProchaineAction(ex, ORG, NOW);
+    const garde = appels.find((a) => /jr:linkedin_garde_sequence_arretee/i.test(a.sql));
+    expect(garde?.sql).toMatch(/q\.origine = 'sequence'/);
+    expect(garde?.sql).toMatch(/e\.status in \('stopped', 'bounced', 'replied'\)/);
+    expect(garde?.sql).toMatch(/a\.status not in \('scheduled', 'approved'\)/);
+    expect(garde?.sql).not.toMatch(/paused_absence|completed/);
+    expect(garde?.sql).toMatch(/q\.organization_id = \$2/);
+  });
+});
+
+describe('reglerMessagePasEncoreRelation : une ligne deja reglee', () => {
+  /** Un executeur qui ne rend la ligne a regler que si `aRegler`, et dit si la ligne de sequence existe hors `processing`. */
+  function faux(opts: { aRegler: boolean; existeReglee: boolean }) {
+    const ecritures: string[] = [];
+    const rep = (rows: unknown[]) => ({ rows, rowCount: rows.length });
+    const ex: Executeur = {
+      async query(sql: string) {
+        if (/from organization_settings/i.test(sql)) return rep([{ value: 7 }]) as never;
+        if (/jr:linkedin_attente_lecture/.test(sql)) {
+          return rep(opts.aRegler ? [{ action_id: 'a-1', contact_id: 'c-1', arrivee_le: NOW.toISOString(), invitation_le: null }] : []) as never;
+        }
+        if (/jr:linkedin_attente_deja_reglee/.test(sql)) return rep(opts.existeReglee ? [{ '?column?': 1 }] : []) as never;
+        ecritures.push(sql);
+        return rep([]) as never;
+      },
+    };
+    return { ex, ecritures };
+  }
+  const entree = { organizationId: ORG, queueId: 'q-1', maintenant: NOW, prochaineVerification: new Date(NOW.getTime() + 86_400_000) };
+
+  it('une ligne de sequence qui n est plus processing rend `deja_reglee` et n ecrit RIEN', async () => {
+    const { ex, ecritures } = faux({ aRegler: false, existeReglee: true });
+    expect(await reglerMessagePasEncoreRelation(ex, entree)).toEqual({ issue: 'deja_reglee' });
+    expect(ecritures).toEqual([]);
+  });
+
+  it('une ligne qui n est pas une action de sequence reste `sans_sequence`', async () => {
+    const { ex, ecritures } = faux({ aRegler: false, existeReglee: false });
+    expect(await reglerMessagePasEncoreRelation(ex, entree)).toEqual({ issue: 'sans_sequence' });
+    expect(ecritures).toEqual([]);
+  });
+
+  it('la lecture de l existence est filtree par organisation', async () => {
+    const appels: unknown[][] = [];
+    const ex: Executeur = {
+      async query(sql: string, values?: unknown[]) {
+        appels.push([sql, values]);
+        if (/from organization_settings/i.test(sql)) return { rows: [{ value: 7 }], rowCount: 1 } as never;
+        return { rows: [], rowCount: 0 } as never;
+      },
+    };
+    await reglerMessagePasEncoreRelation(ex, entree);
+    const existence = appels.find((a) => /jr:linkedin_attente_deja_reglee/.test(String(a[0])));
+    expect(String(existence?.[0])).toMatch(/q\.organization_id = \$2/);
+    expect(existence?.[1]).toEqual(['q-1', ORG]);
+  });
+});
+
 describe('fenetre d envoi par defaut', () => {
   /** Le moteur sur une instance neuve (aucune ligne `linkedin_settings`) : les heures PARIS qu'il accepte, un mardi. */
   async function heuresAcceptees(): Promise<number[]> {
@@ -363,5 +439,75 @@ describe('enregistrerResultat', () => {
     expect(journal).toContain('rollback');
     expect(journal).not.toContain('commit');
     // La preuve que la ligne n'est pas `sent` est dans pg-verify (section 17) : un faux ne l'établit pas.
+  });
+});
+
+describe('echeanceAttenteAcceptation : la formule unique de la date limite', () => {
+  const REPLI = new Date('2026-09-15T10:00:00.000Z');
+
+  it('compte depuis l envoi de l invitation quand il existe', () => {
+    const r = echeanceAttenteAcceptation('2026-09-10T08:00:00.000Z', '2026-09-12T08:00:00.000Z', 7, REPLI);
+    expect(r.depuis.toISOString()).toBe('2026-09-10T08:00:00.000Z');
+    expect(r.echeance.toISOString()).toBe('2026-09-17T08:00:00.000Z');
+  });
+
+  it('sinon depuis l arrivee de l etape, sinon depuis le repli', () => {
+    expect(echeanceAttenteAcceptation(null, new Date('2026-09-12T08:00:00.000Z'), 3, REPLI).echeance.toISOString()).toBe('2026-09-15T08:00:00.000Z');
+    expect(echeanceAttenteAcceptation(null, 'illisible', 1, REPLI).echeance.toISOString()).toBe('2026-09-16T10:00:00.000Z');
+  });
+});
+
+describe('lireAttentesAcceptation', () => {
+  function faux(rows: unknown[], jours = 7) {
+    const appels: { sql: string; values: unknown[] }[] = [];
+    const ex: Executeur = {
+      async query(sql: string, values: unknown[] = []) {
+        appels.push({ sql, values });
+        if (/from organization_settings/i.test(sql)) return { rows: [{ value: jours }], rowCount: 1 } as never;
+        if (/jr:linkedin_attentes_acceptation/.test(sql)) return { rows, rowCount: rows.length } as never;
+        return { rows: [], rowCount: 0 } as never;
+      },
+    };
+    return { ex, appels };
+  }
+  const ligne = {
+    queue_id: 'q-1', action_id: 'a-1', inscription_id: 'e-1', campagne_id: 'camp-1', campagne_nom: 'Directeurs',
+    contact_id: 'c-1', first_name: 'Ada', last_name: 'Lovelace', etape: 1,
+    arrivee_le: '2026-09-12T08:00:00.000Z', invitation_le: '2026-09-10T08:00:00.000Z', prochaine_verification_le: '2026-09-16T00:00:00.000Z',
+  };
+
+  it('rend la date limite par la MEME formule que le saut, avec les noms attendus', async () => {
+    const { ex } = faux([ligne]);
+    const [a] = await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(a).toEqual({
+      actionId: 'a-1', queueId: 'q-1', inscriptionId: 'e-1', campagneId: 'camp-1', campagneNom: 'Directeurs',
+      contactId: 'c-1', contactNom: 'Ada Lovelace', etape: 2,
+      invitationEnvoyeeLe: '2026-09-10T08:00:00.000Z', depuisLe: '2026-09-10T08:00:00.000Z', jours: 7,
+      limiteLe: '2026-09-17T08:00:00.000Z', prochaineVerificationLe: '2026-09-16T00:00:00.000Z',
+    });
+  });
+
+  it('sans invitation, l attente se compte depuis l arrivee de l etape', async () => {
+    const { ex } = faux([{ ...ligne, invitation_le: null }], 3);
+    const [a] = await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(a?.invitationEnvoyeeLe).toBeNull();
+    expect(a?.depuisLe).toBe('2026-09-12T08:00:00.000Z');
+    expect(a?.limiteLe).toBe('2026-09-15T08:00:00.000Z');
+  });
+
+  it('la requete est filtree par organisation, et par inscription ou campagne si demande', async () => {
+    const { ex, appels } = faux([]);
+    await lireAttentesAcceptation(ex, ORG, { inscriptionId: 'e-1', campagneId: 'camp-1' }, NOW);
+    const lecture = appels.find((x) => /jr:linkedin_attentes_acceptation/.test(x.sql));
+    expect(lecture?.sql).toMatch(/q\.organization_id = \$1/);
+    expect(lecture?.sql).toMatch(/e\.id = \$2/);
+    expect(lecture?.sql).toMatch(/e\.campaign_id = \$3/);
+    expect(lecture?.values).toEqual([ORG, 'e-1', 'camp-1']);
+  });
+
+  it('le saut et l affichage partagent la meme lecture de la date d invitation', async () => {
+    const { ex, appels } = faux([]);
+    await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(appels.find((x) => /jr:linkedin_attentes_acceptation/.test(x.sql))?.sql).toContain(SQL_INVITATION_ENVOYEE_LE);
   });
 });

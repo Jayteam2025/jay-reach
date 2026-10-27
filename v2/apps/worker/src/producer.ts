@@ -26,6 +26,7 @@ import {
   sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
+  resoudreAgeMaxEnrichissement,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
@@ -140,6 +141,23 @@ function lireAgeMaxSignalJours(): number {
  * `new`/`qualified` sans jamais être scorée ni enrichie.
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
+
+/**
+ * Les âges d'achat réglés par chaque organisation (`enrichissement_age_max_jours`), `{ organization_id: jours }`,
+ * pour les requêtes du producteur qui balaient TOUTES les organisations en une fois (le SQL applique
+ * `coalesce(($n::jsonb ->> organization_id)::int, retention)`). Réservée au moteur : elle lit les lignes de toutes
+ * les organisations avec la clé de service, donc elle ne vit pas dans `@jay-reach/core`, façade de l'écran et du
+ * futur serveur MCP. Une ligne illisible ou sous 1 retombe sur la rétention, comme une ligne absente.
+ */
+async function agesMaxEnrichissementParOrganisation(pool: Pool, retention: number): Promise<Record<string, number>> {
+  const res = await pool.query<{ organization_id: string; value: unknown }>(
+    `select organization_id, value from organization_settings /* jr:ages_max_enrichissement */
+      where key = 'enrichissement_age_max_jours'`,
+  );
+  const sortie: Record<string, number> = {};
+  for (const r of res.rows) sortie[r.organization_id] = resoudreAgeMaxEnrichissement(r.value, retention);
+  return sortie;
+}
 
 /**
  * Multiple du délai d'ancienneté pendant lequel un engageur qualifié est épargné
@@ -454,6 +472,7 @@ export async function enqueueEnrichmentForQualified(
   opts: { limit?: number } = {},
 ): Promise<number> {
   const limit = opts.limit ?? 25;
+  const agesAchat = await agesMaxEnrichissementParOrganisation(pool, AGE_MAX_SIGNAL_JOURS);
   const res = await pool.query<{
     organization_id: string;
     account_id: string;
@@ -476,7 +495,9 @@ export async function enqueueEnrichmentForQualified(
           and a.enriched_at is null
           and p.is_active
           and array_length(p.title_patterns, 1) > 0
-          and s.occurred_at >= now() - make_interval(days => $2)
+          -- L'âge d'achat est celui de l'ORGANISATION (ecran Plafonds, enrichissement_age_max_jours),
+          -- repli sur la rétention des signaux quand elle n'a rien réglé. $3 : { organization_id: jours }.
+          and s.occurred_at >= now() - make_interval(days => coalesce(($3::jsonb ->> a.organization_id::text)::int, $2::int))
         order by a.id, p.id, s.occurred_at desc, s.id
      )
      select organization_id, account_id, company_name, domain, country,
@@ -484,7 +505,7 @@ export async function enqueueEnrichmentForQualified(
        from candidats
       order by occurred_at desc, score desc nulls last, account_id
       limit $1`,
-    [limit, AGE_MAX_SIGNAL_JOURS],
+    [limit, AGE_MAX_SIGNAL_JOURS, JSON.stringify(agesAchat)],
   );
 
   let enqueued = 0;
@@ -581,6 +602,9 @@ export async function enqueueEnrichmentForQualified(
  *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
  *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
  *
+ * Un quatrième critère borne l'ÂGE : le signal d'origine ne dépasse pas l'âge réglé par l'organisation
+ * (`enrichissement_age_max_jours`, repli `AGE_MAX_SIGNAL_JOURS`), comme sur le chemin entreprise. On n'achète que pour ce qui arrive maintenant.
+ *
  * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
  * dernière quand le plafond ne permet pas de tout prendre.
  */
@@ -629,6 +653,7 @@ export async function enqueueEnrichmentContactsConnus(
   // celle qu'exécute le handler. Une organisation sans clé tourne donc à vide
   // sur SA PART du lot — un job perdu, pas une famine — et repart dès que la clé
   // est saisie.
+  const agesAchat = await agesMaxEnrichissementParOrganisation(pool, AGE_MAX_SIGNAL_JOURS);
   const res = await pool.query<{ organization_id: string; contact_id: string }>(
     `with candidats as (
        select c.organization_id, c.id as contact_id,
@@ -643,6 +668,13 @@ export async function enqueueEnrichmentContactsConnus(
           and c.enriched_at is null
           and c.linkedin_url is not null
           and s.status = 'qualified'
+          -- Ne payer que pour une personne qui arrive MAINTENANT, pas pour l'arriéré : la même
+          -- borne que le chemin entreprise (enqueueEnrichmentForQualified). Sans elle, ce chemin
+          -- rachetait des adresses pour des signaux de plusieurs semaines, dans la limite du
+          -- plafond du jour. Contrôle autoritaire refait dans enrichirContactConnu, qui dépense.
+          -- L'âge est celui de l'ORGANISATION (ecran Plafonds, enrichissement_age_max_jours), repli
+          -- sur la rétention des signaux ($4). $5 : { organization_id: jours }.
+          and s.occurred_at >= now() - make_interval(days => coalesce(($5::jsonb ->> c.organization_id::text)::int, $4::int))
           and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
           -- Et ne pas ACHETER une adresse email a une campagne qui n'en enverra jamais : une
           -- sequence 100 % LinkedIn ecrit avec l'URN. Troisieme etage de la meme regle (voir
@@ -661,7 +693,7 @@ export async function enqueueEnrichmentContactsConnus(
       where rang <= $1
       order by rang, organization_id
       limit $2`,
-    [limit, limiteGlobale, lienProfilDeduit('')],
+    [limit, limiteGlobale, lienProfilDeduit(''), AGE_MAX_SIGNAL_JOURS, JSON.stringify(agesAchat)],
   );
 
   let enqueued = 0;
@@ -836,6 +868,16 @@ function sqlPairesEligibles(): string {
           select 1 from enrollments e
            where e.contact_id = ct.id
              and e.status in ('active', 'paused', 'paused_absence')
+        )
+       -- UNE inscription par campagne, QUEL QU'EN SOIT LE STATUT. La garde ci-dessus ne voit que les
+       -- inscriptions vivantes (c'est ce que l'index partiel enrollments_one_active_uidx protège) :
+       -- une séquence terminée (completed, stopped, replied, bounced) laissait la personne revenir dans
+       -- la même campagne et recevoir deux fois les mêmes messages. Constaté le 12/10 sur la campagne
+       -- de recette du lot 4b : inscrite le 09/10, terminée, réinscrite le 12/10 sur le même signal.
+        and not exists (
+          select 1 from enrollments e3
+           where e3.contact_id = ct.id
+             and e3.campaign_id = c.id
         )`;
 }
 

@@ -8,6 +8,8 @@
 // la mutation avant de chercher ailleurs. Le contrôle 192 à 203 (parcours enchaîné) rougit, lui, dès qu'UN maillon casse,
 // et son numéro dit lequel.
 //
+//   0. sources.ts : retirer le `not exists (select 1 from enrollments where contact_id = $3 and campaign_id = $2)` de
+//      `jr:sources_csv_inscrire` (242 rougit) ou de `jr:sources_liste_inscrire` (243 rougit), chacun seul ;
 //   1. releve-linkedin.ts : retirer le `normaliserUrlProfil` du repli par URL — 20 (URL dégénérée) rougit ;
 //   2. retirer `if (res.rows.length > 1) return 'url_ambigue'` — 21 rougit ;
 //   3. retirer `and organization_id = $1` d'une des deux recherches — 25 rougit ;
@@ -2025,6 +2027,26 @@ async function gardesDInscription() {
   const res = await ajouterDepuisListe({ ...ctx, ex: exCourse }, { campagneId: camp, listId: liste });
   check('223 inscription depuis une liste : un contact devenu exclu entre la lecture et l insertion n est pas inscrit', (await statut(982)) === 0, JSON.stringify([res, await statut(982)]));
   check('223b paire : l autre contact de la liste est inscrit', (await statut(983)) === 1 && res.ajoutes === 1, JSON.stringify([res, await statut(983)]));
+
+  // Une inscription par campagne, quel qu'en soit le statut (tache 8 du lot pret pour Alex) : l'index partiel et son `on conflict` ne voient
+  // que les inscriptions VIVANTES, donc reimporter le fichier ou rajouter la liste reinscrivait une personne dont la sequence etait terminee.
+  const csvDeuxFois = { campagneId: camp, nom: 'Import G2', fileName: 'g2.csv',
+    parsed: { headers: ['Prenom', 'Email'], rows: [{ Prenom: 'Deja', Email: 'deja-csv@example.test' }, { Prenom: 'Neuf', Email: 'neuf-csv@example.test' }] },
+    mapping: { Prenom: 'first_name', Email: 'email' } };
+  await q(`insert into contacts (id, organization_id, email, first_name, status) values ($1, $2, 'deja-csv@example.test', 'Deja', 'active')`, [id(984), ORG_G]);
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status, ended_at) values ($1, $2, $3, 'completed', now())`, [ORG_G, camp, id(984)]);
+  await importerCsv(ctx, csvDeuxFois);
+  check('242 import CSV : un contact dont la sequence est `completed` n est pas reinscrit a la meme campagne', (await statut(984)) === 1, String(await statut(984)));
+  const neufs = (await q(`select count(*)::int as n from enrollments e join contacts c on c.id = e.contact_id where e.campaign_id = $1 and c.email = 'neuf-csv@example.test'`, [camp])).rows[0].n;
+  check('242b paire : le contact neuf du meme fichier est inscrit', neufs === 1, String(neufs));
+
+  const liste2 = (await q(`insert into lists (organization_id, name, context_note, origin) values ($1, 'Liste G2', 'Liste G2', 'import') returning id`, [ORG_G])).rows[0].id;
+  await q(`insert into contacts (id, organization_id, email, status) values ($1, $2, 'deja-liste@example.test', 'active'), ($3, $2, 'neuf-liste@example.test', 'active')`, [id(986), ORG_G, id(987)]);
+  await q(`insert into list_members (list_id, contact_id) values ($1, $2), ($1, $3)`, [liste2, id(986), id(987)]);
+  await q(`insert into enrollments (organization_id, campaign_id, contact_id, status, ended_at) values ($1, $2, $3, 'replied', now())`, [ORG_G, camp, id(986)]);
+  const res2 = await ajouterDepuisListe(ctx, { campagneId: camp, listId: liste2 });
+  check('243 inscription depuis une liste : un contact dont l inscription est `replied` n est pas reinscrit a la meme campagne', (await statut(986)) === 1, JSON.stringify([res2, await statut(986)]));
+  check('243b paire : l autre contact de la liste est inscrit et seul compte comme ajoute', (await statut(987)) === 1 && res2.ajoutes === 1, JSON.stringify(res2));
 }
 
 async function migrationRejouable() {

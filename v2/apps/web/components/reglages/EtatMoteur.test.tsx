@@ -15,7 +15,7 @@ const LIBELLES: EtatMoteurLibelles = {
   tachesEnAttente: 'Tâches en attente',
   aucuneTache: 'Aucune',
   linkedin: 'LinkedIn',
-  purge: 'Purge de rétention',
+  purge: 'Nettoyage des anciennes données',
 };
 
 describe('EtatMoteur', () => {
@@ -65,7 +65,7 @@ describe('EtatMoteur', () => {
 
     it('une purge en échec ou en retard se voit : puce erreur et conséquence', () => {
       const html = rendre({ ton: 'erreur', libelle: 'Échec au dernier passage', consequence: 'Plus effacées à la date annoncée.' });
-      expect(html).toContain('Purge de rétention');
+      expect(html).toContain('Nettoyage des anciennes données');
       expect(html).toContain('jr-puce erreur');
       expect(html).toContain('Plus effacées à la date annoncée.');
     });

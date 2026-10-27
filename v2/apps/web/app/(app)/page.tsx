@@ -1,12 +1,15 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import type { CampagneResume, CleDemarrage } from '@jay-reach/core';
-import { alertesSansDoublonDemarrage, lireDemarrage } from '@jay-reach/core';
+import { alertesSansDoublonDemarrage, demarrageAffichee, lireDemarrage } from '@jay-reach/core';
+import { fermerDemarrage } from '../actions/demarrage';
 import { contexteCourant } from '../../lib/contexte';
+import { demarrageFerme } from '../../lib/demarrage-fermeture';
 import { lireAujourdhuiCourant } from '../../lib/aujourdhui';
 import { marqueSource } from '../../lib/marque-source';
 import { quandRelatif } from '../../lib/dates';
 import { formatNombre, formatPourcentage, localeCourante } from '../../lib/nombres';
+import { libellesCanaux, ligneEtapesEtBoites } from '../../lib/canaux-sequence';
 import { parametresValeurConsommation, pourcentageJauge, tonJauge } from '../../lib/plafonds-affichage';
 import { ListeDemarrage } from '../../components/accueil/ListeDemarrage';
 import { Avatar, BarreProgression, Carte, CleValeur, EnTetePage, Puce, Table, TuileLogo } from '../../components/ui';
@@ -52,16 +55,21 @@ export default async function AujourdhuiPage() {
   const ctx = await contexteCourant();
   // `tPlafonds` : le gabarit des jauges vit avec l'écran Plafonds, et les trois écrans qui
   // montrent ces jauges le partagent plutôt que d'en recopier chacun une variante.
-  const [t, tPlafonds, locale, a, demarrage] = await Promise.all([
+  const [t, tPlafonds, tCanaux, locale, a, demarrage, ferme] = await Promise.all([
     getTranslations('aujourdhui'),
     getTranslations('reglages.plafonds'),
+    getTranslations('canauxSequence'),
     localeCourante(),
     lireAujourdhuiCourant(ctx),
     lireDemarrage(ctx),
+    demarrageFerme(ctx.utilisateurId),
   ]);
 
+  // Le guide reste jusqu'à ce que l'opérateur le ferme (et revient si un branchement lâche) : sa
+  // fermeture, pas l'état des branchements, décide de sa présence.
+  const demarrageAffiche = demarrageAffichee(demarrage, ferme);
   // Tant que la mise en route est à l'écran, l'alerte qui dirait la même chose s'efface.
-  const alertes = alertesSansDoublonDemarrage(a.alertes, demarrage);
+  const alertes = alertesSansDoublonDemarrage(a.alertes, demarrage, demarrageAffiche);
 
   // Le compte part au traducteur, pas au composant : les mesures françaises s'accordent
   // (« 1 posée » contre « 7 posées »), ce qu'un `.replace('{n}', …)` posé après coup empêchait.
@@ -83,7 +91,7 @@ export default async function AujourdhuiPage() {
   );
   // Le conteneur de tête n'existe que s'il a quelque chose à porter : sans lui, le titre de
   // l'écran garde son propre retrait haut.
-  const teteVisible = !demarrage.terminee || alertes.length > 0;
+  const teteVisible = demarrageAffiche || alertes.length > 0;
   const campagnesActives = a.campagnes.filter((c) => c.statut === 'active').length;
   const nbAutresEnvois = a.fileDuJour.total - a.fileDuJour.envois.length;
 
@@ -93,24 +101,30 @@ export default async function AujourdhuiPage() {
           retrait horizontal de la page, qu'elles n'avaient pas, et l'espacement entre elles. */}
       {teteVisible && (
         <div className="jr-tete-accueil">
-          <ListeDemarrage
-            demarrage={demarrage}
-            libelles={{
-              titre: t('demarrage.titre'),
-              titreCasse: t('demarrage.titreCasse'),
-              sousTitre: t('demarrage.sousTitre'),
-              sousTitreCasse: t('demarrage.sousTitreCasse'),
-              avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
-              lignes: {
-                fournisseurs: libellesLigne('fournisseurs'),
-                boites: libellesLigne('boites'),
-                persona: libellesLigne('persona'),
-                linkedin: libellesLigne('linkedin'),
-                source: libellesLigne('source'),
-                campagne: libellesLigne('campagne'),
-              },
-            }}
-          />
+          {demarrageAffiche && (
+            <ListeDemarrage
+              demarrage={demarrage}
+              actionFermer={fermerDemarrage}
+              libelles={{
+                titre: t('demarrage.titre'),
+                titreCasse: t('demarrage.titreCasse'),
+                sousTitre: t('demarrage.sousTitre'),
+                sousTitreCasse: t('demarrage.sousTitreCasse'),
+                titreTerminee: t('demarrage.titreTerminee'),
+                sousTitreTerminee: t('demarrage.sousTitreTerminee'),
+                fermer: t('demarrage.fermer'),
+                avancement: t('demarrage.avancement', { faites: demarrage.faites, total: demarrage.total }),
+                lignes: {
+                  fournisseurs: libellesLigne('fournisseurs'),
+                  boites: libellesLigne('boites'),
+                  linkedin: libellesLigne('linkedin'),
+                  persona: libellesLigne('persona'),
+                  source: libellesLigne('source'),
+                  campagne: libellesLigne('campagne'),
+                },
+              }}
+            />
+          )}
 
           {alertes.map((alerte, index) => (
             // Index inclus dans la clé : plusieurs boîtes déconnectées partagent le même `type`.
@@ -243,7 +257,7 @@ export default async function AujourdhuiPage() {
           <Carte
             titre={t('caps.title')}
             action={
-              <Link href="/settings" className="jr-lien" style={{ fontSize: 13 }}>
+              <Link href="/settings/limits" className="jr-lien" style={{ fontSize: 13 }}>
                 {t('caps.settings')}
               </Link>
             }
@@ -299,7 +313,11 @@ export default async function AujourdhuiPage() {
                         {campagne.nom}
                       </Link>
                     </b>
-                    <small>{t('campaigns.steps', { n: campagne.etapes, boites: campagne.boites })}</small>
+                    <small>
+                      {ligneEtapesEtBoites(campagne.canauxEtapes, campagne.boites, libellesCanaux(tCanaux), (cle, valeurs) =>
+                        t(`campaigns.${cle}`, valeurs),
+                      )}
+                    </small>
                   </span>
                 </div>
               ),

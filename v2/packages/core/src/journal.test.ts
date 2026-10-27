@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Executeur } from './executeur.js';
-import { ecrireEvenement, nettoyerMessageErreurJournal, journaliserErreurMoteur } from './journal.js';
+import { ecrireEvenement, nettoyerMessageErreurJournal, journaliserErreurMoteur, lireCodeEvenement } from './journal.js';
 
 function executeurFactice(): { ex: Executeur; query: ReturnType<typeof vi.fn> } {
   const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
@@ -209,5 +209,26 @@ describe('journaliserErreurMoteur (journal, tâche 6, tour de correction 1 — R
     const insert = query.mock.calls.find(([sql]) => /insert into audit_events/i.test(sql as string))!;
     const diff = JSON.parse((insert[1] as unknown[])[5] as string) as Record<string, unknown>;
     expect(diff).not.toHaveProperty('detail');
+  });
+});
+
+describe('lireCodeEvenement (#181)', () => {
+  it('lit un code connu et ses paramètres scalaires', () => {
+    expect(lireCodeEvenement({ code: 'linkedin_message_saute', parametres: { jours: 7 } })).toEqual({
+      code: 'linkedin_message_saute',
+      parametres: { jours: 7 },
+    });
+  });
+
+  it('un événement ancien en texte libre n’a pas de code : l’appelant retombe sur son libellé', () => {
+    expect(lireCodeEvenement({ libelle: 'Message LinkedIn passé : l’invitation n’a pas été acceptée en 7 jours.' })).toBeNull();
+    expect(lireCodeEvenement(null)).toBeNull();
+  });
+
+  it('un code inconnu est ignoré, et les paramètres qui ne sont pas des scalaires aussi', () => {
+    expect(lireCodeEvenement({ code: 'inconnu', parametres: { jours: 7 } })).toBeNull();
+    expect(
+      lireCodeEvenement({ code: 'linkedin_message_saute', parametres: { jours: 7, objet: { a: 1 }, liste: [1] } }),
+    ).toEqual({ code: 'linkedin_message_saute', parametres: { jours: 7 } });
   });
 });

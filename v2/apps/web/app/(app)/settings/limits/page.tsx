@@ -22,23 +22,26 @@ import { TablePlafonds, type LignePlafond } from '../../../../components/reglage
 
 export const revalidate = 0;
 
-/** Les huit lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
+/** Les dix lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
 const ORDRE_LIGNES: readonly ClePlafond[] = [
   'scoring_par_jour',
   'enrichissements_par_jour',
   'linkedin_posts_par_jour',
   'linkedin_requetes_par_heure',
   'linkedin_personnes_par_passage',
+  'linkedin_attente_acceptation_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
   'age_max_offres_jours',
+  'enrichissement_age_max_jours',
 ];
 
 /**
  * Les plafonds qui bornent un VOLUME produit : à zéro, ils arrêtent la machine, et l'écran doit
- * le montrer. Les trois autres lignes sont des seuils (score minimum, relecture, âge des offres) :
- * un zéro y est une valeur ordinaire, et `relecture_premiers_envois_defaut` vaut même zéro par
- * défaut. Les confondre ferait crier l'écran sur une organisation parfaitement saine.
+ * le montrer. Les autres lignes sont des seuils ou des délais (score minimum, relecture, âge
+ * des offres, âge d'achat d'une adresse, jours d'attente de l'acceptation d'une invitation) : un zéro y est une valeur ordinaire,
+ * et `relecture_premiers_envois_defaut` vaut même zéro par défaut. Les confondre ferait crier l'écran
+ * sur une organisation parfaitement saine.
  */
 const PLAFONDS_DE_VOLUME: ReadonlySet<string> = new Set<ClePlafond>([
   'scoring_par_jour',
@@ -86,6 +89,11 @@ export default async function PlafondsPage() {
       nom: t('lignes.linkedinPersonnesParPassage.nom'),
       description: t('lignes.linkedinPersonnesParPassage.description'),
     },
+    linkedin_attente_acceptation_jours: {
+      nom: t('lignes.linkedinAttenteAcceptationJours.nom'),
+      description: t('lignes.linkedinAttenteAcceptationJours.description'),
+      suffixe: t('lignes.linkedinAttenteAcceptationJours.suffixe'),
+    },
     score_min_defaut: { nom: t('lignes.scoreMinDefaut.nom'), description: t('lignes.scoreMinDefaut.description') },
     relecture_premiers_envois_defaut: {
       nom: t('lignes.relecturePremiersEnvoisDefaut.nom'),
@@ -95,6 +103,11 @@ export default async function PlafondsPage() {
       nom: t('lignes.ageMaxOffresJours.nom'),
       description: t('lignes.ageMaxOffresJours.description'),
       suffixe: t('lignes.ageMaxOffresJours.suffixe'),
+    },
+    enrichissement_age_max_jours: {
+      nom: t('lignes.enrichissementAgeMaxJours.nom'),
+      description: t('lignes.enrichissementAgeMaxJours.description'),
+      suffixe: t('lignes.enrichissementAgeMaxJours.suffixe'),
     },
   };
 
@@ -127,10 +140,12 @@ export default async function PlafondsPage() {
               pourcentage: pourcentageJauge(utilise, plafond),
               ton: tonJauge(utilise, plafond),
             },
-      arrete: PLAFONDS_DE_VOLUME.has(cle) && d.valeur === 0,
+      arret:
+        PLAFONDS_DE_VOLUME.has(cle) && d.valeur === 0
+          ? t(cle === 'enrichissements_par_jour' ? 'table.arreteEnrichissement' : 'table.arrete')
+          : undefined,
       valeur: d.valeur,
-      defaut: d.defaut,
-      repli: d.repli,
+      conseillee: d.defaut,
       modifie: libelleModification(d.modifiePar, d.modifieLe, (cle, valeurs) => t(`table.${cle}`, valeurs), maintenant, fuseau),
       type: 'nombre',
       suffixe: libelle.suffixe,
@@ -204,16 +219,13 @@ export default async function PlafondsPage() {
           colReglage: t('table.colReglage'),
           colConsomme: t('table.colConsomme'),
           colValeur: t('table.colValeur'),
-          colDefaut: t('table.colDefaut'),
-          colRepli: t('table.colRepli'),
+          colConseillee: t('table.colConseillee'),
           colModifie: t('table.colModifie'),
           modifier: t('table.modifier'),
           enregistrer: t('table.enregistrer'),
           annuler: t('table.annuler'),
-          aucunRepli: t('table.aucunRepli'),
           erreurNombre: t('table.erreurNombre'),
           sansObjet: t('table.sansObjet'),
-          arrete: t('table.arrete'),
         }}
       />
 

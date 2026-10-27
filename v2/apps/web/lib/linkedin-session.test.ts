@@ -8,7 +8,7 @@ const lire = vi.hoisted(() => vi.fn());
 vi.mock('@jay-reach/core', () => ({ lireSessionLinkedIn: lire }));
 
 import type { Contexte } from '@jay-reach/core';
-import { composerLigneLinkedIn, lireSessionLinkedInPourLaCoquille } from './linkedin-session';
+import { composerLigneLinkedIn, lireSessionLinkedInPourLaCoquille, sessionLinkedInPrete } from './linkedin-session';
 
 const MAINTENANT = new Date('2026-10-05T12:00:00Z');
 const base: SessionLinkedIn = {
@@ -70,5 +70,21 @@ describe('lireSessionLinkedInPourLaCoquille', () => {
   it('une lecture qui réussit rend la session telle quelle', async () => {
     lire.mockResolvedValueOnce(base);
     await expect(lireSessionLinkedInPourLaCoquille(ctx)).resolves.toBe(base);
+  });
+});
+
+describe('sessionLinkedInPrete : ce qui fait préférer LinkedIn à l\u2019email dans l\u2019assistant', () => {
+  it('une session active et sans motif est prête', () => {
+    expect(sessionLinkedInPrete(base)).toBe(true);
+  });
+
+  it('aucune session, une lecture impossible, ou une session bloquée ne sont pas prêtes', () => {
+    expect(sessionLinkedInPrete(null)).toBe(false);
+    expect(sessionLinkedInPrete(undefined)).toBe(false);
+    expect(sessionLinkedInPrete({ ...base, etat: 'bloquee', motif: 'defi', bloqueeLe: MAINTENANT })).toBe(false);
+  });
+
+  it('un motif de blocage l\u2019emporte sur l\u2019état enregistré', () => {
+    expect(sessionLinkedInPrete({ ...base, motif: 'sortie_inattendue' })).toBe(false);
   });
 });

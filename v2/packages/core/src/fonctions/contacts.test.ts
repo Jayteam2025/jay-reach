@@ -210,6 +210,7 @@ describe('lireFiche', () => {
       pause: null,
       // F11 : `next_action_at` de l'inscription active exposé tel quel, apps/web le formate.
       prochainMessageLe: '2026-09-20T09:00:00.000Z',
+      attenteAcceptation: null,
     });
     expect(fiche.echanges).toEqual([
       { id: 'msg-1', direction: 'out', corps: 'Bonjour Karim', quand: '2026-09-11T09:00:00.000Z' },

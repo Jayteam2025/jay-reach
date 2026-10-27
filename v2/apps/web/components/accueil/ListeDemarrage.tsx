@@ -1,11 +1,13 @@
 /**
  * La liste de démarrage, en haut de l'écran Aujourd'hui (lot 5).
  *
- * Elle ne garde aucun état : elle affiche six vérités lues en base. Elle disparaît quand tout est
- * branché, et revient si quelque chose se débranche — c'est ce qui en fait un diagnostic et non un
+ * Elle ne garde aucun état : elle affiche six vérités lues en base. Elle ne se masque pas d'elle-même
+ * quand tout est vert : c'est l'écran qui décide de l'afficher (tant que l'opérateur ne l'a pas
+ * fermée, et toujours quand un branchement a lâché) — c'est ce qui en fait un diagnostic et non un
  * tutoriel qu'on coche une fois.
  *
- * Composant serveur : chaque ligne non faite porte un lien vers l'écran qui la règle, rien d'autre.
+ * Composant serveur : chaque ligne non faite porte un lien vers l'écran qui la règle ; la fermeture
+ * est un simple formulaire sur une action serveur, sans JavaScript côté navigateur.
  *
  * Il n'interpole aucun libellé. Les textes arrivent résolus depuis l'écran, qui seul connaît les
  * comptes : c'est ce qui permet au français d'accorder ses mesures (« 1 posée », « 7 posées »).
@@ -20,9 +22,15 @@ export interface ListeDemarrageProps {
     titreCasse: string;
     sousTitre: string;
     sousTitreCasse: string;
+    /** Tout est branché : l'opérateur peut fermer le guide. */
+    titreTerminee: string;
+    sousTitreTerminee: string;
     avancement: string;
     lignes: Record<CleDemarrage, { titre: string; aide: string; bouton: string; mesure: string }>;
+    fermer: string;
   };
+  /** Ferme le guide pour l'utilisateur courant ; sans elle, aucun bouton de fermeture. */
+  actionFermer?: () => Promise<void>;
 }
 
 function Marque({ ligne }: { ligne: LigneDemarrage }) {
@@ -30,18 +38,17 @@ function Marque({ ligne }: { ligne: LigneDemarrage }) {
   return <span className={`jr-demarrage-marque jr-demarrage-marque--${etat}`} aria-hidden="true" />;
 }
 
-export function ListeDemarrage({ demarrage, libelles }: ListeDemarrageProps) {
-  // Rien à dire quand tout tient : le bloc ne survit pas à sa raison d'être.
-  if (demarrage.terminee) return null;
-
+export function ListeDemarrage({ demarrage, libelles, actionFermer }: ListeDemarrageProps) {
   const casse = demarrage.lignes.some((l) => l.casse);
+  const titre = casse ? libelles.titreCasse : demarrage.terminee ? libelles.titreTerminee : libelles.titre;
+  const sousTitre = casse ? libelles.sousTitreCasse : demarrage.terminee ? libelles.sousTitreTerminee : libelles.sousTitre;
 
   return (
     <section className="jr-carte jr-demarrage" aria-labelledby="jr-demarrage-titre">
       <div className="jr-demarrage-entete">
         <div>
-          <h2 id="jr-demarrage-titre">{casse ? libelles.titreCasse : libelles.titre}</h2>
-          <p>{casse ? libelles.sousTitreCasse : libelles.sousTitre}</p>
+          <h2 id="jr-demarrage-titre">{titre}</h2>
+          <p>{sousTitre}</p>
         </div>
         <span className="jr-demarrage-avancement mono">{libelles.avancement}</span>
       </div>
@@ -69,6 +76,16 @@ export function ListeDemarrage({ demarrage, libelles }: ListeDemarrageProps) {
           );
         })}
       </ul>
+
+      {/* Un branchement qui a lâché garde le guide à l'écran quoi qu'on fasse : proposer de le
+          fermer promettrait une chose que l'écran ne ferait pas. */}
+      {actionFermer && !casse && (
+        <form action={actionFermer} className="jr-demarrage-pied">
+          <button type="submit" className="jr-lien">
+            {libelles.fermer}
+          </button>
+        </form>
+      )}
     </section>
   );
 }

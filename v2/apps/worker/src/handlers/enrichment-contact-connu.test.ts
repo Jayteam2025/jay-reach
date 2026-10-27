@@ -40,7 +40,7 @@ import {
   type AchatFullEnrich,
   type DependancesEnrichissementContact,
 } from './enrichment-contact-connu.js';
-import { enqueueEnrichmentContactsConnus } from '../producer.js';
+import { enqueueEnrichmentContactsConnus, AGE_MAX_SIGNAL_JOURS } from '../producer.js';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const CONTACT = '22222222-2222-4222-8222-222222222222';
@@ -68,6 +68,10 @@ interface Options {
   readonly tentativesDeja?: number;
   readonly coutEnregistre?: boolean;
   readonly cle?: string | null;
+  /** Le signal d'origine du contact dépasse l'âge maximal (réponse de la garde d'ancienneté). */
+  readonly signalTropAncien?: boolean;
+  /** Valeur brute de `enrichissement_age_max_jours` en base (absente par défaut : repli sur la rétention). */
+  readonly ageReglage?: unknown;
 }
 
 const RESULTAT_AVEC_EMAIL: FullEnrichContactResult = {
@@ -102,8 +106,14 @@ function monde(opts: Options = {}) {
   const query = vi.fn(async (sql: string, p: unknown[] = []) => {
     etat.sql.push(sql);
     etat.params.push(p);
+    if (/jr:signal_trop_ancien/.test(sql)) {
+      return { rows: [{ trop_ancien: opts.signalTropAncien ?? false }], rowCount: 1 };
+    }
     if (/from contacts/i.test(sql)) {
       return { rows: contact ? [contact] : [], rowCount: contact ? 1 : 0 };
+    }
+    if (/jr:age_max_enrichissement/.test(sql)) {
+      return opts.ageReglage === undefined ? { rows: [], rowCount: 0 } : { rows: [{ value: opts.ageReglage }], rowCount: 1 };
     }
     if (/from organization_settings/i.test(sql)) {
       if (/'fuseau'/.test(sql)) return { rows: [{ value: 'Europe/Paris' }], rowCount: 1 };
@@ -403,6 +413,62 @@ describe('enrichirContactConnu', () => {
     expect(etat.achats).toEqual([]);
   });
 
+  it('un signal trop ancien refuse l’achat : aucun credit, aucun appel, contact non marque', async () => {
+    const { deps, etat } = monde({ signalTropAncien: true });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('signal_trop_ancien');
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.signalTropAncien(CONTACT, AGE_MAX_SIGNAL_JOURS)}`);
+    expect(etat.sql.some((s2) => /consume_provider_credit/.test(s2))).toBe(false);
+    expect(etat.achats).toEqual([]);
+    // Refus définitif mais sans marque : le contact sera purgé avec son signal, rien à poser dessus.
+    expect(etat.marquesSeules).toBe(0);
+  });
+
+  it('la garde d’ancienneté est interrogée avec l’âge maximal des signaux', async () => {
+    const { deps, etat } = monde();
+    const j = journal();
+    await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    const i = etat.sql.findIndex((s2) => /jr:signal_trop_ancien/.test(s2));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(etat.params[i]).toEqual([CONTACT, ORG, AGE_MAX_SIGNAL_JOURS]);
+  });
+
+  it('la garde d’ancienneté lit l’âge réglé par l’organisation, pas la variable d’environnement', async () => {
+    const { deps, etat } = monde({ ageReglage: 3 });
+    const j = journal();
+    await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    const lecture = etat.sql.findIndex((s2) => /jr:age_max_enrichissement/.test(s2));
+    expect(lecture).toBeGreaterThanOrEqual(0);
+    expect(etat.params[lecture]).toEqual([ORG]);
+    const i = etat.sql.findIndex((s2) => /jr:signal_trop_ancien/.test(s2));
+    expect(etat.params[i]).toEqual([CONTACT, ORG, 3]);
+  });
+
+  it('un âge réglé au-dessus de la rétention est borné à la rétention, une valeur invalide retombe dessus', async () => {
+    for (const ageReglage of [AGE_MAX_SIGNAL_JOURS + 30, 0, 'abc', null]) {
+      const { deps, etat } = monde({ ageReglage });
+      const j = journal();
+      await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+      j.rendre();
+      const i = etat.sql.findIndex((s2) => /jr:signal_trop_ancien/.test(s2));
+      expect(etat.params[i]).toEqual([CONTACT, ORG, AGE_MAX_SIGNAL_JOURS]);
+    }
+  });
+
+  it('un signal plus vieux que l’âge réglé refuse l’achat et le dit avec cet âge', async () => {
+    const { deps, etat } = monde({ ageReglage: 5, signalTropAncien: true });
+    const j = journal();
+    const issue = await enrichirContactConnu(deps, { organizationId: ORG, contactId: CONTACT });
+    j.rendre();
+    expect(issue).toBe('signal_trop_ancien');
+    expect(j.lignes).toContain(`${MSG.prefixe} ${MSG.signalTropAncien(CONTACT, 5)}`);
+    expect(etat.achats).toEqual([]);
+  });
+
   it('sans cle FullEnrich, aucun credit n’est consomme', async () => {
     const { deps, etat } = monde({ cle: null });
     const j = journal();
@@ -426,10 +492,13 @@ interface LigneCandidat {
   readonly contact_id: string;
 }
 
-function producteur(candidats: LigneCandidat[]) {
+function producteur(candidats: LigneCandidat[], ages: { organization_id: string; value: unknown }[] = []) {
   const sql: string[] = [];
-  const query = vi.fn(async (texte: string) => {
+  const params: unknown[][] = [];
+  const query = vi.fn(async (texte: string, p: unknown[] = []) => {
     sql.push(texte);
+    params.push(p);
+    if (/jr:ages_max_enrichissement/.test(texte)) return { rows: ages, rowCount: ages.length };
     if (/from organization_settings/i.test(texte)) return { rows: [{ value: 'Europe/Paris' }], rowCount: 1 };
     if (/pgboss\./i.test(texte)) return { rows: [{ existe: false }], rowCount: 1 };
     if (/from contacts/i.test(texte)) return { rows: candidats, rowCount: candidats.length };
@@ -437,7 +506,7 @@ function producteur(candidats: LigneCandidat[]) {
   });
   const jobs: { name: string; id: string; data: unknown }[] = [];
   const boss = { insert: async (lot: typeof jobs) => void jobs.push(...lot) };
-  return { pool: { query } as unknown as Pool, boss, jobs, sql };
+  return { pool: { query } as unknown as Pool, boss, jobs, sql, params };
 }
 
 describe('enqueueEnrichmentContactsConnus', () => {
@@ -457,11 +526,38 @@ describe('enqueueEnrichmentContactsConnus', () => {
         retryBackoff: false,
       },
     ]);
-    // Les trois conditions de sélection sont bien celles qu'on croit. Leur
+    // Les quatre critères de sélection sont bien ceux qu'on croit (la borne d'âge est assertée par le test suivant). Leur
     // EFFET est prouvé sur Postgres (test/pg-verify/linkedin-enrichissement.sh) ;
     // ici on ne vérifie que la file visée, à un caractère de `enrichment.contacts`.
     const requete = sql.find((s) => /from contacts/i.test(s)) ?? '';
     expect(requete).toMatch(/s\.status = 'qualified'/);
+  });
+
+  it('le producteur n’achète que pour un signal récent : la même borne d’âge que le chemin entreprise', async () => {
+    const { pool, boss, sql, params } = producteur([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
+    await enqueueEnrichmentContactsConnus(boss as any, pool);
+    const i = sql.findIndex((s2) => /from contacts/i.test(s2));
+    expect(sql[i]).toMatch(/s\.occurred_at >= now\(\) - make_interval\(days => coalesce\(\(\$5::jsonb ->> c\.organization_id::text\)::int, \$4::int\)\)/);
+    // Le quatrième paramètre est la rétention (repli), le cinquième les âges réglés par organisation.
+    expect(params[i]?.[3]).toBe(AGE_MAX_SIGNAL_JOURS);
+    expect(params[i]?.[4]).toBe('{}');
+    expect(params[i]).toHaveLength(5);
+  });
+
+  it('le producteur passe l’âge réglé par chaque organisation, borné et validé', async () => {
+    const autre = '44444444-4444-4444-8444-444444444444';
+    const invalide = '55555555-5555-4555-8555-555555555555';
+    const { pool, boss, sql, params } = producteur([], [
+      { organization_id: ORG, value: 3 },
+      { organization_id: autre, value: AGE_MAX_SIGNAL_JOURS + 50 },
+      { organization_id: invalide, value: 'abc' },
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
+    await enqueueEnrichmentContactsConnus(boss as any, pool);
+    const i = sql.findIndex((s2) => /from contacts/i.test(s2));
+    // `invalide` retombe sur la rétention, `autre` y est borné.
+    expect(JSON.parse(String(params[i]?.[4]))).toEqual({ [ORG]: 3, [autre]: AGE_MAX_SIGNAL_JOURS, [invalide]: AGE_MAX_SIGNAL_JOURS });
   });
 
   it('le producteur n’enfile rien pour un contact qui a deja un email', async () => {
@@ -488,7 +584,7 @@ describe('enqueueEnrichmentContactsConnus', () => {
     ]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
     await enqueueEnrichmentContactsConnus(boss as any, pool);
-    expect(sql.filter((s) => /from organization_settings/i.test(s))).toHaveLength(1);
+    expect(sql.filter((s) => /from organization_settings/i.test(s) && !/jr:ages_max_enrichissement/.test(s))).toHaveLength(1);
   });
 
   it('l’identifiant de job porte le jour : un contact non traité repart demain', async () => {

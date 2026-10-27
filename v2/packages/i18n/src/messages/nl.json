@@ -29,6 +29,12 @@
       "post_date": "Publicatiedatum van de post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# e-mail} other {# e-mails}}",
+    "linkedin": "{n, plural, one {# LinkedIn-actie} other {# LinkedIn-acties}}",
+    "courrier": "{n, plural, one {# brief} other {# brieven}}",
+    "appel": "{n, plural, one {# gesprek} other {# gesprekken}}"
+  },
   "login": {
     "title": "Inloggen",
     "email": "E-mail",
@@ -281,7 +287,9 @@
         "replies": "Reacties",
         "week": "Deze week"
       },
-      "steps": "{n, plural, one {# e-mailstap} other {# e-mailstappen}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSteps": "Geen stappen",
       "noSource": "geen bron",
       "listSource": "{nom}{autres, plural, =0 {} other { en # andere}}",
       "status": {
@@ -300,6 +308,9 @@
       "titreCasse": "Een koppeling is weggevallen",
       "sousTitre": "Zes koppelingen voordat de prospectie vanzelf loopt.",
       "sousTitreCasse": "De rest blijft draaien.",
+      "titreTerminee": "Alles is gekoppeld",
+      "sousTitreTerminee": "U kunt deze gids sluiten: hij komt terug als een koppeling wegvalt.",
+      "fermer": "Deze gids sluiten",
       "avancement": "{faites} van {total}",
       "lignes": {
         "fournisseurs": {
@@ -334,7 +345,7 @@
         },
         "campagne": {
           "titre": "Een lopende campagne",
-          "aide": "Die verbindt persona, bronnen en reeks.",
+          "aide": "Die verbindt persona, bronnen en reeks. Ze wordt afgevinkt zodra een campagne is gelanceerd en er geen concept meer op zijn lancering wacht.",
           "bouton": "Openen",
           "mesure": "{n} actief"
         }
@@ -415,7 +426,7 @@
         "emailVerified": "E-mail geverifieerd",
         "inSequence": "In sequentie",
         "pausedSuffix": "· {n} gepauzeerd",
-        "delivered": "Verstuurde e-mails",
+        "delivered": "{nature, select, email {Verstuurde e-mails} linkedin {Uitgevoerde LinkedIn-acties} other {Verstuurde berichten}}",
         "awaitingSendSuffix": "· {n} wachten op verzending",
         "replies": "Reacties",
         "interested": "Geïnteresseerd"
@@ -450,8 +461,8 @@
         "seeAll": "Alles bekijken",
         "empty": "Nog geen activiteit.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}} · stap {etape}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}} · stap {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}}}}"
         }
       }
     },
@@ -485,6 +496,7 @@
         "a_repondu": "Heeft gereageerd",
         "interesse": "Geïnteresseerd",
         "ecarte": "Afgewezen",
+        "en_attente_coordonnee": "Wacht op contactgegevens",
         "termine": "Afgerond",
         "rebond": "Bounce",
         "ne_plus_contacter": "Niet meer contacteren"
@@ -528,7 +540,8 @@
         "sentBy": "Verzonden door {boite} · gekoppeld aan deze mailbox voor de hele sequentie",
         "step": "{n}",
         "pausedLine": "Gepauzeerd: {motif}",
-        "nextMessage": "Volgend bericht op {date}"
+        "nextMessage": "Volgend bericht op {date}",
+        "awaitingAcceptance": "Het LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd. Gebeurt dat niet uiterlijk op {date}, dan wordt het overgeslagen en gaat de reeks verder."
       },
       "conversation": {
         "openInInbox": "Openen in de Inbox",
@@ -552,7 +565,13 @@
         "add": "Toevoegen"
       },
       "history": {
-        "empty": "Geen gebeurtenis voor dit contact."
+        "empty": "Geen gebeurtenis voor dit contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "LinkedIn-bericht overgeslagen: de uitnodiging is niet binnen {jours, plural, one {# dag} other {# dagen}} geaccepteerd.",
+            "detail": "De reeks gaat door met de volgende stap."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Uit campagne verwijderen",
@@ -560,8 +579,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}",
-      "description": "Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".",
+      "title": "{nature, select, email {{n, plural, one {# e-mail gepland voor vandaag} other {# e-mails gepland voor vandaag}}} linkedin {{n, plural, one {# LinkedIn-actie gepland voor vandaag} other {# LinkedIn-acties gepland voor vandaag}}} other {{n, plural, one {# verzending gepland voor vandaag} other {# verzendingen gepland voor vandaag}}}}",
+      "description": "{nature, select, email {Verdeeld door SalesBlink over de verzenduren en mailboxes die voor deze campagne zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".} linkedin {Verstuurd vanuit de LinkedIn-sessie van je account, binnen de uren en limieten die voor LinkedIn zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".} other {E-mails worden door SalesBlink verdeeld over de verzenduren en mailboxes die voor deze campagne zijn ingesteld, LinkedIn-acties vertrekken vanuit de sessie van je account, binnen de uren en limieten die voor LinkedIn zijn ingesteld. Niets wacht op je goedkeuring, behalve verzendingen gemarkeerd als \"te herzien\".}}",
       "filters": {
         "all": "{n, plural, one {Alle #} other {Alle #}}",
         "scheduled": "{n, plural, one {Gepland #} other {Gepland #}}",
@@ -579,7 +598,7 @@
         "status": "Status"
       },
       "group": {
-        "count": "{n, plural, one {# e-mail} other {# e-mails}}"
+        "count": "{nature, select, email {{n, plural, one {# e-mail} other {# e-mails}}} linkedin {{n, plural, one {# LinkedIn-actie} other {# LinkedIn-acties}}} other {{n, plural, one {# verzending} other {# verzendingen}}}}"
       },
       "step": "Stap {n}",
       "status": {
@@ -609,7 +628,7 @@
       },
       "drawer": {
         "title": "Herzien vóór verzending",
-        "description": "E-mail zoals hij verzonden zal worden",
+        "description": "{canal, select, email {E-mail zoals hij verzonden zal worden} linkedin_message {LinkedIn-bericht zoals het verzonden zal worden} linkedin_invite {LinkedIn-uitnodiging, verzonden zonder notitie} other {Verzending zoals ze vertrekt}}",
         "close": "Sluiten",
         "why": "Waarom dit contact",
         "score": "Score {n}",
@@ -631,6 +650,16 @@
           "blocked": "geblokkeerd",
           "cancelled": "geannuleerd",
           "skipped": "overgeslagen"
+        }
+      },
+      "awaitingAcceptance": {
+        "title": "{n, plural, one {# LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd} other {# LinkedIn-berichten wachten tot de uitnodiging is geaccepteerd}}",
+        "explanation": "Elk bericht vertrekt zodra de persoon de uitnodiging accepteert. Jay Reach controleert één keer per dag. Wordt ze niet geaccepteerd vóór de uiterste datum, dan wordt de stap overgeslagen en gaat de reeks verder.",
+        "noInvitation": "Geen uitnodiging verstuurd",
+        "columns": {
+          "step": "Stap",
+          "invitation": "Uitnodiging verstuurd op",
+          "deadline": "Uiterlijk geaccepteerd op"
         }
       }
     },
@@ -848,7 +877,9 @@
         "sourcesTitle": "Bronnen",
         "sourcesSubtitle": "{n, plural, one {# bron voedt} other {# bronnen voeden}} deze campagne, {m, plural, one {# gekwalificeerd contact} other {# gekwalificeerde contacten}} tot nu toe",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacten}} · geïmporteerd op {date}",
-        "intoSequence": "Gekwalificeerde contacten met een geverifieerde e-mail komen in de sequentie",
+        "intoSequence": "Gekwalificeerde contacten komen in de sequentie. Eén uitzondering: een persoon die op LinkedIn is opgespoord (iemand die op een post reageerde) en van wie we het e-mailadres niet hebben, wacht tot we het hebben voordat hij of zij wordt ingeschreven, omdat de sequentie een e-mailstap bevat.",
+        "intoSequenceSansEmail": "Gekwalificeerde contacten komen in de sequentie: ze bevat geen e-mailstap, dus geen e-mail vereist, ook niet voor een persoon die op LinkedIn is opgespoord.",
+        "intoSequenceVide": "Voeg een eerste stap toe. Zolang de sequentie leeg is, wacht een persoon die op LinkedIn is opgespoord (iemand die op een post reageerde) en van wie we het e-mailadres niet hebben, tot we het hebben voordat hij of zij wordt ingeschreven.",
         "delayDays": "{n, plural, one {# dag later} other {# dagen later}}",
         "delayHours": "{n, plural, one {# uur later} other {# uur later}}",
         "endTitle": "Einde van de sequentie",
@@ -905,6 +936,18 @@
       "avertissements": {
         "messageSansInvitation": "Stap {n}: een LinkedIn-bericht bereikt alleen een connectie van de 1e graad. Voeg er een uitnodigingsstap vóór toe, anders wordt het nooit verstuurd.",
         "noteDInvitation": "Stap {n}: verzenden vanaf de server kan de uitnodigingsnotitie nog niet meesturen. Zolang die er staat, wordt de uitnodiging niet verstuurd. Verwijder de notitie om te starten."
+      },
+      "nomEtape": {
+        "premier_email": "Eerste e-mail",
+        "relance": "Herinnering",
+        "dernier_mot": "Laatste woord",
+        "invitation_linkedin": "LinkedIn-uitnodiging",
+        "premier_message_linkedin": "Eerste LinkedIn-bericht",
+        "relance_linkedin": "LinkedIn-herinnering",
+        "dernier_message_linkedin": "Laatste LinkedIn-bericht",
+        "courrier": "Brief",
+        "appel": "Telefoontje",
+        "etape": "Stap"
       }
     },
     "activite": {
@@ -926,8 +969,8 @@
       "previous": "Vorige",
       "next": "Volgende",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · stap {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}} · stap {etape}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}} · stap {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# e-mail doorgegeven} other {# e-mails doorgegeven}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn-actie uitgevoerd} other {# LinkedIn-acties uitgevoerd}}} other {{n, plural, one {# verzending doorgegeven} other {# verzendingen doorgegeven}}}}"
       }
     },
     "reglages": {
@@ -982,6 +1025,7 @@
       },
       "who": {
         "errorName": "Geef de campagne een naam.",
+        "errorPersona": "Kies de persona die u zoekt.",
         "name": "Naam van de campagne",
         "namePlaceholder": "Opvolging salesdirecteuren",
         "personaTitle": "Wie zoek je?",
@@ -1065,6 +1109,7 @@
         "channelLinkedinInvite": "LinkedIn-uitnodiging",
         "channelLinkedinMessage": "LinkedIn-bericht",
         "inviteSansNote": "De uitnodiging vertrekt zonder notitie: de server kan er nog geen meesturen.",
+        "messageAfterInvitation": "Dit bericht bereikt alleen mensen die uw uitnodiging hebben geaccepteerd. Jay Reach wacht op die acceptatie: zolang die uitblijft, wordt het bericht één keer per dag opnieuw geprobeerd. Na de termijn die u instelt onder Instellingen › Limieten (standaard 7 dagen) zonder acceptatie wordt het overgeslagen en gaat de sequentie verder met de volgende stap.",
         "subject": "Onderwerp",
         "body": "Inhoud",
         "delay": "Vertraging sinds de vorige stap",
@@ -1074,19 +1119,27 @@
         "remove": "Stap verwijderen",
         "variablesHint": "Beschikbare variabelen: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "Geen stap. Kies een model of voeg er een toe.",
-        "errorEmpty": "De sequentie heeft minstens één stap nodig."
+        "errorEmpty": "De sequentie heeft minstens één stap nodig.",
+        "errorIncomplete": {
+          "emailVide": "Stap {rang} is een lege e-mail: schrijf het onderwerp en het bericht voordat u verdergaat.",
+          "emailObjet": "Stap {rang} is een e-mail zonder onderwerp: schrijf het onderwerp voordat u verdergaat.",
+          "emailCorps": "Stap {rang} is een e-mail zonder bericht: schrijf het bericht voordat u verdergaat.",
+          "messageLinkedinCorps": "Stap {rang} is een LinkedIn-bericht zonder tekst: schrijf het voordat u verdergaat."
+        }
       },
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "Geen bron: contacten worden handmatig toegevoegd.",
-        "recapSequenceValue": "{n} e-mails over {jours} dagen",
+        "recapSequenceValue": "{resume} over {jours, plural, =0 {één dag} one {# dag} other {# dagen}}",
+        "recapSequenceVide": "Nog geen stap",
         "recapEnvoiValue": "{n} mailboxes · maximaal {plafond} nieuwe contacten per dag",
+        "recapEnvoiSansBoites": "maximaal {plafond} nieuwe contacten per dag",
         "boxesTitle": "Verzendende mailboxes",
         "boxesEmpty": "Geen actieve verzendmailbox. Koppel er een in Instellingen › Afzenders.",
         "boxesNoneActive": "Kies minstens één mailbox.",
         "review": "Herziening van de eerste verzendingen",
         "reviewSuffix": "verzendingen",
-        "reviewHint": "De eerste verzendingen wachten op handmatige goedkeuring voordat ze verstuurd worden.",
+        "reviewHint": "{n, plural, =0 {Geen herziening: alles gaat zonder goedkeuring de deur uit.} one {De eerste verzending van elke stap wacht op uw goedkeuring voordat ze vertrekt. U herziet ze in het tabblad “Wachtrij van vandaag” van de campagne.} other {De eerste # verzendingen van elke stap wachten op uw goedkeuring voordat ze vertrekken. U herziet ze in het tabblad “Wachtrij van vandaag” van de campagne.}}",
         "summaryTitle": "Samenvatting",
         "summaryPersona": "Persona",
         "summarySources": "Bronnen",
@@ -1271,7 +1324,7 @@
     },
     "plafonds": {
       "title": "Limieten en standaardwaarden van de organisatie",
-      "lead": "Alles wordt hier ingesteld, in de database. De omgeving wordt alleen gebruikt als een regel ontbreekt: de kolom \"terugval\" zegt welke.",
+      "lead": "De dagelijkse limieten van uw organisatie. Is een limiet bereikt, dan wacht de taak tot de volgende dag; er gaat niets verloren.",
       "consommation": {
         "title": "Verbruik van vandaag",
         "scoring": "Scorings (Anthropic)",
@@ -1292,19 +1345,18 @@
       "table": {
         "colReglage": "Instelling",
         "colValeur": "Waarde",
-        "colDefaut": "Standaard",
-        "colRepli": "Terugval",
+        "colConseillee": "Aanbevolen waarde",
         "colModifie": "Gewijzigd",
         "modifier": "Bewerken",
         "enregistrer": "Opslaan",
         "annuler": "Annuleren",
-        "aucunRepli": "geen",
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
         "erreurNombre": "Voer een geheel getal in, nul of positief.",
         "sansObjet": "Geen volume",
-        "arrete": "Gestopt: er wordt niets meer geproduceerd",
+        "arrete": "Gepauzeerd: deze limiet staat op 0, deze taak wordt niet meer uitgevoerd.",
+        "arreteEnrichissement": "Gepauzeerd: er wordt geen e-mailadres meer gezocht, dus contacten zonder e-mailadres krijgen geen e-mailstap.",
         "colConsomme": "Verbruikt"
       },
       "lignes": {
@@ -1339,6 +1391,16 @@
         "ageMaxOffresJours": {
           "nom": "Maximale leeftijd van vacatures",
           "description": "standaard voor bronnen · in dagen",
+          "suffixe": "dagen"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Wachten op LinkedIn-acceptatie",
+          "description": "een LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd en wordt daarna overgeslagen · in dagen",
+          "suffixe": "dagen"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Maximale leeftijd van een signaal om een e-mailadres te kopen",
+          "description": "oudere signalen worden niet meer verrijkt · van 1 dag tot de bewaartermijn van signalen",
           "suffixe": "dagen"
         }
       },
@@ -1387,6 +1449,7 @@
         "cleValide": "Geldige sleutel",
         "connecte": "Verbonden",
         "aRenseigner": "In te vullen",
+        "facultatif": "Optioneel",
         "echec": "Verbindingsfout"
       },
       "nom": {
@@ -1411,7 +1474,7 @@
         "microsoft_graph": "Ophalen van reacties, mailbox per mailbox",
         "adzuna": "Vacatures van Franse sites",
         "francetravail": "Vacatures van de overheidsinstantie",
-        "apify": "Serverside lezen van LinkedIn · vereist voor het LinkedIn-kanaal"
+        "apify": "Vacatures lezen die op LinkedIn staan · optioneel: het LinkedIn-kanaal heeft het niet nodig"
       },
       "lien": {
         "reglerPlafond": "Limiet instellen",
@@ -1428,7 +1491,10 @@
       },
       "reglagesTitre": "Instellingen",
       "enregistrerReglages": "Opslaan",
-      "champConfigDefaut": "Standaard: {defaut}."
+      "champConfigDefaut": "Standaard: {defaut}.",
+      "detailsTechniques": "Technische details",
+      "modeleNotation": "Beoordelingsmodel",
+      "modeleLeger": "Model voor lichte taken"
     },
     "personas": {
       "title": "Persona's",
@@ -1548,7 +1614,7 @@
         "aucuneTache": "Geen",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}",
         "linkedin": "LinkedIn",
-        "purge": "Bewaartermijnopruiming",
+        "purge": "Opruiming van oude gegevens",
         "purgeOk": "Laatste run {quand}",
         "purgeJamais": "Nog nooit gedraaid",
         "purgeRetard": "Achterstallig: laatste run {quand}",
@@ -1570,13 +1636,16 @@
         "titre": "Nu een taak uitvoeren",
         "sousTitre": "zonder te wachten op de volgende geplande run",
         "lancer": "Uitvoeren",
+        "confirmer": "Ja, uitvoeren",
+        "annuler": "Annuleren",
         "enCours": "Bezig",
         "erreur": "De taak kon niet worden gestart.",
         "continuAideGabarit": "Draait continu serverside, ongeveer elke {minutes} minuten. Hier is geen handmatige start mogelijk.",
         "sources": {
           "titre": "Alle bronnen uitvoeren",
           "detailGabarit": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · laatste run {dernier}",
-          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run"
+          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run",
+          "confirmation": "Hiermee start het verzamelen bij alle actieve bronnen meteen, zonder te wachten op de geplande run. Nieuwe vacatures en personen worden daarna beoordeeld, binnen de limieten van vandaag."
         },
         "scoring": {
           "titre": "Wachtende signalen scoren",
@@ -1591,7 +1660,8 @@
         "releve": {
           "titre": "Ophalen van SalesBlink-reacties",
           "detailGabarit": "laatst opgehaald {quand}",
-          "detailJamais": "nog nooit opgehaald"
+          "detailJamais": "nog nooit opgehaald",
+          "confirmation": "Hiermee worden binnengekomen antwoorden meteen opgehaald, zonder te wachten op de volgende geplande run. Er wordt niets verstuurd."
         }
       },
       "erreurs": {
@@ -1719,9 +1789,8 @@
           "detail": "Bewust gesloten: {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Gestopt: de netwerkuitgang is niet de verwachte.",
-          "detail": "Gezien op {ip} ({origine}) in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
-          "detailSansOrigine": "Gezien op {ip} in plaats van het verwachte adres. Er is niets naar LinkedIn gestuurd.",
+          "phrase": "De LinkedIn-verbinding gaat niet meer via het verwachte adres naar buiten: verzamelen en versturen zijn opgeschort.",
+          "detail": "Er is niets naar LinkedIn gestuurd. Het geziene adres en de operator staan onder \"Technische details\".",
           "detailSansIp": "De netwerkuitgang kon niet worden uitgelezen. Er is niets naar LinkedIn gestuurd."
         }
       },
@@ -1764,7 +1833,11 @@
         "compte": "Verbonden account",
         "comptePasEncore": "Gelezen bij de eerste verzending",
         "sortie": "Netwerkuitgang",
-        "operateur": "Operator en land",
+        "operateur": "Operator",
+        "ip": "IP-adres",
+        "sortieValeur": "Uitgang via een residentieel IP-adres — land: {pays}",
+        "sortieValeurSansPays": "Uitgang via een residentieel IP-adres",
+        "detailsTechniques": "Technische details",
         "collecte": "Laatste verzameling",
         "inconnu": "Onbekend",
         "jamais": "Nooit"
@@ -1875,6 +1948,8 @@
         "connecter": "Mijn LinkedIn-account koppelen",
         "reconnecter": "Opnieuw koppelen",
         "deconnecter": "Dit account ontkoppelen",
+        "deconnecterConfirmation": "Als u dit account ontkoppelt, stoppen het verzamelen en versturen via LinkedIn voor uw organisatie totdat opnieuw een account is gekoppeld.",
+        "deconnecterConfirmer": "Ja, ontkoppelen",
         "annuler": "Annuleren",
         "valider": "Code bevestigen",
         "identifiant": "LinkedIn-gebruikersnaam",
@@ -1962,6 +2037,7 @@
       "a_repondu": "Heeft gereageerd",
       "interesse": "Geïnteresseerd",
       "ecarte": "Afgewezen",
+      "en_attente_coordonnee": "Wacht op contactgegevens",
       "termine": "Afgerond",
       "rebond": "Bounce",
       "ne_plus_contacter": "Niet meer contacteren"

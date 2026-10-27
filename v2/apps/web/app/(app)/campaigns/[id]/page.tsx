@@ -10,6 +10,7 @@ import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { compterEnFile, compterPartis, segmentsNonNuls } from '../../../../lib/file-du-jour';
 import { tauxLivresAffiche } from '../../../../lib/entonnoir';
+import { aUneEtapeEmail, afficherEtapeEmailVerifie, natureDesCanaux } from '../../../../lib/canaux-sequence';
 import { parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
@@ -31,8 +32,8 @@ function libelleEnvoisGroupes(
   donnees: NonNullable<Evenement['donneesEnvois']>,
 ): string {
   return donnees.etape !== null
-    ? t('overview.activity.envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites })
-    : t('overview.activity.envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites });
+    ? t('overview.activity.envoisGroupes.withStep', { n: donnees.n, etape: donnees.etape, boites: donnees.boites, canal: donnees.canal })
+    : t('overview.activity.envoisGroupes.withoutStep', { n: donnees.n, boites: donnees.boites, canal: donnees.canal });
 }
 
 export default async function CampagneVueDEnsemblePage({ params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +89,10 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
   // dessus — l'annotation dit de quoi il est la part, dans le vocabulaire déjà fixé ailleurs.
   // Absente quand tout ce qui est engagé est réellement parti (`tauxLivresAffiche`).
   const tauxLivresTexte = tauxLivresAffiche(tauxOuZero(vue.entonnoir.tauxLivres), vue.entonnoir.enAttenteEnvoi, t);
+  // Ce que la campagne envoie, selon ses étapes : « Emails partis » n'a de sens que pour une séquence 100 % email,
+  // et SalesBlink comme les boîtes ne concernent que les étapes email.
+  const canauxEtapes = vue.campagne.canauxEtapes;
+  const libelleEnvoisPartis = t('overview.funnel.delivered', { nature: natureDesCanaux(canauxEtapes) });
 
   // Point 2 (issue #120) : une campagne à liste n'a ni signal ni thème de veille — l'entonnoir
   // part des contacts importés plutôt que de « 0 offres et profils trouvés ».
@@ -95,9 +100,11 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
     vue.entonnoir.origine === 'liste'
       ? [
           { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
-          { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
+          ...(afficherEtapeEmailVerifie(canauxEtapes)
+            ? [{ valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') }]
+            : []),
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.partis, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
+          { valeur: vue.entonnoir.partis, libelle: libelleEnvoisPartis, taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ]
@@ -106,7 +113,7 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
           { valeur: vue.entonnoir.qualifies, libelle: t('overview.funnel.qualified') },
           { valeur: vue.entonnoir.contacts, libelle: t('overview.funnel.contactsIdentified') },
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
-          { valeur: vue.entonnoir.partis, libelle: t('overview.funnel.delivered'), taux: tauxLivresTexte },
+          { valeur: vue.entonnoir.partis, libelle: libelleEnvoisPartis, taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },
           { valeur: vue.entonnoir.interesses, libelle: t('overview.funnel.interested') },
         ];
@@ -174,11 +181,14 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
             libelle={t('overview.caps.enrichment')}
             valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.enrichissement.utilise, vue.plafonds.enrichissement.plafond))}
           />
-          <CleValeur
-            libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
-            valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.envois.utilise, vue.plafonds.envois.plafond))}
-          />
-          <Link href="/settings" className="jr-lien jr-lien-petit jr-lien-pied">
+          {/* Le plafond d'envois est celui des boîtes email (SalesBlink) : sans étape email, il ne dit rien de cette campagne. */}
+          {aUneEtapeEmail(canauxEtapes) && (
+            <CleValeur
+              libelle={t('overview.caps.sending', { n: vue.campagne.boites.length })}
+              valeur={tPlafonds('consommation.valeur', parametresValeurConsommation(vue.plafonds.envois.utilise, vue.plafonds.envois.plafond))}
+            />
+          )}
+          <Link href="/settings/limits" className="jr-lien jr-lien-petit jr-lien-pied">
             {t('overview.caps.settingsLink')}
           </Link>
         </Carte>

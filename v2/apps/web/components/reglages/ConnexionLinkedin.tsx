@@ -22,6 +22,8 @@ import {
   actionRepondreDefi,
   type ResultatConnexion,
 } from '../../app/actions/linkedin-connexion';
+import { ActionDeconnexion } from './ActionDeconnexion';
+import { synchroniserConfirmation, type EtatConfirmationDeconnexion } from './confirmation-deconnexion';
 
 /**
  * La fenêtre de saisie du code, côté web. Elle doit rester égale à `FENETRE_CODE_WEB_MS`
@@ -56,6 +58,9 @@ export interface ConnexionLinkedinProps {
     connecter: string;
     reconnecter: string;
     deconnecter: string;
+    /** Ce que la déconnexion arrête, dit avant de la faire. */
+    deconnecterConfirmation: string;
+    deconnecterConfirmer: string;
     annuler: string;
     valider: string;
     identifiant: string;
@@ -85,6 +90,16 @@ export function ConnexionLinkedin({
 }: ConnexionLinkedinProps) {
   const [demande, setDemande] = useState<Demande | null>(demandeInitiale);
   const [modaleOuverte, setModaleOuverte] = useState(false);
+  const [confirmation, setConfirmation] = useState<EtatConfirmationDeconnexion>({
+    demandee: false,
+    sessionVue: sessionActive,
+  });
+  // La confirmation parle d'une session : si celle-ci change (déconnexion faite, compte rebranché),
+  // la question se referme (ajustement d'état pendant le rendu, motif documenté de React).
+  const confirmationCourante = synchroniserConfirmation(confirmation, sessionActive);
+  if (confirmationCourante !== confirmation) setConfirmation(confirmationCourante);
+  const deconnexionDemandee = confirmationCourante.demandee;
+  const setDeconnexionDemandee = (demandee: boolean) => setConfirmation({ demandee, sessionVue: sessionActive });
   const [erreur, setErreur] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [restant, setRestant] = useState<number | null>(null);
@@ -176,6 +191,7 @@ export function ConnexionLinkedin({
 
   function deconnecter() {
     setErreur(null);
+    setDeconnexionDemandee(false);
     startTransition(async () => {
       const res = await actionDemanderDeconnexion();
       if (afficherErreur(res)) return;
@@ -295,12 +311,25 @@ export function ConnexionLinkedin({
       )}
 
       {!active && (
-        <div className="jr-session-boutons">
-          {sessionActive ? (
-            <button type="button" className="jr-bouton" onClick={deconnecter} disabled={pending}>
-              {libelles.deconnecter}
-            </button>
-          ) : (
+        sessionActive ? (
+          <ActionDeconnexion
+            demandee={deconnexionDemandee}
+            onDemander={() => {
+              setErreur(null);
+              setDeconnexionDemandee(true);
+            }}
+            onAnnuler={() => setDeconnexionDemandee(false)}
+            onConfirmer={deconnecter}
+            pending={pending}
+            libelles={{
+              deconnecter: libelles.deconnecter,
+              confirmation: libelles.deconnecterConfirmation,
+              confirmer: libelles.deconnecterConfirmer,
+              annuler: libelles.annuler,
+            }}
+          />
+        ) : (
+          <div className="jr-session-boutons">
             <button
               type="button"
               className="jr-bouton principal"
@@ -312,8 +341,8 @@ export function ConnexionLinkedin({
             >
               {demande?.statut === 'echec' ? libelles.reconnecter : libelles.connecter}
             </button>
-          )}
-        </div>
+          </div>
+        )
       )}
 
       {modaleOuverte && (

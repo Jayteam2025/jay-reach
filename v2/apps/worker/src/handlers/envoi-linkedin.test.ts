@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   prochain: vi.fn(),
   enregistrer: vi.fn(),
   pause: vi.fn(),
+  attente: vi.fn(),
 }));
 
 vi.mock('@jay-reach/core', async (importOriginal) => {
@@ -26,6 +27,7 @@ vi.mock('@jay-reach/core', async (importOriginal) => {
     prochainEnvoiLinkedIn: mocks.prochain,
     enregistrerResultat: mocks.enregistrer,
     mettreEnPauseEnvoiLinkedIn: mocks.pause,
+    reglerMessagePasEncoreRelation: mocks.attente,
   };
 });
 
@@ -308,6 +310,9 @@ beforeEach(() => {
   mocks.prochain.mockReset();
   mocks.enregistrer.mockReset();
   mocks.pause.mockReset();
+  // Par défaut : pas une action de séquence, donc l'échec ordinaire. Les tests de l'attente le surchargent.
+  mocks.attente.mockReset();
+  mocks.attente.mockResolvedValue({ issue: 'sans_sequence' });
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -795,7 +800,129 @@ describe('les refus de LinkedIn', () => {
     expect(w.remises).toEqual([]);
   });
 
-  it('un message vers une relation hors premier degré échoue seul, avec un motif lisible', async () => {
+  describe('un message de séquence refusé faute de relation attend l\'acceptation de l\'invitation (#169)', () => {
+    const refus = {
+      [URL_PROFIL('jeanne-dupont')]: PROFIL_OK,
+      [URL_ME]: ME_OK,
+      [URL_MESSAGE]: { statut: 403, corps: {} },
+    };
+    const arretsSequence = (w: Monde) =>
+      w.journal.filter((j) => j.startsWith('action_echec') || j.startsWith('pause_inscription'));
+
+    it('l\'attente est réglée par le cœur, SANS échec, SANS pause : la séquence n\'est pas arrêtée', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'en_attente', jours: 7 });
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(mocks.attente).toHaveBeenCalledTimes(1);
+      expect(mocks.attente.mock.calls[0]?.[1]).toMatchObject({ organizationId: ORG, queueId: 'q-1' });
+      expect(enregistrements()).toEqual([]);
+      expect(arretsSequence(w)).toEqual([]);
+      expect(w.journal.some((j) => j.startsWith('bloquer'))).toBe(false);
+    });
+
+    it('la vérification suivante est replanifiée au MINUIT SUIVANT du fuseau d\'envoi : au plus une par jour', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'en_attente', jours: 7 });
+      const w = monde({ reponses: refus, fuseau: 'Europe/Paris' });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      const { maintenant, prochaineVerification } = mocks.attente.mock.calls[0]?.[1] as {
+        maintenant: Date;
+        prochaineVerification: Date;
+      };
+      expect(prochaineVerification.getTime()).toBeGreaterThan(maintenant.getTime());
+      expect(prochaineVerification.getTime() - maintenant.getTime()).toBeLessThanOrEqual(25 * 3_600_000);
+      // Minuit à Paris : 22 h ou 23 h UTC.
+      expect([22, 23]).toContain(prochaineVerification.getUTCHours());
+      expect(prochaineVerification.getUTCMinutes()).toBe(0);
+    });
+
+    it('le délai écoulé : le message est sauté, la séquence n\'est pas arrêtée et la personne le lit dans son historique', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'saute', jours: 7, contactId: 'contact-1' });
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(enregistrements()).toEqual([]);
+      expect(arretsSequence(w)).toEqual([]);
+      expect(w.journal.some((j) => j.startsWith('autre insert into audit_events'))).toBe(true);
+    });
+
+    it('la trace du saut est un CODE et ses paramètres, jamais du français : l\'écran la traduit en fr, en et nl (#181)', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'saute', jours: 7, contactId: 'contact-1' });
+      const w = monde({ reponses: refus });
+      const ecrits: unknown[][] = [];
+      const query = w.pool.query.bind(w.pool);
+      w.pool.query = (async (sql: string, params?: unknown[]) => {
+        if (String(sql).includes('insert into audit_events')) ecrits.push(params ?? []);
+        return query(sql, params);
+      }) as typeof w.pool.query;
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(ecrits).toHaveLength(1);
+      expect(ecrits[0]?.[3]).toBe('contact-1');
+      expect(ecrits[0]?.[4]).toBe('action_skipped');
+      const diff = JSON.parse(String(ecrits[0]?.[5])) as Record<string, unknown>;
+      expect(diff).toEqual({ code: 'linkedin_message_saute', parametres: { jours: 7 } });
+    });
+
+    it('une ligne déjà réglée (réponse de la transaction perdue après le commit) : rien n\'est écrit, pas d\'échec, pas de pause', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'deja_reglee' });
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(mocks.attente).toHaveBeenCalledTimes(1);
+      expect(enregistrements()).toEqual([]);
+      expect(arretsSequence(w)).toEqual([]);
+    });
+
+    it('un journal qui échoue ne défait pas le saut', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'saute', jours: 7, contactId: 'contact-1' });
+      const w = monde({ reponses: refus });
+      const query = w.pool.query.bind(w.pool);
+      w.pool.query = (async (sql: string, params?: unknown[]) => {
+        if (String(sql).includes('audit_events')) throw new Error('base indisponible');
+        return query(sql, params);
+      }) as typeof w.pool.query;
+      avec(w, ACTION_MESSAGE);
+      await expect(traiterEnvoiLinkedIn(deps(w), JOB)).resolves.toBeUndefined();
+      expect(arretsSequence(w)).toEqual([]);
+    });
+
+    it('une ligne sans séquence (extension) garde l\'échec ordinaire', async () => {
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'cannot_message' })]);
+    });
+
+    it('la réponse d\'un opérateur ne passe jamais par l\'attente : elle échoue comme avant', async () => {
+      const w = monde({ reponses: refus });
+      avec(w, { ...ACTION_MESSAGE, origine: 'reponse' });
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(mocks.attente).not.toHaveBeenCalled();
+      expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'cannot_message' })]);
+    });
+
+    it('un autre refus d\'une invitation ne passe pas par l\'attente', async () => {
+      const w = monde({
+        reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 422, corps: { message: 'refus' } } },
+      });
+      avec(w, ACTION_INVITATION);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(mocks.attente).not.toHaveBeenCalled();
+      expect(enregistrements()).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'cannot_invite' })]);
+    });
+
+    it('une base qui échoue trois fois remonte l\'erreur nommée, sans fuite : la ligne sera réparée comme indéterminée', async () => {
+      mocks.attente.mockRejectedValue(new Error('postgres://u:secret@h/db coupé'));
+      const w = monde({ reponses: refus });
+      avec(w, ACTION_MESSAGE);
+      await expect(traiterEnvoiLinkedIn(deps(w), JOB)).rejects.toMatchObject({ name: 'EnregistrementImpossible' });
+      expect(mocks.attente).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  it('un message vers une relation hors premier degré, sans séquence, échoue seul, avec un motif lisible', async () => {
     const w = monde({
       reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 403, corps: {} } },
     });

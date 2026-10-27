@@ -12,13 +12,14 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
-import { ecrireEvenement, type ActionJournal } from '../journal.js';
+import { ecrireEvenement, lireCodeEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
 import { normaliserUrlProfil } from './sources.js';
 import { adressesLinkedinAOpposer, annulerEnvoisEnFile, poserExclusion } from '../inbox/exclusion-sur-reponse.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { lireAttentesAcceptation, type AttenteAcceptation } from '../linkedin/file.js';
 import {
   CASE_STATUT_DERIVE,
   etapeAffichee,
@@ -120,6 +121,13 @@ export interface FicheSequence {
    * message » à annoncer, `pause` porte déjà sa propre échéance (`repriseLe`).
    */
   readonly prochainMessageLe: string | null;
+  /**
+   * Le message LinkedIn de cette inscription qui attend l'acceptation de l'invitation (#183), avec sa
+   * date limite (`limiteLe`, celle du saut) ; `null` si rien n'attend. Dans ce cas `prochainMessageLe`
+   * est nul (l'échéance de l'étape suivante n'est posée qu'à l'envoi réel ou au saut) : c'est ce champ,
+   * et non l'absence de date, qui dit à l'écran POURQUOI rien n'est prévu.
+   */
+  readonly attenteAcceptation: AttenteAcceptation | null;
 }
 
 /**
@@ -339,12 +347,15 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
       [campagneId, ctx.organisationId],
     );
     const enrollmentVivante = enrollmentStatus !== null && STATUTS_INSCRIPTION_VIVANTE.has(enrollmentStatus);
-    const etapes: FicheEtape[] = etapesRes.rows.map((e) => ({
-      position: e.position + 1,
+    // `current_step` est un RANG (le séquenceur lit `order by position offset current_step`) : on le compare
+    // au rang de l'étape dans la liste, jamais à `sequence_steps.position`, qui garde les trous d'une étape
+    // supprimée — avec un trou, la fiche montrait la mauvaise étape « en cours ».
+    const etapes: FicheEtape[] = etapesRes.rows.map((_, rang) => ({
+      position: rang + 1,
       etat:
-        currentStep == null || e.position > currentStep
+        currentStep == null || rang > currentStep
           ? 'a_venir'
-          : e.position < currentStep
+          : rang < currentStep
             ? 'faite'
             : enrollmentVivante
               ? 'en_cours'
@@ -369,6 +380,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
           ? { motif: motifPauseDe(enrollmentStatus, stopReason), repriseLe: resumeAt, inscriptionId: enrollmentId! }
           : null,
       prochainMessageLe: statut === 'en_sequence' ? nextActionAt : null,
+      attenteAcceptation: (await lireAttentesAcceptation(ctx.ex, ctx.organisationId, { inscriptionId: enrollmentId }))[0] ?? null,
     };
   }
 
@@ -430,6 +442,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
     type: r.action,
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
+    ...lireCodeEvenement(r.diff),
   }));
 
   const campagnesRes = await ctx.ex.query<{ id: string; nom: string }>(
@@ -764,7 +777,7 @@ export interface ContactGlobal extends ContactCampagne {
 
 export const schemaListerContactsGlobal = z.object({
   filtre: z
-    .enum(['tous', 'a_contacter', 'sans_email', 'en_pause', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'termine', 'rebond', 'ne_plus_contacter'])
+    .enum(['tous', 'a_contacter', 'sans_email', 'en_pause', 'en_sequence', 'a_repondu', 'interesse', 'ecarte', 'en_attente_coordonnee', 'termine', 'rebond', 'ne_plus_contacter'])
     .default('tous'),
   campagneId: z.string().uuid().optional(),
   source: z.enum(['adzuna', 'francetravail', 'linkedin', 'manuel']).optional(),
@@ -1243,6 +1256,7 @@ const LIBELLES_STATUT_CSV: Record<StatutContactCampagne, string> = {
   a_repondu: 'A répondu',
   interesse: 'Intéressé',
   ecarte: 'Écarté',
+  en_attente_coordonnee: 'En attente d’une coordonnée',
   termine: 'Terminé',
   rebond: 'Rebond',
   ne_plus_contacter: 'Ne plus contacter',

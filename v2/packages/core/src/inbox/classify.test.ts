@@ -169,4 +169,80 @@ describe('classification des réponses', () => {
       expect(resultat).toEqual({ classification: 'auto_left_company' });
     });
   });
+  describe('demande d’arrêt (cas réel du 14/10 : « Stop message » resté « À traiter » treize jours)', () => {
+    const SIGNATURE = '\n\nEnvoyé : mardi 14 octobre 2026 à 10:12\nObjet : votre recrutement\n\nBonjour,';
+
+    it.each([
+      'Stop message',
+      'STOP',
+      'Stop. Ne plus me contacter.',
+      'Merci de me désinscrire de vos envois.',
+      'Veuillez me désabonner.',
+      'Unsubscribe',
+      'Please unsubscribe me from your list.',
+      'Je ne souhaite plus recevoir vos messages.',
+      'Ne plus recevoir vos emails, merci.',
+      'Schrijf me uit alstublieft.',
+    ])('« %s » est une réponse humaine, même quand l’en-tête dit « automatique »', (corps) => {
+      const entetes = { 'auto-submitted': 'auto-replied' };
+      expect(classifyByRules(corps + SIGNATURE, RECU_17_09)?.classification).toBe('human_reply');
+      expect(classifyReply(corps + SIGNATURE, entetes, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('Stop message abîmé par l’encodage (« désinscrire » en mojibake) est lu comme la forme juste', () => {
+      const abime = new TextDecoder('windows-1252').decode(new TextEncoder().encode('Merci de me désinscrire.'));
+      expect(abime).not.toContain('é');
+      expect(classifyByRules(abime, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('ne prend pas pour une demande d’arrêt un « stop » ou un désabonnement enfouis dans la signature ou la citation', () => {
+      const corps = 'Intéressant, parlons-en jeudi.\n\n' + 'x'.repeat(400) + '\nPour vous désinscrire, cliquez ici. Stop aux emails non sollicités.';
+      expect(classifyByRules(corps, RECU_17_09)).toBeNull();
+    });
+
+    it('un « vous désinscrire » de pied de page n’est pas une demande, même en tête de message', () => {
+      expect(classifyByRules('Merci. Pour vous désinscrire, cliquez ici.', RECU_17_09)).toBeNull();
+    });
+
+    it('une absence qui propose un désabonnement reste une absence', () => {
+      expect(classifyByRules('Je suis absent jusqu’au 26 août. Unsubscribe', RECU_17_09)?.classification).toBe('auto_absence');
+    });
+  });
+  describe('demande d’arrêt en tête : prioritaire sur l’absence et le départ lus dans la citation', () => {
+    it.each([
+      'Stop message\n\nDe : Alexandre\nObjet : prospection\n\nJe suis en congés jusqu’au 20 octobre.',
+      'Stop\n\n> Je suis de retour le 3 novembre.',
+      'Unsubscribe\n\nOn 14 Oct, someone wrote:\n> I no longer work at Acme.',
+      'Ne me contactez plus.\n\nLe 14 oct., Alexandre a écrit : je suis absent jusqu’au 20.',
+    ])('« %s » reste une réponse humaine', (corps) => {
+      expect(classifyByRules(corps, RECU_17_09)?.classification).toBe('human_reply');
+      expect(classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('une absence suivie d’un « Unsubscribe » en fin reste une absence', () => {
+      expect(classifyByRules('Je suis absent jusqu’au 26 août. Unsubscribe', RECU_17_09)?.classification).toBe('auto_absence');
+    });
+  });
+
+  describe('demande d’arrêt : tournures françaises à la 2e personne et à l’impératif', () => {
+    it.each([
+      'Ne me contactez plus, merci.',
+      'Ne m’envoyez plus de messages.',
+      'Ne m\'écrivez plus.',
+      'Merci de ne plus m’envoyer de courriels.',
+      'Merci de ne plus m’écrire.',
+      'Arrêtez de m’envoyer vos messages.',
+      'Arrêtez de me contacter.',
+      'Retirez-moi de votre liste.',
+      'Supprimez-moi de vos listes de diffusion.',
+      'Enlevez-moi de votre liste, s’il vous plaît.',
+    ])('« %s » est une réponse humaine malgré l’en-tête automatique', (corps) => {
+      expect(classifyReply(corps, { 'auto-submitted': 'auto-replied' }, RECU_17_09)?.classification).toBe('human_reply');
+    });
+
+    it('la même tournure enfouie après la fenêtre de lecture ne compte pas', () => {
+      const corps = 'Intéressant, parlons-en jeudi.\n\n' + 'x'.repeat(400) + '\nRetirez-moi de votre liste.';
+      expect(classifyByRules(corps, RECU_17_09)).toBeNull();
+    });
+  });
 });

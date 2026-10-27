@@ -14,6 +14,8 @@ import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
 import type { EtatEnvoi } from './aujourdhui.js';
+import { lireCanalEtape, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
+import type { CodeNomEtape } from './nom-etape.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -183,9 +185,12 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
 
   const inscriptionsRes = await ctx.ex.query<{ id: string }>(
     `update enrollments /* jr:ecarter_inscriptions */
-        set status = 'stopped', ended_at = now(), stop_reason = coalesce(stop_reason, 'operator_skip')
+        set status = 'stopped', ended_at = coalesce(ended_at, now()),
+            -- Une inscription déjà arrêtée faute de coordonnée ('not_sendable') est reprise automatiquement
+            -- quand la coordonnée arrive : écartée, elle change de motif, et la reprise ne la voit plus (#179).
+            stop_reason = case when status = 'stopped' then 'operator_skip' else coalesce(stop_reason, 'operator_skip') end
       where organization_id = $3 and contact_id = $1 and campaign_id = $2
-        and status in ('active', 'paused', 'paused_absence')
+        and (status in ('active', 'paused', 'paused_absence') or (status = 'stopped' and stop_reason = 'not_sendable'))
       returning id`,
     [contactId, campagneId, ctx.organisationId],
   );
@@ -202,6 +207,26 @@ export async function ecarterDuneCampagne(ctx: Contexte, entree: unknown): Promi
       [idsInscriptions, ctx.organisationId],
     );
   }
+
+  // Les lignes LinkedIn encore EN FILE de cette personne pour cette campagne. Une ligne qui attend
+  // l'acceptation d'une invitation vit jusqu'à N jours : écartée, elle ne doit plus jamais partir. Hors du
+  // bloc ci-dessus : une inscription `completed` (message en dernière étape) n'est pas arrêtée ici, sa ligne
+  // l'est quand même. Seules les lignes `pending` : une ligne `processing` est en train de partir. La garde
+  // de la réclamation (`reclamerProchaineAction`, 6 ter) reste le filet des chemins qui n'annulent pas.
+  await ctx.ex.query(
+    `with annulees as (
+       update linkedin_action_queue q /* jr:ecarter_file_linkedin */
+          set status = 'cancelled', error_code = 'operator_skip', updated_at = now()
+        where q.organization_id = $3 and q.status = 'pending' and q.origine = 'sequence'
+          and q.action_id in (select a.id from actions a
+                                join enrollments e on e.id = a.enrollment_id and e.organization_id = a.organization_id
+                               where a.organization_id = $3 and e.contact_id = $1 and e.campaign_id = $2)
+       returning q.action_id)
+     update actions set status = 'skipped', error = coalesce(error, 'operator_skip')
+      where organization_id = $3 and id in (select action_id from annulees)
+        and status in ('scheduled', 'approved', 'pending_approval')`,
+    [contactId, campagneId, ctx.organisationId],
+  );
 
   await ecrireEvenementEnvoi(ctx, 'action_skipped', contactId, 'Contact écarté de la campagne.', { campagneId });
 }
@@ -318,9 +343,12 @@ export interface ApercuEnvoi {
   readonly contactEntreprise: string | null;
   readonly score: number | null;
   readonly pourquoi: { titre: string; detail: string | null } | null;
-  /** 1-based (`sequence_steps.position` part de 0, même conversion que `campagnes.ts`/`aujourdhui.ts`). */
+  /** Le RANG de l'étape, 1-based (`sqlRangEtape`) — jamais `sequence_steps.position + 1`. */
   readonly etapePosition: number;
-  readonly etapeNom: string;
+  /** Le nom de l'étape, en CODE : l'écran le traduit (`campagne.sequence.nomEtape.<code>`), jamais du français ici (#181). */
+  readonly etapeCode: CodeNomEtape;
+  /** Le canal réel de l'action : le tiroir ne peut pas dire « email » d'une invitation LinkedIn. */
+  readonly canal: CanalEtapeLu;
   /** ISO de `actions.scheduled_for` — `null` si jamais programmé. */
   readonly heurePrevue: string | null;
   /** Statut réel de l'action (`actions.status`), pour que le tiroir n'affiche les boutons d'action que sur un envoi pas encore parti (R39). */
@@ -333,8 +361,10 @@ interface LigneActionApercu {
   scheduled_for: string | null;
   contact_id: string;
   campaign_id: string;
+  channel: string;
   template_parent_id: string | null;
-  position: number | null;
+  /** RANG 0-based de l'étape (`sqlRangEtape`), `null` si l'étape a été supprimée. */
+  rang: number | null;
   locale: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -356,9 +386,19 @@ function nomComplet(prenom: string | null, nom: string | null): string {
   return `${prenom ?? ''} ${nom ?? ''}`.trim() || '—';
 }
 
-/** « Premier email » pour la première étape (position 0), « Relance » ensuite — vocabulaire de la maquette, quel que soit le canal. */
-function nomEtape(position: number): string {
-  return position === 0 ? 'Premier email' : 'Relance';
+/**
+ * Le nom d'une étape selon son rang (0-based) ET son canal, en CODE (#181) : « premier_email » / « relance » pour
+ * un email (vocabulaire de la maquette, comme `codeTitreEtape` de `sequence.ts`), « invitation_linkedin » pour une
+ * invitation. Quel que soit le canal, la première étape s'appelait « Premier email » : l'aperçu d'une invitation
+ * LinkedIn l'annonçait comme un email.
+ */
+function codeNomEtape(rang: number, canal: CanalEtapeLu): CodeNomEtape {
+  if (canal === 'linkedin_invite') return 'invitation_linkedin';
+  if (canal === 'linkedin_message') return rang === 0 ? 'premier_message_linkedin' : 'relance_linkedin';
+  if (canal === 'letter') return 'courrier';
+  if (canal === 'call') return 'appel';
+  if (canal === 'autre') return 'etape';
+  return rang === 0 ? 'premier_email' : 'relance';
 }
 
 /**
@@ -377,7 +417,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   const { actionId } = valider(schemaActionId, entree);
 
   const res = await ctx.ex.query<LigneActionApercu>(
-    `select a.id, a.status, a.scheduled_for, e.contact_id, e.campaign_id, st.template_parent_id, st.position,
+    `select a.id, a.status, a.channel, a.scheduled_for, e.contact_id, e.campaign_id, st.template_parent_id, ${sqlRangEtape('st')} as rang,
             c.locale, c.first_name, c.last_name, c.job_title,
             coalesce(ac.name, sig.company_hint) as entreprise,
             s.identity as expediteur,
@@ -417,7 +457,8 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   const renduCorps = gabarit ? renderTemplate(gabarit.body, valeurs) : { text: '', missing: [] };
   const variablesManquantes = [...new Set([...renduObjet.missing, ...renduCorps.missing])];
 
-  const position = ligne.position ?? 0;
+  const rang = ligne.rang ?? 0;
+  const canal = lireCanalEtape(ligne.channel);
 
   return {
     objet: renduObjet.text,
@@ -430,8 +471,9 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
     contactEntreprise: ligne.entreprise,
     score: ligne.score,
     pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
-    etapePosition: position + 1,
-    etapeNom: nomEtape(position),
+    etapePosition: rang + 1,
+    etapeCode: codeNomEtape(rang, canal),
+    canal,
     heurePrevue: ligne.scheduled_for,
     statut: ligne.status,
   };

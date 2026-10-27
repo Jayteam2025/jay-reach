@@ -12,6 +12,7 @@ import { useState, useTransition, type ReactNode } from 'react';
 import { Bouton, Carte, Champ, Puce, TuileLogo } from '../ui';
 import type { PuceTon, TuileLogoMarque } from '../ui';
 import { actionEnregistrerCle, actionModifierConfigFournisseur, actionTesterFournisseur } from '../../app/actions/providers';
+import { DetailsTechniques } from './DetailsTechniques';
 
 export interface ChampCleFournisseur {
   name: string;
@@ -38,11 +39,16 @@ export interface ChampConfigFournisseur {
    * constantes du cœur par la page (jamais recopié en dur ici) : affiché en `placeholder`.
    */
   placeholder?: string;
+  /**
+   * Réglage qui ne se lit qu'avec le vocabulaire du serveur (identifiant brut d'un modèle) :
+   * rangé sous « Détails techniques », replié. La page montre à côté le nom lisible.
+   */
+  technique?: boolean;
 }
 
-/** Identifiant et clé masquée d'un fournisseur (tour de correction F6, point 2), sur deux lignes
- * distinctes plutôt que concaténés dans une seule chaîne : un identifiant long (client_id,
- * tenant_id…) ne partage alors jamais sa ligne avec le masque, quelle que soit sa longueur. */
+/** Identifiant et clé masquée d'un fournisseur (tour de correction F6, point 2), séparés plutôt
+ * que concaténés dans une seule chaîne. L'identifiant (client_id, tenant_id…) n'est pas pour un
+ * lecteur non technicien : il se lit sous « Détails techniques », replié, pas à côté de la clé. */
 export interface MasqueFournisseur {
   identifiant: string | null;
   masque: string;
@@ -68,6 +74,11 @@ export interface CarteFournisseurProps {
   /** 4 derniers caractères connus, pour composer le masque « ••••1234 » — la page les lit dans `config`/`last4` si elle en a, sinon un masque générique. */
   masque: MasqueFournisseur;
   infos: InfoFournisseur[];
+  /**
+   * Fournisseur dont l'application se passe : sans clé, la carte n'ouvre pas le formulaire de saisie
+   * d'office (le bouton « Remplacer » reste là), puisqu'il n'y a rien à renseigner d'urgence.
+   */
+  facultatif?: boolean;
   /** `ctx.role` au moins `admin` (brief : « rôle admin pour les écritures ») — sinon la carte est lecture seule, sans « Remplacer »/« Tester » ni formulaire. */
   peutModifier: boolean;
   libelles: {
@@ -80,6 +91,7 @@ export interface CarteFournisseurProps {
     placeholderSecret: string;
     reglagesTitre: string;
     enregistrerReglages: string;
+    detailsTechniques: string;
   };
 }
 
@@ -94,10 +106,11 @@ export function CarteFournisseur({
   presente,
   masque,
   infos,
+  facultatif = false,
   peutModifier,
   libelles,
 }: CarteFournisseurProps) {
-  const [enEdition, setEnEdition] = useState(peutModifier && !presente);
+  const [enEdition, setEnEdition] = useState(peutModifier && !presente && !facultatif);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   const [valeursConfig, setValeursConfig] = useState<Record<string, string>>({});
   const [pendingSave, startSave] = useTransition();
@@ -106,6 +119,11 @@ export function CarteFournisseur({
   const [erreur, setErreur] = useState<string | null>(null);
 
   const champSecret = champs.find((c) => c.secret);
+  const champsVisibles = champsConfig.filter((c) => !c.technique);
+  const champsTechniques = champsConfig.filter((c) => c.technique);
+  // L'identifiant (client_id, tenant_id…) se lit sous « Détails techniques » tant que la clé n'est
+  // pas en cours de remplacement ; pendant l'édition il est déjà dans le formulaire.
+  const identifiantVisible = presente && !enEdition ? masque.identifiant : null;
 
   function annuler() {
     setValeurs({});
@@ -155,6 +173,12 @@ export function CarteFournisseur({
     });
   }
 
+  const boutonEnregistrerReglages = (
+    <Bouton variante="principal" taille="petit" onClick={enregistrerConfig} disabled={pendingConfig} aria-busy={pendingConfig}>
+      {pendingConfig ? libelles.enregistrementEnCours : libelles.enregistrerReglages}
+    </Bouton>
+  );
+
   return (
     <Carte
       entete={
@@ -181,10 +205,7 @@ export function CarteFournisseur({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span className="jr-champ jr-champ-cle">
                 {presente ? (
-                  <>
-                    {masque.identifiant && <span className="identifiant">{masque.identifiant}</span>}
-                    <span>{masque.masque}</span>
-                  </>
+                  <span>{masque.masque}</span>
                 ) : (
                   '—'
                 )}
@@ -246,31 +267,67 @@ export function CarteFournisseur({
         ))}
       </div>
 
-      {champsConfig.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--jr-filet)', margin: '12px 18px 0', paddingTop: 12 }}>
-          <span className="jr-libelle">{libelles.reglagesTitre}</span>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 6 }}>
-            {champsConfig.map((champ) => (
-              <div key={champ.name}>
-                <Champ libelle={champ.libelle} id={`${providerId}-cfg-${champ.name}`}>
-                  <input
-                    id={`${providerId}-cfg-${champ.name}`}
-                    value={valeursConfig[champ.name] ?? champ.valeurActuelle}
-                    onChange={(e) => setValeursConfig((v) => ({ ...v, [champ.name]: e.target.value }))}
+      {(champsConfig.length > 0 || identifiantVisible) && (
+        // Un seul filet : quand le bloc n'a que des détails techniques, le repli (`jr-repli`) pose
+        // déjà le sien ; le filet du bloc n'a de raison d'être qu'au-dessus de réglages visibles.
+        <div
+          style={
+            champsVisibles.length > 0
+              ? { borderTop: '1px solid var(--jr-filet)', margin: '12px 18px 0', paddingTop: 12 }
+              : { margin: '0 18px' }
+          }
+        >
+          {champsVisibles.length > 0 && (
+            <>
+              <span className="jr-libelle">{libelles.reglagesTitre}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 6 }}>
+                {champsVisibles.map((champ) => (
+                  <ChampReglage
+                    key={champ.name}
+                    providerId={providerId}
+                    champ={champ}
+                    valeur={valeursConfig[champ.name] ?? champ.valeurActuelle}
+                    onChange={(valeur) => setValeursConfig((v) => ({ ...v, [champ.name]: valeur }))}
                     disabled={!peutModifier || pendingConfig}
-                    placeholder={champ.placeholder}
                   />
-                </Champ>
-                {champ.aide && <div className="jr-aide">{champ.aide}</div>}
+                ))}
               </div>
-            ))}
-          </div>
-          {peutModifier && (
-            <div style={{ marginTop: 8 }}>
-              <Bouton variante="principal" taille="petit" onClick={enregistrerConfig} disabled={pendingConfig} aria-busy={pendingConfig}>
-                {pendingConfig ? libelles.enregistrementEnCours : libelles.enregistrerReglages}
-              </Bouton>
-            </div>
+              {peutModifier && (
+                <div style={{ marginTop: 8 }}>{boutonEnregistrerReglages}</div>
+              )}
+            </>
+          )}
+          {(champsTechniques.length > 0 || identifiantVisible) && (
+            <DetailsTechniques titre={libelles.detailsTechniques}>
+              {identifiantVisible && (
+                <p className="jr-aide" style={{ margin: '0 0 8px' }}>
+                  <span className="identifiant">{identifiantVisible}</span>
+                </p>
+              )}
+              {champsTechniques.length > 0 && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                    {champsTechniques.map((champ) => (
+                      <ChampReglage
+                        key={champ.name}
+                        providerId={providerId}
+                        champ={champ}
+                        valeur={valeursConfig[champ.name] ?? champ.valeurActuelle}
+                        onChange={(valeur) => setValeursConfig((v) => ({ ...v, [champ.name]: valeur }))}
+                        disabled={!peutModifier || pendingConfig}
+                      />
+                    ))}
+                  </div>
+                  {/* Un seul bouton enregistre tous les réglages de la carte : il suit les champs
+                      visibles quand il y en a, et vit ici quand il n'y a que du technique. */}
+                  {peutModifier && champsVisibles.length === 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      {boutonEnregistrerReglages}
+                    </div>
+                  )}
+                </>
+              )}
+            </DetailsTechniques>
           )}
         </div>
       )}
@@ -281,5 +338,30 @@ export function CarteFournisseur({
         </div>
       )}
     </Carte>
+  );
+}
+
+interface ChampReglageProps {
+  providerId: string;
+  champ: ChampConfigFournisseur;
+  valeur: string;
+  onChange: (valeur: string) => void;
+  disabled: boolean;
+}
+
+function ChampReglage({ providerId, champ, valeur, onChange, disabled }: ChampReglageProps) {
+  return (
+    <div>
+      <Champ libelle={champ.libelle} id={`${providerId}-cfg-${champ.name}`}>
+        <input
+          id={`${providerId}-cfg-${champ.name}`}
+          value={valeur}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder={champ.placeholder}
+        />
+      </Champ>
+      {champ.aide && <div className="jr-aide">{champ.aide}</div>}
+    </div>
   );
 }

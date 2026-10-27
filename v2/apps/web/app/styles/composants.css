@@ -761,7 +761,7 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-valeur-arretee { color: var(--jr-attention); }
 
 /* La liste de démarrage de l'écran Aujourd'hui (lot 5). Elle n'est pas un tutoriel : elle lit six
-   vérités en base, disparaît quand tout tient, et revient quand un branchement lâche. */
+   vérités en base, reste jusqu'à ce que l'opérateur la ferme, et revient quand un branchement lâche. */
 /* Le conteneur de tête porte l'espacement : la carte n'ajoute pas le sien. */
 .jr-demarrage { margin-bottom: 0; }
 .jr-demarrage-entete { padding: 14px 18px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
@@ -781,6 +781,8 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-demarrage-quoi { flex: 1; min-width: 0; }
 .jr-demarrage-quoi b { display: block; font-weight: 600; font-size: var(--jr-corps); }
 .jr-demarrage-quoi small { display: block; margin-top: 1px; color: var(--jr-secondaire); font-size: var(--jr-petit); }
+.jr-demarrage-pied { display: flex; justify-content: flex-end; padding: 10px 18px 12px; border-top: 1px solid var(--jr-filet); }
+.jr-demarrage-pied button { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; }
 .jr-demarrage-ligne--faite .jr-demarrage-quoi b { font-weight: 500; color: var(--jr-secondaire); }
 .jr-demarrage-ligne--cassee .jr-demarrage-quoi small { color: var(--jr-erreur); }
 .jr-demarrage-mesure { flex: none; color: var(--jr-secondaire); font-size: var(--jr-petit); }

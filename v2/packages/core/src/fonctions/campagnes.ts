@@ -12,11 +12,13 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
-import { ecrireEvenement, type ActionJournal } from '../journal.js';
+import { ecrireEvenement, lireCodeEvenement, type ActionJournal, type CodeEvenement, type ParametresEvenement } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { lireAttentesAcceptation, type AttenteAcceptation } from '../linkedin/file.js';
 import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
+import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
 import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
@@ -42,6 +44,7 @@ export type StatutContactCampagne =
   | 'a_repondu'
   | 'interesse'
   | 'ecarte'
+  | 'en_attente_coordonnee'
   | 'termine'
   | 'rebond'
   | 'ne_plus_contacter';
@@ -53,6 +56,7 @@ export const ORDRE_STATUTS: readonly StatutContactCampagne[] = [
   'interesse',
   'a_repondu',
   'ecarte',
+  'en_attente_coordonnee',
   'termine',
   'en_pause',
   'en_sequence',
@@ -86,7 +90,11 @@ export const CASE_STATUT_DERIVE = `case
         select 1 from threads t where t.contact_id = c.id and t.interest = 'interested'
       ) then 'interesse'
       when e.status = 'replied' then 'a_repondu'
-      when s.status = 'discarded' or e.status = 'stopped' then 'ecarte'
+      when s.status = 'discarded' then 'ecarte'
+      -- Arrêtée faute de coordonnée (email ou URL LinkedIn manquante) : le producteur la reprend tout seul quand
+      -- elle arrive (reprendreInscriptionsSansCoordonnee). Ce n'est pas un écart, l'opérateur n'a rien décidé.
+      when e.status = 'stopped' and e.stop_reason = 'not_sendable' then 'en_attente_coordonnee'
+      when e.status = 'stopped' then 'ecarte'
       when e.status = 'completed' then 'termine'
       when e.status in ('paused', 'paused_absence') then 'en_pause'
       when e.status = 'active' then 'en_sequence'
@@ -462,6 +470,8 @@ export interface CampagneListeResume {
    * sous-titre court, contrairement à `VueDEnsemble.listeSource`.
    */
   readonly listeSource: { readonly nom: string; readonly autresListes: number } | null;
+  /** Canaux des étapes de la séquence, dans l'ordre : la colonne Boîtes n'a de sens que s'il y a une étape email. */
+  readonly canauxEtapes: readonly CanalEtapeLu[];
 }
 
 export interface CampagneEnTete {
@@ -472,6 +482,11 @@ export interface CampagneEnTete {
   readonly scoreMin: number;
   readonly relecturePremiersEnvois: number;
   readonly dailyCap: number | null;
+  /**
+   * Les canaux des étapes de la séquence, dans l'ordre. Les boîtes d'envoi, SalesBlink et le vocabulaire d'email
+   * ne concernent la campagne que s'il y figure au moins une étape `email`.
+   */
+  readonly canauxEtapes: readonly CanalEtapeLu[];
 }
 
 /** Marches communes aux deux natures de campagne (point 1 et point 2, tour de correction 5). */
@@ -551,13 +566,26 @@ export interface Evenement {
   readonly libelle: string | null;
   readonly detail: string | null;
   /**
+   * Événement en CODE (#181) : le texte n'est pas stocké, `libelle` est alors vide et l'écran traduit `code`
+   * avec `parametres` (`campagne.fiche.history.codes.<code>`). Absent pour un événement ancien en texte libre,
+   * qui garde son `libelle` français en repli.
+   */
+  readonly code?: CodeEvenement;
+  readonly parametres?: ParametresEvenement;
+  /**
    * Donnée structurée d'un événement « envois groupés » (point 3.a, revue F5
    * point 4) — `n` emails envoyés, `etape` (1-based, tel qu'affiché à
    * l'écran ; `null` si l'action n'a plus d'étape rattachée), `boites`
    * distinctes. Absent pour tout autre événement, qui garde son texte tel
    * quel dans `libelle`.
    */
-  readonly donneesEnvois?: { readonly n: number; readonly etape: number | null; readonly boites: number };
+  readonly donneesEnvois?: {
+    readonly n: number;
+    readonly etape: number | null;
+    readonly boites: number;
+    /** Le canal du groupe : « 24 emails remis · 3 boîtes » ne se dit pas d'invitations LinkedIn (aucune boîte). */
+    readonly canal: 'email' | 'linkedin' | 'autre';
+  };
 }
 
 export interface VueDEnsemble {
@@ -731,6 +759,7 @@ interface LigneCampagneListe {
   derniere_activite: string | null;
   /** `sqlListeSourceResumeCampagne` (revue F5, point 1) — `null` pour une campagne à sources. */
   liste_source: { nom: string; autres: number } | null;
+  canaux_etapes: string[];
 }
 
 /** Une campagne réduite à ce qu'un menu déroulant affiche (`listerCampagnesPourFiltre`). */
@@ -785,7 +814,8 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
                 (select max(a5.dispatched_at) from actions a5 join enrollments e5 on e5.id = a5.enrollment_id where e5.campaign_id = c.id),
                 (select max(e6.ended_at) from enrollments e6 where e6.campaign_id = c.id and e6.status = 'replied')
               ) as derniere_activite,
-              ${sqlListeSourceResumeCampagne('c.id')} as liste_source
+              ${sqlListeSourceResumeCampagne('c.id')} as liste_source,
+              ${sqlCanauxEtapes('c.id')} as canaux_etapes
          from campaigns c /* jr:campagnes_liste */
         where c.organization_id = $1
         order by c.created_at desc`,
@@ -872,6 +902,7 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     interesses: r.interesses,
     derniereActivite: r.derniere_activite,
     listeSource: r.liste_source ? { nom: r.liste_source.nom, autresListes: r.liste_source.autres } : null,
+    canauxEtapes: lireCanauxEtapes(r.canaux_etapes),
   }));
 }
 
@@ -887,12 +918,14 @@ interface LigneCampagneEnTete {
   status: CampaignStatus;
   entry_rules: unknown;
   daily_cap: number | null;
+  canaux_etapes: string[];
 }
 
 async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<CampagneEnTete> {
   const [res, toutesBoites, reglages] = await Promise.all([
     ctx.ex.query<LigneCampagneEnTete>(
-      `select id, name, status, entry_rules, daily_cap from campaigns /* jr:campagne_entete */ where id = $1 and organization_id = $2`,
+      `select id, name, status, entry_rules, daily_cap, ${sqlCanauxEtapes('campaigns.id')} as canaux_etapes
+         from campaigns /* jr:campagne_entete */ where id = $1 and organization_id = $2`,
       [campagneId, ctx.organisationId],
     ),
     boitesActivesDeLOrganisation(ctx),
@@ -913,6 +946,7 @@ async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<Ca
         ? entryRules.relecturePremiersEnvois
         : Number(reglages.relecture_premiers_envois_defaut),
     dailyCap: ligne.daily_cap,
+    canauxEtapes: lireCanauxEtapes(ligne.canaux_etapes),
   };
 }
 
@@ -1152,7 +1186,7 @@ function versEnvoiPrevu(r: LigneEnvoi, fuseau: string, extraits: ReadonlyMap<str
     envoye: r.dispatched_at !== null,
     livre: estReellementParti(r.channel, r.dispatched_at, r.delivered_at),
     contactNom: nomComplet(r.first_name, r.last_name),
-    // `sequence_steps.position` part de 0 — +1 pour l'affichage (même conversion qu'`aujourdhui.ts`).
+    // `r.etape` est un RANG 0-based (`sqlRangEtape`) — +1 pour l'affichage, jamais `position + 1`.
     etape: r.etape !== null ? r.etape + 1 : null,
     campagneNom: r.campagne_nom,
     expediteur: r.expediteur,
@@ -1271,7 +1305,7 @@ async function lireEnvoisDuJour(
       `select a.id, a.status, a.dispatched_at, a.delivered_at, a.scheduled_for, a.dispatch_after, a.channel,
               a.block_reason, a.error, a.payload ->> 'subject' as objet, a.sender_id,
               c.first_name, c.last_name, c.job_title, c.source_signal_id as signal_id,
-              camp.name as campagne_nom, st.position as etape, s.identity as expediteur,
+              camp.name as campagne_nom, ${sqlRangEtape('st')} as etape, s.identity as expediteur,
               e.contact_id, lm.raw_row,
               -- L'objet d'un email se replie sur le NOM du gabarit, à l'envoi
               -- (email-salesblink.ts : subject ?? name) comme à l'aperçu
@@ -1600,11 +1634,18 @@ export async function listerFileDuJour(
   plafondDuJour: number | null;
   /** Revue F5, point 10 — voir `VueDEnsemble.projectionFileDuJour` (même calcul, même sens). */
   projection: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
+  /**
+   * Messages LinkedIn de séquence qui attendent l'acceptation d'une invitation (#183), QUEL QUE SOIT
+   * le jour de leur `scheduled_for` d'origine et quel que soit `jour` : c'est un état courant, pas un
+   * envoi daté. Absents de `prevus` et de `partis` (l'action garde sa date d'origine, parfois ancienne).
+   * Chacun porte sa date limite (`limiteLe`), celle du saut.
+   */
+  enAttenteAcceptation: AttenteAcceptation[];
 }> {
   exiger(ctx, 'viewer');
   const { campagneId, jour } = valider(schemaFileDuJour, entree);
 
-  const [{ envois, projection }, plafondDuJour] = await Promise.all([
+  const [{ envois, projection }, plafondDuJour, enAttenteAcceptation] = await Promise.all([
     lireEnvoisDuJour(ctx, { campagneId, jour }),
     (async () => {
       if (!campagneId) return lirePlafondEnvois(ctx);
@@ -1615,6 +1656,7 @@ export async function listerFileDuJour(
       if (capRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
       return capRes.rows[0]!.daily_cap ?? (await lirePlafondEnvois(ctx));
     })(),
+    lireAttentesAcceptation(ctx.ex, ctx.organisationId, { campagneId }),
   ]);
 
   return {
@@ -1625,6 +1667,7 @@ export async function listerFileDuJour(
     partis: envois.filter((e) => e.livre),
     plafondDuJour,
     projection,
+    enAttenteAcceptation,
   };
 }
 
@@ -1671,17 +1714,26 @@ function versEvenementAudit(r: LigneAuditEvenement): Evenement {
     type: r.action,
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
+    ...lireCodeEvenement(r.diff),
   };
 }
 
 interface LigneEnvoiGroupe {
   /** `date_trunc('hour', a.dispatched_at)`, `timestamptz` : `pg` le renvoie en objet `Date`, pas une chaîne (F4, `temps.ts`). */
   heure: string | Date;
-  /** `sequence_steps.position`, 0-based — `null` si l'action n'a plus d'étape rattachée (supprimée). */
+  /** RANG de l'étape (`sqlRangEtape`), 0-based — `null` si l'action n'a plus d'étape rattachée (supprimée). */
   etape: number | null;
+  /** `actions.channel` : une ligne par (heure, étape, canal), jamais un groupe qui mêle email et LinkedIn. */
+  canal: string;
   n: number;
-  /** Boîtes distinctes ayant servi à ce groupe (`count(distinct a.sender_id)`). */
+  /** Boîtes distinctes ayant servi à ce groupe (`count(distinct a.sender_id)`) — 0 pour LinkedIn, qui n'en a pas. */
   boites: number;
+}
+
+function canalDuGroupe(canal: string): 'email' | 'linkedin' | 'autre' {
+  if (canal === 'email') return 'email';
+  if (canal.startsWith('linkedin')) return 'linkedin';
+  return 'autre';
 }
 
 /**
@@ -1699,16 +1751,15 @@ export function evenementsEnvoisGroupes(lignes: readonly LigneEnvoiGroupe[]): Ev
     // Forme publique honnête (`Evenement.quand: string`), même conversion que `versEvenementAudit`.
     const heureIso = new Date(r.heure).toISOString();
     return {
-      id: `envois-${heureIso}-${r.etape ?? 'x'}`,
+      id: `envois-${heureIso}-${r.etape ?? 'x'}-${r.canal}`,
       quand: heureIso,
       type: 'action_sent',
       // Revue F5, point 4 : plus de texte français construit ici — `donneesEnvois` porte la
       // donnée brute, la page la rend avec une clé ICU dans les trois catalogues.
       libelle: null,
       detail: null,
-      // `sequence_steps.position` part de 0 — +1 pour l'affichage (même conversion que partout
-      // ailleurs dans ce fichier, ex. `versEnvoiPrevu`).
-      donneesEnvois: { n: r.n, etape: r.etape !== null ? r.etape + 1 : null, boites: r.boites },
+      // Rang 0-based (`sqlRangEtape`) — +1 pour l'affichage (même conversion que `versEnvoiPrevu`).
+      donneesEnvois: { n: r.n, etape: r.etape !== null ? r.etape + 1 : null, boites: r.boites, canal: canalDuGroupe(r.canal) },
     };
   });
 }
@@ -1752,7 +1803,7 @@ async function listerActiviteTout(ctx: Contexte, campagneId: string, page: numbe
       [campagneId, ctx.organisationId, BORNE_AUDIT_TOUT],
     ),
     ctx.ex.query<LigneEnvoiGroupe>(
-      `select date_trunc('hour', a.dispatched_at) as heure, st.position as etape,
+      `select date_trunc('hour', a.dispatched_at) as heure, ${sqlRangEtape('st')} as etape, a.channel::text as canal,
               count(*)::int as n, count(distinct a.sender_id)::int as boites
          from actions a /* jr:activite_campagne_tout_envois */
          join enrollments e on e.id = a.enrollment_id
@@ -1760,7 +1811,7 @@ async function listerActiviteTout(ctx: Contexte, campagneId: string, page: numbe
         where e.campaign_id = $1
           and a.status in ('dispatched', 'delivered')
           and a.dispatched_at is not null
-        group by 1, 2
+        group by 1, 2, 3
         order by 1 desc
         limit $2`,
       [campagneId, BORNE_ENVOIS_GROUPES_TOUT],
@@ -2126,7 +2177,9 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
 
   const sansMessage = etapes.filter((e) => e.channel !== 'call' && !e.template_parent_id);
   if (sansMessage.length > 0) {
-    const numeros = sansMessage.map((e) => e.position + 1).join(', ');
+    // Le RANG de l'étape (sa place dans la séquence), jamais `position + 1` : `position` garde les trous
+    // laissés par une étape supprimée, et l'opérateur compte les étapes qu'il voit.
+    const numeros = sansMessage.map((e) => etapes.indexOf(e) + 1).join(', ');
     manques.push(
       sansMessage.length === 1 ? `l’étape ${numeros} n’a pas de message relié` : `les étapes ${numeros} n’ont pas de message relié`,
     );
@@ -2150,7 +2203,7 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
     if (avecCorps.rowCount && avecCorps.rowCount > 0) {
       const numeros = invitationsAvecNote
         .filter((e) => avecCorps.rows.some((r) => r.parent === e.template_parent_id))
-        .map((e) => e.position + 1)
+        .map((e) => etapes.indexOf(e) + 1)
         .join(', ');
       manques.push(
         `l’invitation LinkedIn de l’étape ${numeros} porte une note, que l’envoi serveur ne sait pas encore transmettre : retirez-la du message`,

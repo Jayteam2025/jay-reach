@@ -1,4 +1,4 @@
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { HARD_CAP_7_DAYS, hasMinRole, lireReglages, lireVolumeEnvoiLinkedIn } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
@@ -9,7 +9,7 @@ import { Puce } from '../../../../components/ui';
 import { CarteBoite } from '../../../../components/reglages/CarteBoite';
 import { CarteSessionLinkedIn } from '../../../../components/reglages/CarteSessionLinkedIn';
 import { BoutonRelierBoite } from '../../../../components/reglages/BoutonRelierBoite';
-import { phraseEtatSession } from '../../../../components/reglages/linkedin-session-affichage';
+import { nomDuPays, phraseEtatSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 /**
  * Réglages › Expéditeurs (tâche 20) : boîtes email (état SalesBlink,
@@ -36,6 +36,16 @@ export default async function ReglagesExpediteursPage() {
   const boites = boitesResultat.ok ? boitesResultat.valeur : [];
   const fuseau = String(reglages.fuseau);
   const maintenant = new Date();
+
+  // La sortie réseau se dit comme sur l'écran LinkedIn : le genre de sortie et le pays en toutes
+  // lettres (relevé à l'ouverture de la session, jamais supposé), le reste en détails techniques.
+  const locale = await getLocale();
+  const pays = nomDuPays(sessionLinkedIn?.pays, locale);
+  const sortieTexte = !sessionLinkedIn?.ipVue
+    ? null
+    : pays
+      ? tLinkedin('faits.sortieValeur', { pays })
+      : tLinkedin('faits.sortieValeurSansPays');
 
   const auMoinsUneBoiteReliee = boites.some((b) => b.providerRef !== null);
 
@@ -89,6 +99,7 @@ export default async function ReglagesExpediteursPage() {
           l'extension gelée, et déclarait « aucun envoi ne partira » sur un expéditeur actif. */}
       <CarteSessionLinkedIn
         session={sessionLinkedIn}
+        sortieTexte={sortieTexte}
         etat={{
           ton: phraseEtatSession(sessionLinkedIn).ton,
           phrase: tLinkedin(`etat.${phraseEtatSession(sessionLinkedIn).cle}.phrase`),
@@ -111,6 +122,9 @@ export default async function ReglagesExpediteursPage() {
           compte: t('linkedin.serveur.compte'),
           comptePasEncore: t('linkedin.serveur.comptePasEncore'),
           sortie: t('linkedin.serveur.sortie'),
+          detailsTechniques: tLinkedin('faits.detailsTechniques'),
+          ip: tLinkedin('faits.ip'),
+          operateur: tLinkedin('faits.operateur'),
           envoisSemaine: t('linkedin.serveur.envoisSemaine'),
           derniereCollecte: t('linkedin.serveur.derniereCollecte'),
           jamais: t('linkedin.serveur.jamais'),

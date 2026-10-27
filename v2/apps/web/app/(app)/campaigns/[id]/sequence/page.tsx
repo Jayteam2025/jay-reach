@@ -50,7 +50,7 @@ export default async function CampagneSequencePage({
           etape={{
             id: etape.id,
             position: etape.position,
-            titre: etape.titre,
+            titre: t(`nomEtape.${etape.titreCode}`),
             // Le canal non collapsé : le tiroir distingue invitation et message.
             canal: etape.canalDetaille,
             sujet: etape.sujet ?? '',

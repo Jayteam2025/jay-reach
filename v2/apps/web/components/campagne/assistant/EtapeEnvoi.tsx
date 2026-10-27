@@ -32,6 +32,8 @@ export interface EtapeEnvoiLibelles {
 
 export interface EtapeEnvoiProps {
   boites: readonly BoiteEnvoiAssistant[];
+  /** Faux quand la séquence ne contient aucune étape email : les boîtes ne concernent alors pas la campagne. */
+  afficherBoites: boolean;
   boiteIdsDesactivees: ReadonlySet<string>;
   onToggleBoite: (id: string, actif: boolean) => void;
   /** Au moins une boîte connectée mais aucune cochée (R71) : « Créer et lancer » se désactive côté appelant, cette aide l'explique. */
@@ -47,6 +49,7 @@ export interface EtapeEnvoiProps {
 /** Étape « Envoi » de l'assistant (maquette `nouvelle-campagne-4.html`) : boîtes, relecture, récapitulatif final. */
 export function EtapeEnvoi({
   boites,
+  afficherBoites,
   boiteIdsDesactivees,
   onToggleBoite,
   aucuneBoiteActive,
@@ -59,31 +62,33 @@ export function EtapeEnvoi({
 }: EtapeEnvoiProps) {
   return (
     <>
-      <Carte titre={libelles.boitesTitre}>
-        {boites.length === 0 ? (
-          <p className="jr-aide">{libelles.boitesVide}</p>
-        ) : (
-          boites.map((boite) => (
-            // `.avec-logo` (tour de correction 2, R62) : trois enfants (tuile,
-            // adresse, interrupteur), une colonne de plus que le `.jr-boite`
-            // nu de l'onglet Réglages (deux enfants, jamais de tuile).
-            <div key={boite.id} className="jr-boite avec-logo">
-              {/* Boîte de marque inconnue (domaine propre) : repli sur la tuile « @ », comme `PileDeBoites` (tâche 9) — jamais aucune tuile. */}
-              <TuileLogo marque={boite.marque ?? 'email'} />
-              <span>
-                <b>{boite.identite}</b>
-              </span>
-              <Interrupteur
-                actif={!boiteIdsDesactivees.has(boite.id)}
-                libelle={boite.identite}
-                disabled={disabled}
-                onChange={(actif) => onToggleBoite(boite.id, actif)}
-              />
-            </div>
-          ))
-        )}
-        {aucuneBoiteActive && <p className="jr-aide">{libelles.boitesAucuneActive}</p>}
-      </Carte>
+      {afficherBoites && (
+        <Carte titre={libelles.boitesTitre}>
+          {boites.length === 0 ? (
+            <p className="jr-aide">{libelles.boitesVide}</p>
+          ) : (
+            boites.map((boite) => (
+              // `.avec-logo` (tour de correction 2, R62) : trois enfants (tuile,
+              // adresse, interrupteur), une colonne de plus que le `.jr-boite`
+              // nu de l'onglet Réglages (deux enfants, jamais de tuile).
+              <div key={boite.id} className="jr-boite avec-logo">
+                {/* Boîte de marque inconnue (domaine propre) : repli sur la tuile « @ », comme `PileDeBoites` (tâche 9) — jamais aucune tuile. */}
+                <TuileLogo marque={boite.marque ?? 'email'} />
+                <span>
+                  <b>{boite.identite}</b>
+                </span>
+                <Interrupteur
+                  actif={!boiteIdsDesactivees.has(boite.id)}
+                  libelle={boite.identite}
+                  disabled={disabled}
+                  onChange={(actif) => onToggleBoite(boite.id, actif)}
+                />
+              </div>
+            ))
+          )}
+          {aucuneBoiteActive && <p className="jr-aide">{libelles.boitesAucuneActive}</p>}
+        </Carte>
+      )}
 
       <Carte>
         <div className="jr-formulaire">

@@ -8,6 +8,7 @@ import {
   libelleJour,
   quandRelatif,
   regrouperParJour,
+  sansPointFinal,
 } from './dates';
 
 describe('dateRelativeCourte', () => {
@@ -231,5 +232,33 @@ describe('quandRelatif', () => {
   it('un instant plus ancien rend « il y a N j »', () => {
     const maintenant = new Date('2026-01-15T10:00:00.000Z');
     expect(quandRelatif('2026-01-10T10:00:00.000Z', maintenant)).toBe('il y a 5 j');
+  });
+});
+
+describe('sansPointFinal', () => {
+  it('retire le point d’une date abrégée, que le gabarit remet lui-même', () => {
+    expect(sansPointFinal('14 oct.')).toBe('14 oct');
+  });
+
+  it('laisse intacte une date qui ne finit pas par un point', () => {
+    expect(sansPointFinal('hier')).toBe('hier');
+    expect(sansPointFinal('il y a 3 h')).toBe('il y a 3 h');
+  });
+
+  it('la phrase du gabarit réel n’a plus de double point, avec ou sans abréviation', () => {
+    const maintenant = new Date('2026-10-27T10:00:00Z');
+    const gabarit = (depuis: string, collecte: string) =>
+      `Connectée : ${sansPointFinal(depuis)}. Dernière collecte : ${sansPointFinal(collecte)}.`;
+    const abregee = gabarit(
+      dateCourte('2026-10-14T08:00:00Z', maintenant, 'Europe/Paris'),
+      dateRelativeCourte('2026-10-12T08:00:00Z', maintenant, 'Europe/Paris'),
+    );
+    expect(abregee).toBe('Connectée : 14 oct. Dernière collecte : 12 oct.');
+    expect(abregee).not.toContain('..');
+    const relative = gabarit(
+      dateCourte('2026-10-14T08:00:00Z', maintenant, 'Europe/Paris'),
+      dateRelativeCourte('2026-10-27T08:30:00Z', maintenant, 'Europe/Paris'),
+    );
+    expect(relative).toBe('Connectée : 14 oct. Dernière collecte : il y a 1 h.');
   });
 });

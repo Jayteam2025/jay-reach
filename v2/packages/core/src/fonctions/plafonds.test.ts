@@ -7,6 +7,8 @@ import { HARD_CAP_7_DAYS } from '../linkedin/pacing.js';
 import { SEUIL_MINUTES_PAR_ACTION } from './aujourdhui.js';
 import {
   CLES_REGLAGES,
+  ageMaxEnrichissementJours,
+  resoudreAgeMaxEnrichissement,
   RYTHMES,
   ecrireReglage,
   ecrireRythme,
@@ -568,6 +570,82 @@ describe('linkedin_releve_intervalle_min — intervalle de relève', () => {
 
   it('le défaut est de 30 minutes', async () => {
     expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(30);
+  });
+});
+
+describe('linkedin_attente_acceptation_jours — attente de l’acceptation d’une invitation', () => {
+  const CLE = 'linkedin_attente_acceptation_jours';
+
+  it('le défaut est de 7 jours et aucune variable d’environnement ne le porte', async () => {
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(7);
+    expect(CLES_REGLAGES.find((r) => r.cle === CLE)?.env).toBeUndefined();
+  });
+
+  it('écrit et relit la valeur réglée à l’écran', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: CLE, value: 10 }] });
+    await ecrireReglage(ctx, { cle: CLE, valeur: 10 });
+    expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/insert into organization_settings/i), expect.any(Array));
+    expect((await lireReglages(ctx))[CLE]).toBe(10);
+  });
+
+  it('accepte 0 (ne pas attendre) et 90, refuse 91 et une chaîne', () => {
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 0 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 90 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 91 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: '7' }).success).toBe(false);
+  });
+});
+
+describe('enrichissement_age_max_jours : âge du signal pour acheter une adresse', () => {
+  const CLE = 'enrichissement_age_max_jours';
+  const env = process.env.SIGNAL_MAX_AGE_DAYS;
+  afterEach(() => {
+    if (env === undefined) delete process.env.SIGNAL_MAX_AGE_DAYS;
+    else process.env.SIGNAL_MAX_AGE_DAYS = env;
+  });
+
+  it('le défaut est 14, et SIGNAL_MAX_AGE_DAYS n’est que le repli de la ligne absente', async () => {
+    delete process.env.SIGNAL_MAX_AGE_DAYS;
+    expect(CLES_REGLAGES.find((r) => r.cle === CLE)).toEqual({ cle: CLE, defaut: 14, env: 'SIGNAL_MAX_AGE_DAYS' });
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(14);
+    process.env.SIGNAL_MAX_AGE_DAYS = '21';
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(21);
+    // La ligne de l'organisation l'emporte sur l'environnement.
+    expect((await lireReglages(faux({ 'from organization_settings': [{ key: CLE, value: 5 }] })))[CLE]).toBe(5);
+  });
+
+  it('borne de 1 jour à la rétention réelle des signaux (SIGNAL_MAX_AGE_DAYS, 14 par défaut)', () => {
+    delete process.env.SIGNAL_MAX_AGE_DAYS;
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 1 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 14 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 0 }).success).toBe(false);
+    const trop = schemaEcrireReglage.safeParse({ cle: CLE, valeur: 15 });
+    expect(trop.success).toBe(false);
+    expect(trop.success ? '' : trop.error.issues[0]?.message).toMatch(/entre 1 et 14 jours/);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: '7' }).success).toBe(false);
+  });
+
+  it('la borne haute suit la rétention quand la variable est posée', () => {
+    process.env.SIGNAL_MAX_AGE_DAYS = '30';
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 30 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 31 }).success).toBe(false);
+  });
+
+  it('resoudreAgeMaxEnrichissement : repli si absent, invalide ou sous 1 ; borné à la rétention', () => {
+    expect(resoudreAgeMaxEnrichissement(undefined, 14)).toBe(14);
+    expect(resoudreAgeMaxEnrichissement('abc', 14)).toBe(14);
+    expect(resoudreAgeMaxEnrichissement(0, 14)).toBe(14);
+    expect(resoudreAgeMaxEnrichissement(-3, 14)).toBe(14);
+    expect(resoudreAgeMaxEnrichissement(3, 14)).toBe(3);
+    expect(resoudreAgeMaxEnrichissement('5', 14)).toBe(5);
+    expect(resoudreAgeMaxEnrichissement(60, 14)).toBe(14);
+  });
+
+  it('ageMaxEnrichissementJours lit la ligne de l’organisation, filtrée par organisation', async () => {
+    const ctx = faux({ 'jr:age_max_enrichissement': [{ value: 4 }] });
+    expect(await ageMaxEnrichissementJours(ctx.ex, 'org-1', 14)).toBe(4);
+    expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/organization_id = \$1/), ['org-1']);
+    expect(await ageMaxEnrichissementJours(faux({}).ex, 'org-1', 14)).toBe(14);
   });
 });
 

@@ -820,7 +820,7 @@ describe('lireAujourdhui', () => {
   it('reprend les campagnes de l’organisation avec leurs compteurs', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [
-        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna', 'francetravail'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
+        { id: 'c1', name: 'Directeur commercial', status: 'active', canaux_etapes: ['email', 'email', 'email', 'email'], boites: 3, sources: ['adzuna', 'francetravail'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
       ],
     });
     const a = await lireAujourdhui(ctx);
@@ -833,7 +833,7 @@ describe('lireAujourdhui', () => {
   it('point 1 (tour de correction 5) : zéro email parti → tauxReponse `null`, jamais 0 %', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [
-        { id: 'c1', name: 'Recette SalesBlink', status: 'active', etapes: 1, boites: 1, sources: [], contacts: 2, en_sequence: 2, partis: 0, reponses: 1 },
+        { id: 'c1', name: 'Recette SalesBlink', status: 'active', canaux_etapes: ['email'], boites: 1, sources: [], contacts: 2, en_sequence: 2, partis: 0, reponses: 1 },
       ],
     });
     const a = await lireAujourdhui(ctx);
@@ -845,7 +845,7 @@ describe('lireAujourdhui', () => {
   it('point 1 (revue F5) : listeSource remplace « aucune source » pour une campagne à liste', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [
-        { id: 'c1', name: 'Jay coach - RH', status: 'active', etapes: 4, boites: 3, sources: [], contacts: 167, en_sequence: 165, partis: 110, reponses: 1, liste_source: { nom: 'RH avril 2026', autres: 0 } },
+        { id: 'c1', name: 'Jay coach - RH', status: 'active', canaux_etapes: ['email', 'email', 'email', 'email'], boites: 3, sources: [], contacts: 167, en_sequence: 165, partis: 110, reponses: 1, liste_source: { nom: 'RH avril 2026', autres: 0 } },
       ],
     });
     const a = await lireAujourdhui(ctx);
@@ -855,7 +855,7 @@ describe('lireAujourdhui', () => {
   it('sans liste (campagne à sources) : listeSource est `null`', async () => {
     const ctx = faux({
       'jr:campagnes_resume': [
-        { id: 'c1', name: 'Directeur commercial', status: 'active', etapes: 4, boites: 3, sources: ['adzuna'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
+        { id: 'c1', name: 'Directeur commercial', status: 'active', canaux_etapes: ['email', 'email', 'email', 'email'], boites: 3, sources: ['adzuna'], contacts: 412, en_sequence: 186, partis: 412, reponses: 9 },
       ],
     });
     const a = await lireAujourdhui(ctx);

@@ -9,6 +9,7 @@ import {
   chargerContraintesSender,
   compterEntreesDuJour,
   reprendreAbsencesEchues,
+  reprendreInscriptionsSansCoordonnee,
   type EnrollJob,
 } from './sequence.js';
 
@@ -131,7 +132,7 @@ const ORG_SETTINGS = /from organization_settings where organization_id = \$1 and
 const FUSEAU_ORGANISATION = /from organization_settings where organization_id = \$1 and key = 'fuseau'/i;
 const DEJA_PARTIS = /from actions where step_id = \$1 and status in \('dispatched', 'delivered'\)/i;
 // Garde départ réel (issue #111) : statut de l'action de l'étape PRÉCÉDENTE.
-const ACTION_PRECEDENTE = /select status from actions where enrollment_id = \$1 and step_id = \$2/i;
+const ACTION_PRECEDENTE = /select status(?:, error)? from actions where enrollment_id = \$1 and step_id = \$2/i;
 // `rattraperEcheancesManquantes` (tour de correction 2, issue #111) : une
 // seule requête (jointure latérale sur l'étape précédente puis sur `actions`)
 // renvoie déjà les vraies candidates, plus de requête par ligne.
@@ -570,6 +571,41 @@ describe('tickDueEnrollments — garde départ réel (issue #111)', () => {
     avertissement.mockRestore();
   });
 
+  it('action précédente `skipped` pour `invitation_non_acceptee` (message LinkedIn sauté, #169) : l’inscription avance normalement', async () => {
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE
+          ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'skipped', error: 'invitation_non_acceptee' }]) }
+          : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(true);
+    expect(appels.some((a) => UPDATE_AVANCEMENT.test(a.sql))).toBe(true);
+  });
+
+  it('action précédente `skipped` pour une AUTRE raison (`enrollment_inactive`) : la garde bloque toujours', async () => {
+    const avertissement = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const gestionnaires = gestionnairesBase({ current_step: 1 })
+      .map((g) => (g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g))
+      .map((g) =>
+        g.motif === ACTION_PRECEDENTE
+          ? { motif: ACTION_PRECEDENTE, repondre: () => ligne([{ status: 'skipped', error: 'enrollment_inactive' }]) }
+          : g,
+      );
+    const { pool, appels } = creerPoolFactice(gestionnaires);
+
+    await tickDueEnrollments(pool, NOW);
+
+    expect(appels.some((a) => INSERT_ACTION.test(a.sql))).toBe(false);
+    expect(avertissement).toHaveBeenCalledTimes(1);
+
+    avertissement.mockRestore();
+  });
+
   it('action précédente `dispatched` : la garde ne bloque pas le cas sain, l’inscription avance normalement', async () => {
     const gestionnaires = gestionnairesBase({ current_step: 1 }).map((g) =>
       g.motif === STEPS ? { motif: STEPS, repondre: deuxEtapes } : g,
@@ -858,6 +894,8 @@ describe('reprendreAbsencesEchues (F10)', () => {
     etape?: { id: string; delay_hours: number };
     /** Action `blocked`/`failed` déjà en base pour cette étape (cas `paused -> paused_absence`). */
     actionBloquee?: { messageId: string | null };
+    /** Statut de l'action de l'étape PRÉCÉDENTE (rang `current_step - 1`), absente = aucune action (#180). */
+    precedente?: { status: string };
   }
 
   /**
@@ -935,6 +973,10 @@ describe('reprendreAbsencesEchues (F10)', () => {
         etat = { ...etat, next_action_at: nextActionAt };
         return { rows: [], rowCount: 1 };
       }
+      if (/jr:absence_etape_precedente/.test(sql)) {
+        const attend = ['scheduled', 'approved'].includes(reponses.precedente?.status ?? '');
+        return { rows: attend ? [{ '?column?': 1 }] : [], rowCount: attend ? 1 : 0 };
+      }
       if (ETAPE.test(sql)) {
         return ligne(reponses.etape ? [{ id: reponses.etape.id, delay_hours: reponses.etape.delay_hours }] : []);
       }
@@ -990,6 +1032,54 @@ describe('reprendreAbsencesEchues (F10)', () => {
     const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 96);
     expect(etat().next_action_at).toEqual(new Date(attendu!).toISOString());
     expect(new Date(attendu!).getUTCDate()).toBe(24);
+  });
+
+  it("#180 : l'action de l'étape précédente attend encore son départ (message LinkedIn qui attend l'acceptation) : aucune échéance n'est posée, ni le repli, current_step intact", async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 2,
+      resume_at: resumeAt,
+    };
+    for (const status of ['scheduled', 'approved']) {
+      const { pool, appels, etat } = creerPoolAbsence(
+        [candidat],
+        { status: 'paused_absence', next_action_at: resumeAt, current_step: 2 },
+        { etape: { id: STEP_ID_ABSENCE, delay_hours: 24 }, precedente: { status } },
+      );
+      await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+      expect(etat().status, status).toBe('active');
+      expect(etat().next_action_at, status).toBeNull();
+      expect(etat().current_step, status).toBe(2);
+      // Ni la pose, ni le repli `next_action_at = now()` : l'inscription attend le départ (ou le saut) de l'action.
+      expect(appels.some((a) => /set next_action_at/i.test(a.sql)), status).toBe(false);
+      // La question est posée pour l'étape de rang current_step - 1, sous l'organisation.
+      const q = appels.find((a) => /jr:absence_etape_precedente/.test(a.sql))!;
+      expect(q.values).toEqual([ORG_ID, ENROLLMENT_ID, CAMPAIGN_ID, 1]);
+      expect(q.sql).toMatch(/a\.organization_id = \$1/);
+    }
+  });
+
+  it("#180 : une action précédente déjà partie (`dispatched`) ou terminée ne retient rien : l'échéance se pose depuis le retour", async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 2,
+      resume_at: resumeAt,
+    };
+    const { pool, etat } = creerPoolAbsence(
+      [candidat],
+      { status: 'paused_absence', next_action_at: resumeAt, current_step: 2 },
+      { etape: { id: STEP_ID_ABSENCE, delay_hours: 24 }, precedente: { status: 'dispatched' } },
+    );
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+    expect(etat().next_action_at).toEqual(new Date(echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 24)!).toISOString());
   });
 
   it('reprise échue depuis plusieurs jours : l’échéance se calcule depuis resume_at, jamais depuis now', async () => {
@@ -1305,5 +1395,111 @@ describe('enrollContact — garde d’entrée sur la validation du post (tâche 
 
     expect(await enrollContact(pool, jobDInscription({ signalId: null }))).toBe(ENROLLMENT_ID);
     expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
+  });
+});
+
+describe('enrollContact — une personne n’a qu’UNE inscription par campagne, quel qu’en soit le statut', () => {
+  // Constaté le 12/10 sur la campagne de recette du lot 4b : une personne inscrite le 09/10 puis
+  // de nouveau le 12/10 sur le même signal, la première étant `completed`. L'index partiel et sa
+  // clause `on conflict` ne voient que les inscriptions VIVANTES.
+  it('l’insertion refuse toute inscription existante du couple (contact, campagne), sans filtre de statut', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: false }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBeNull();
+
+    const insertion = appels.find((a) => INSERT_ENROLLMENT.test(a.sql));
+    expect(insertion).toBeDefined();
+    const garde = /not exists \(\s*select 1 from enrollments[^)]*\)/i.exec(insertion!.sql);
+    expect(garde, 'une garde `not exists (... from enrollments ...)` dans l’insertion').not.toBeNull();
+    expect(garde![0]).toMatch(/contact_id = \$3/);
+    expect(garde![0]).toMatch(/campaign_id = \$2/);
+    // Le piège : borner la garde aux statuts vivants la rendrait aveugle à `completed`.
+    expect(garde![0]).not.toMatch(/status/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reprendreInscriptionsSansCoordonnee — une inscription arrêtée faute de coordonnée reprend
+// quand elle arrive (tâche 8, point de revue « Chercher l'email »)
+// ---------------------------------------------------------------------------
+
+describe('reprendreInscriptionsSansCoordonnee', () => {
+  const REPRISE = /jr:reprise_sans_coordonnee/i;
+  const JOURNAL = /insert into audit_events/i;
+
+  function poolDeReprise(reprises: unknown[]): { pool: Pool; appels: Appel[] } {
+    return creerPoolFactice([
+      // Une reprise par passage : la requête rend une ligne puis plus rien.
+      { motif: REPRISE, repondre: () => ligne(reprises.splice(0, 1)) },
+      { motif: JOURNAL, repondre: () => ligne([]) },
+    ]);
+  }
+
+  it('reprend la MÊME ligne (update, jamais une nouvelle inscription) et supprime l’action bloquée pour que le tick la recompose', async () => {
+    const { pool, appels } = poolDeReprise([{ id: ENROLLMENT_ID, organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }]);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(1);
+
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).not.toMatch(/insert into enrollments/i);
+    expect(sql).toMatch(/update enrollments/i);
+    // L'étape courante n'est jamais touchée : reprendre, c'est repartir de CETTE étape, pas avant.
+    expect(sql).not.toMatch(/current_step\s*=/i);
+    // L'action bloquée de l'étape est retirée : sa clé d'idempotence ferait ignorer l'inscription à vie.
+    expect(sql).toMatch(/delete from actions/i);
+    expect(sql).toMatch(/block_reason = 'not_sendable'/i);
+  });
+
+  it('ne reprend que ce que le tick a arrêté pour ce motif, et jamais une personne sortie entre-temps', async () => {
+    const { pool, appels } = poolDeReprise([]);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(0);
+
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).toMatch(/e\.status = 'stopped'\s+and e\.stop_reason = 'not_sendable'/i);
+    // Campagne vivante, contact non exclu, aucune suppression (désinscription), aucune autre inscription vivante
+    // (l'index partiel la refuserait), coordonnée de l'étape courante présente.
+    expect(sql).toMatch(/c\.status = 'active'/i);
+    expect(sql).toMatch(/ct\.status = 'active'/i);
+    expect(sql).toMatch(/from suppressions/i);
+    expect(sql).toMatch(/o\.status in \('active', 'paused', 'paused_absence'\)/i);
+    expect(sql).toMatch(/st\.channel = 'email' and coalesce\(ct\.email, ''\) <> ''/i);
+    expect(sql).toMatch(/linkedin_invite/i);
+    // Filtrage explicite par organisation sur chaque jointure : le worker tourne avec la clé de service.
+    expect(sql).toMatch(/ct\.organization_id = e\.organization_id/i);
+    expect(sql).toMatch(/c\.organization_id = e\.organization_id/i);
+  });
+
+  it('une réponse rend la main : jamais de reprise d’un contact dont une inscription est `replied`, ni d’un signal écarté', async () => {
+    // La forme du SQL seule (le pool factice n'exécute rien) : preuve sur Postgres dans accroche-post.mjs, contrôles 58 et 59.
+    const { pool, appels } = poolDeReprise([]);
+    await reprendreInscriptionsSansCoordonnee(pool);
+    const sql = appels.find((a) => REPRISE.test(a.sql))!.sql;
+    expect(sql).toMatch(/from enrollments r\s+where r\.organization_id = e\.organization_id and r\.contact_id = e\.contact_id and r\.status = 'replied'/i);
+    // #179 : les DEUX colonnes (celle de l'inscription ET celle du contact, que lit Écarter), sous l'organisation.
+    expect(sql).toMatch(/from signals sg\s+where sg\.organization_id = e\.organization_id and sg\.status = 'discarded'\s+and sg\.id in \(e\.signal_id, ct\.source_signal_id\)/i);
+  });
+
+  it('journalise chaque reprise, et une erreur du journal ne fait pas échouer la reprise', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: REPRISE, repondre: (() => { let n = 0; return () => ligne(n++ === 0 ? [{ id: ENROLLMENT_ID, organization_id: ORG_ID, contact_id: CONTACT_ID, campaign_id: CAMPAIGN_ID }] : []); })() },
+      { motif: JOURNAL, repondre: () => { throw new Error('journal indisponible'); } },
+    ]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    expect(await reprendreInscriptionsSansCoordonnee(pool)).toBe(1);
+    expect(appels.some((a) => JOURNAL.test(a.sql))).toBe(true);
+  });
+
+  it('une violation de l’index d’inscription vivante (autre inscription du contact) arrête le passage sans lever', async () => {
+    const violation = Object.assign(new Error('duplicate key'), { code: '23505' });
+    const { pool } = creerPoolFactice([{ motif: REPRISE, repondre: () => { throw violation; } }]);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(reprendreInscriptionsSansCoordonnee(pool)).resolves.toBe(0);
   });
 });

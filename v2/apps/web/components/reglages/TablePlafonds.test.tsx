@@ -14,17 +14,19 @@ const libelles = {
   colReglage: t.colReglage,
   colConsomme: t.colConsomme,
   colValeur: t.colValeur,
-  colDefaut: t.colDefaut,
-  colRepli: t.colRepli,
+  colConseillee: t.colConseillee,
   colModifie: t.colModifie,
   modifier: t.modifier,
   enregistrer: t.enregistrer,
   annuler: t.annuler,
-  aucunRepli: t.aucunRepli,
   erreurNombre: t.erreurNombre,
   sansObjet: t.sansObjet,
-  arrete: t.arrete,
 };
+
+/** React échappe l'apostrophe (`&#x27;`) : on relit le texte tel que l'humain le voit. */
+function texte(html: string): string {
+  return html.replace(/&#x27;/g, "'");
+}
 
 /** Un réglage quelconque : chaque test ne surcharge que ce qu'il vient prouver. */
 function ligne(sur: Partial<LignePlafond> = {}): LignePlafond {
@@ -33,8 +35,7 @@ function ligne(sur: Partial<LignePlafond> = {}): LignePlafond {
     nom: 'Scoring par jour',
     description: 'Fiches scorées par jour.',
     valeur: 300,
-    defaut: 300,
-    repli: 'SCORE_DAILY_CAP',
+    conseillee: 300,
     modifie: 'jamais',
     type: 'nombre',
     ...sur,
@@ -63,17 +64,29 @@ describe('la table des plafonds', () => {
     expect(html).toContain(libelles.sansObjet);
   });
 
-  it('un plafond de volume à zéro se voit et se dit', () => {
-    const html = rendu([ligne({ valeur: 0, arrete: true })]);
-    expect(html).toContain(libelles.arrete);
+  it('un plafond de volume à zéro se voit et dit ce qui va manquer', () => {
+    const html = rendu([ligne({ cle: 'enrichissements_par_jour', valeur: 0, arret: t.arreteEnrichissement })]);
     expect(html).toContain('jr-valeur-arretee');
+    // La conséquence, dite à un non-technicien : plus d'email cherché, donc pas d'étape email.
+    expect(texte(html)).toContain(
+      'En pause : aucun email ne sera cherché, les contacts sans email ne recevront pas d\'étape email.',
+    );
   });
 
   it('un zéro qui n’arrête rien reste muet', () => {
     // `relecture_premiers_envois_defaut` vaut zéro PAR DÉFAUT : le signaler ferait crier l'écran
     // sur une organisation parfaitement saine.
-    const html = rendu([ligne({ cle: 'relecture_premiers_envois_defaut', valeur: 0, arrete: false })]);
-    expect(html).not.toContain(libelles.arrete);
+    const html = rendu([ligne({ cle: 'relecture_premiers_envois_defaut', valeur: 0 })]);
+    expect(html).not.toContain('En pause');
     expect(html).not.toContain('jr-valeur-arretee');
+  });
+
+  it('la colonne s’appelle « Valeur conseillée » et ne montre aucun nom de variable d’environnement', () => {
+    const html = rendu([ligne({ valeur: 100, conseillee: 300 })]);
+    expect(html).toContain('Valeur conseillée');
+    expect(html).not.toContain('Repli');
+    expect(html).not.toContain('Défaut');
+    // Les noms de variables restent dans la documentation d'auto-hébergement.
+    expect(html).not.toMatch(/[A-Z]+_[A-Z_]+/);
   });
 });

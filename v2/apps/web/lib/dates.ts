@@ -235,3 +235,14 @@ export function libelleJour(jour: Date, maintenant: Date, locale: string, fuseau
   }
   return jourSemaineEtDate.charAt(0).toUpperCase() + jourSemaineEtDate.slice(1);
 }
+
+/**
+ * Une date que le gabarit fait suivre de SON point : `dateCourte` et `dateRelativeCourte` rendent
+ * « 14 oct. » avec le point de l'abréviation, et le gabarit « Connectée : {depuis}. Dernière
+ * collecte : {collecte}. » affichait donc « Connectée : 14 oct.. » (constat du 27/10). Le point de
+ * l'abréviation est retiré ici, le gabarit garde le sien : une date comme « hier » ou « il y a
+ * 3 h » n'en portait aucun, et le gabarit le lui donne. Résultat : toujours un seul point.
+ */
+export function sansPointFinal(texte: string): string {
+  return texte.endsWith('.') ? texte.slice(0, -1) : texte;
+}

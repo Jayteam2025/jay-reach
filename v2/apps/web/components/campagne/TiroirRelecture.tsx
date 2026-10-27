@@ -177,13 +177,14 @@ export function TiroirRelecture({ actionId, contactId, campagneId, organisationI
           direction="sortant"
           auteur={apercu.expediteur ?? '—'}
           date={libelles.heureLibelle ?? '—'}
-          destinataire={apercu.destinataire ?? undefined}
+          // L'adresse et l'objet n'existent que pour un email : une invitation LinkedIn n'a ni l'un ni l'autre.
+          destinataire={apercu.canal === 'email' ? (apercu.destinataire ?? undefined) : undefined}
           avertissement={
             libelles.avertissementVariables ? (
               <div className="jr-bandeau attention">{libelles.avertissementVariables}</div>
             ) : undefined
           }
-          objet={apercu.objet}
+          objet={apercu.canal === 'email' ? apercu.objet : undefined}
           corps={apercu.corps}
         />
       )}

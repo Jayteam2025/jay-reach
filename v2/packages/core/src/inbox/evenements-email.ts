@@ -16,6 +16,7 @@
  */
 import type { Executeur } from '../executeur.js';
 import type { EvenementEmail } from '../email-transport/rapports.js';
+import { reparerMojibake } from './encodage-recu.js';
 import { LIVE_STATUSES, notifyReply, recordInboundReply } from './record-reply.js';
 
 export type ResultatEvenement =
@@ -118,7 +119,7 @@ export async function traiterEvenementEmail(
     });
     if (enregistre.isNew || enregistre.reclasse) {
       // Notification même pour une auto-réponse : le fil doit être vu (règle n° 9).
-      const excerpt = ev.corps.slice(0, 140);
+      const excerpt = reparerMojibake(ev.corps).slice(0, 140);
       await notifyReply(ex, org, 'Nouvelle réponse', excerpt || enregistre.classification);
     }
     return { stored: true, effect: 'reply', classification: enregistre.classification };

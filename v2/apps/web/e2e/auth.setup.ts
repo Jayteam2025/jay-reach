@@ -15,7 +15,7 @@ const ETAT_SESSION = path.join(ICI, '.auth/utilisateur.json');
  * ci-dessus, donc absentes de cette liste.
  */
 const ROUTES_FIXES = [
-  '/settings', // clic « Réglages » du menu (connexion.spec.ts) — redirige vers /settings/senders
+  '/settings', // clic « Réglages » du menu (connexion.spec.ts) — redirige vers /settings/linkedin
   '/settings/account',
   '/settings/limits',
   '/contacts',

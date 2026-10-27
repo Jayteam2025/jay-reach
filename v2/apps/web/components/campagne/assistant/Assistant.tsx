@@ -6,10 +6,19 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Bouton } from '../../ui';
 import { actionCreerCampagneComplete } from '../../../app/actions/nouvelle-campagne';
-import { EtapeQui, type PersonaOptionAssistant } from './EtapeQui';
+import { EtapeQui, PLAFOND_JOUR_MAX, type PersonaOptionAssistant } from './EtapeQui';
 import { EtapeSources, type SourceAssistant } from './EtapeSources';
 import { EtapeSequence, type EtapeSequenceEtape, type CleModeleSequence, etapesDepuisModele } from './EtapeSequence';
 import { EtapeEnvoi, type BoiteEnvoiAssistant } from './EtapeEnvoi';
+import {
+  ajouterEtapeALaSequence,
+  appliquerModificationEtape,
+  erreurEtapeQui,
+  personaInitial,
+  premiereEtapeIncomplete,
+  relectureInitiale,
+} from './regles-assistant';
+import { aUneEtapeEmail, libellesCanaux, recapSequence } from '../../../lib/canaux-sequence';
 
 const MODELE_PAR_DEFAUT: CleModeleSequence = 'question_relances';
 
@@ -19,6 +28,10 @@ const ORDRE_ETAPES: readonly CleEtapeAssistant[] = ['qui', 'sources', 'sequence'
 export interface AssistantProps {
   personas: readonly PersonaOptionAssistant[];
   boites: readonly BoiteEnvoiAssistant[];
+  /** Défaut de l'organisation (Réglages › Plafonds › « Relecture des premiers envois »), lu côté serveur. */
+  relectureDefaut: number;
+  /** Un compte LinkedIn est connecté et prêt : la première étape ouvre alors par une invitation. */
+  linkedinConnecte: boolean;
 }
 
 /**
@@ -46,9 +59,14 @@ export function construireEntreeAssistant(
     nom: etat.nom.trim(),
     personaIds: etat.personaId ? [etat.personaId] : [],
     minScore: Number(etat.scoreMin) || 0,
-    dailyCap: Math.max(1, Number(etat.plafondJour) || 1),
+    dailyCap: Math.min(PLAFOND_JOUR_MAX, Math.max(1, Number(etat.plafondJour) || 1)),
     sources: etat.sources.map((s) => ({ providerId: s.providerId, nom: s.nom, config: s.config })),
-    etapes: etat.etapes.map((e) => ({ canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 })),
+    // Une invitation part sans note : jamais d'objet ni de corps, même si l'état en garde un (le serveur le refuse).
+    etapes: etat.etapes.map((e) =>
+      e.canal === 'linkedin_invite'
+        ? { canal: e.canal, sujet: '', corps: '', delaiHeures: e.delaiJours * 24 }
+        : { canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 },
+    ),
     relecturePremiersEnvois: Number(etat.relecture) || 0,
     // [] veut dire « toutes les boîtes » (`resoudreBoites`, packages/core) : dès
     // qu'une boîte est décochée on enregistre la liste explicite de celles qui
@@ -71,21 +89,36 @@ export function nombreBoitesActives(
   return boites.filter((b) => !boiteIdsDesactivees.has(b.id)).length;
 }
 
-export function Assistant({ personas, boites }: AssistantProps) {
+/**
+ * R71 : aucune boîte cochée alors qu'il y en a au moins une de connectée — « Créer et lancer » se désactive.
+ * Seulement pour une séquence qui contient un email : une campagne qui n'écrit que sur LinkedIn n'a besoin
+ * d'aucune boîte, et ne doit pas être bloquée par un choix qu'on ne lui a même pas montré.
+ */
+export function lancementBloqueParLesBoites(
+  canauxEtapes: readonly string[],
+  boites: readonly BoiteEnvoiAssistant[],
+  boiteIdsDesactivees: ReadonlySet<string>,
+): boolean {
+  return aUneEtapeEmail(canauxEtapes) && boites.length > 0 && nombreBoitesActives(boites, boiteIdsDesactivees) === 0;
+}
+
+export function Assistant({ personas, boites, relectureDefaut, linkedinConnecte }: AssistantProps) {
   const t = useTranslations('campagne.nouvelle');
+  const tCanaux = useTranslations('canauxSequence');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [etapeIndex, setEtapeIndex] = useState(0);
 
   const [nom, setNom] = useState('');
-  const [personaId, setPersonaId] = useState<string | null>(personas[0]?.id ?? null);
+  const [personaId, setPersonaId] = useState<string | null>(() => personaInitial(personas));
   const [scoreMin, setScoreMin] = useState('70');
   const [plafondJour, setPlafondJour] = useState('30');
 
   const [sources, setSources] = useState<readonly SourceAssistant[]>([]);
   const [etapes, setEtapes] = useState<readonly EtapeSequenceEtape[]>(() => etapesDepuisModele(MODELE_PAR_DEFAUT));
+  const [etapeOuverte, setEtapeOuverte] = useState<string | null>(() => etapes[0]?.cle ?? null);
 
-  const [relecture, setRelecture] = useState('5');
+  const [relecture, setRelecture] = useState(() => relectureInitiale(relectureDefaut));
   const [boiteIdsDesactivees, setBoiteIdsDesactivees] = useState<ReadonlySet<string>>(new Set());
 
   const [erreur, setErreur] = useState<string | null>(null);
@@ -102,16 +135,18 @@ export function Assistant({ personas, boites }: AssistantProps) {
   }
 
   function choisirModele(cle: CleModeleSequence) {
-    setEtapes(etapesDepuisModele(cle));
+    const suivantes = etapesDepuisModele(cle);
+    setEtapes(suivantes);
+    setEtapeOuverte(suivantes[0]?.cle ?? null);
   }
   function ajouterEtape() {
-    setEtapes((precedent) => [
-      ...precedent,
-      { cle: `manuel-${Date.now()}`, canal: 'email', sujet: '', corps: '', delaiJours: 2 },
-    ]);
+    // Calculé hors de l'updater : l'étape à ouvrir est celle qu'on vient d'ajouter, jamais l'ancienne.
+    const { etapes: suivantes, cleOuverte } = ajouterEtapeALaSequence(etapes, linkedinConnecte, Date.now());
+    setEtapes(suivantes);
+    setEtapeOuverte(cleOuverte);
   }
   function modifierEtape(cle: string, patch: Partial<Omit<EtapeSequenceEtape, 'cle'>>) {
-    setEtapes((precedent) => precedent.map((e) => (e.cle === cle ? { ...e, ...patch } : e)));
+    setEtapes((precedent) => precedent.map((e) => (e.cle === cle ? appliquerModificationEtape(e, patch) : e)));
   }
   function supprimerEtape(cle: string) {
     setEtapes((precedent) => precedent.filter((e) => e.cle !== cle));
@@ -132,13 +167,25 @@ export function Assistant({ personas, boites }: AssistantProps) {
   }
 
   function continuer() {
-    if (etapeCourante === 'qui' && !nom.trim()) {
-      setErreur(t('who.errorName'));
-      return;
+    if (etapeCourante === 'qui') {
+      const manque = erreurEtapeQui({ nom, personaId }, personas);
+      if (manque) {
+        setErreur(manque === 'nom' ? t('who.errorName') : t('who.errorPersona'));
+        return;
+      }
     }
-    if (etapeCourante === 'sequence' && etapes.length === 0) {
-      setErreur(t('sequence.errorEmpty'));
-      return;
+    if (etapeCourante === 'sequence') {
+      if (etapes.length === 0) {
+        setErreur(t('sequence.errorEmpty'));
+        return;
+      }
+      const incomplete = premiereEtapeIncomplete(etapes);
+      if (incomplete) {
+        // On ouvre l'étape en cause : le message dit laquelle, l'écran la montre.
+        setEtapeOuverte(incomplete.cle);
+        setErreur(t(`sequence.errorIncomplete.${incomplete.motif}`, { rang: incomplete.rang }));
+        return;
+      }
     }
     allerA(etapeIndex + 1);
   }
@@ -168,9 +215,12 @@ export function Assistant({ personas, boites }: AssistantProps) {
   const personaNom = personas.find((p) => p.id === personaId)?.nom ?? '—';
   const totalJours = etapes.reduce((somme, e) => somme + e.delaiJours, 0);
   const nbBoitesActives = nombreBoitesActives(boites, boiteIdsDesactivees);
-  // R71 : aucune boîte cochée alors qu'il y en a au moins une de connectée —
-  // « Créer et lancer » se désactive, « Enregistrer en brouillon » reste possible.
-  const aucuneBoiteActive = boites.length > 0 && nbBoitesActives === 0;
+  // Les boîtes d'envoi ne concernent que les étapes email : une campagne qui n'écrit que sur LinkedIn n'en
+  // propose aucune, n'en exige aucune pour se lancer, et n'en compte aucune dans son récapitulatif.
+  const canauxEtapes = etapes.map((e) => e.canal);
+  const avecEmail = aUneEtapeEmail(canauxEtapes);
+  // « Créer et lancer » se désactive (R71), « Enregistrer en brouillon » reste possible.
+  const aucuneBoiteActive = lancementBloqueParLesBoites(canauxEtapes, boites, boiteIdsDesactivees);
 
   return (
     <section className="jr-assistant">
@@ -292,6 +342,8 @@ export function Assistant({ personas, boites }: AssistantProps) {
           onAjouterEtape={ajouterEtape}
           onModifierEtape={modifierEtape}
           onSupprimerEtape={supprimerEtape}
+          etapeOuverte={etapeOuverte}
+          onOuvrirEtape={setEtapeOuverte}
           disabled={pending}
           libelles={{
             partirDe: t('sequence.startFrom'),
@@ -305,6 +357,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             canalLinkedinInvite: t('sequence.channelLinkedinInvite'),
             canalLinkedinMessage: t('sequence.channelLinkedinMessage'),
             inviteSansNote: t('sequence.inviteSansNote'),
+            messageApresInvitation: t('sequence.messageAfterInvitation'),
             objet: t('sequence.subject'),
             corps: t('sequence.body'),
             delai: t('sequence.delay'),
@@ -321,6 +374,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
       {etapeCourante === 'envoi' && (
         <EtapeEnvoi
           boites={boites}
+          afficherBoites={avecEmail}
           boiteIdsDesactivees={boiteIdsDesactivees}
           onToggleBoite={toggleBoite}
           aucuneBoiteActive={aucuneBoiteActive}
@@ -330,8 +384,13 @@ export function Assistant({ personas, boites }: AssistantProps) {
           recapitulatif={{
             persona: t('send.recapPersonaValue', { persona: personaNom, score: Number(scoreMin) || 0 }),
             sources: sources.length === 0 ? t('send.recapSourcesEmpty') : sources.map((s) => s.nom).join(' · '),
-            sequence: t('send.recapSequenceValue', { n: etapes.length, jours: totalJours }),
-            envoi: t('send.recapEnvoiValue', { n: nbBoitesActives, plafond: Number(plafondJour) || 0 }),
+            sequence: recapSequence(canauxEtapes, libellesCanaux(tCanaux), totalJours, {
+              vide: t('send.recapSequenceVide'),
+              avec: (valeurs) => t('send.recapSequenceValue', valeurs),
+            }),
+            envoi: avecEmail
+              ? t('send.recapEnvoiValue', { n: nbBoitesActives, plafond: Number(plafondJour) || 0 })
+              : t('send.recapEnvoiSansBoites', { plafond: Number(plafondJour) || 0 }),
           }}
           manques={manques}
           libelles={{
@@ -340,7 +399,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             boitesAucuneActive: t('send.boxesNoneActive'),
             relecture: t('send.review'),
             relectureSuffixe: t('send.reviewSuffix'),
-            relectureAide: t('send.reviewHint'),
+            relectureAide: t('send.reviewHint', { n: Number(relecture) || 0 }),
             recapTitre: t('send.summaryTitle'),
             recapPersona: t('send.summaryPersona'),
             recapSources: t('send.summarySources'),

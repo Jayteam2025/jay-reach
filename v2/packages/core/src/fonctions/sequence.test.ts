@@ -134,7 +134,7 @@ describe('lireSequence', () => {
       id: idA,
       position: 1,
       canal: 'email',
-      titre: 'Premier email',
+      titreCode: 'premier_email',
       sujet: 'Objet {{prenom}}',
       corps: 'Corps {{prenom}}',
       passes: 186,
@@ -145,10 +145,10 @@ describe('lireSequence', () => {
       { nom: 'Sarah Lopez', photoUrl: 'https://x/y.jpg' },
     ]);
 
-    expect(vue.etapes[1]).toMatchObject({ position: 2, canal: 'email', titre: 'Relance', sujet: null, corps: '', passes: 141 });
+    expect(vue.etapes[1]).toMatchObject({ position: 2, canal: 'email', titreCode: 'relance', sujet: null, corps: '', passes: 141 });
     expect(vue.etapes[1]!.repondusIci).toEqual({ total: 0, contacts: [] });
 
-    expect(vue.etapes[2]).toMatchObject({ position: 3, canal: 'linkedin', titre: 'Dernier message LinkedIn', passes: 0 });
+    expect(vue.etapes[2]).toMatchObject({ position: 3, canal: 'linkedin', titreCode: 'dernier_message_linkedin', passes: 0 });
 
     // R19 (test de robustesse) : les requêtes se limitent aux canaux affichés, jamais courrier/appel.
     const requeteEtapes = appelsDe(ctx).find((a) => /jr:sequence_etapes/i.test(String(a[0])));
@@ -167,7 +167,7 @@ describe('lireSequence', () => {
       'jr:sequence_etapes': [{ id: idA, position: 0, channel: 'linkedin_invite', delay_hours: 0, template_parent_id: null }],
     });
     const vue = await lireSequence(ctx, { campagneId });
-    expect(vue.etapes[0]!.titre).toBe('Invitation LinkedIn');
+    expect(vue.etapes[0]!.titreCode).toBe('invitation_linkedin');
   });
 
   it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null', async () => {
@@ -191,7 +191,7 @@ describe('lireSequence', () => {
       'jr:sequence_etapes': [{ id: idA, position: 0, channel: 'email', delay_hours: 0, template_parent_id: null }],
     });
     const vue = await lireSequence(ctx, { campagneId });
-    expect(vue.etapes[0]!.titre).toBe('Premier email');
+    expect(vue.etapes[0]!.titreCode).toBe('premier_email');
   });
 
   // Revue F5, constat bloquant 1 : le nœud Sources du flux affichait encore « 0 source

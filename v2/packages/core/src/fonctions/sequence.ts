@@ -13,8 +13,8 @@
  * (lot 4, pas encore livré) : il garde le canal LinkedIn déjà en base pour une
  * étape existante, ou pose `linkedin_message` par défaut à la création.
  *
- * Vocabulaire des étapes (`titre`, `titreEtape` ci-dessous) : même convention
- * que `nomEtape` (`fonctions/file-du-jour.ts`) pour une étape email —
+ * Vocabulaire des étapes (`titreCode`, `codeTitreEtape` ci-dessous) : même convention
+ * que `codeNomEtape` (`fonctions/file-du-jour.ts`) pour une étape email —
  * « Premier email » / « Relance » / « Dernier mot » (maquette
  * `campagne-sequence.html`) — avec un vocabulaire propre au canal LinkedIn
  * (constaté en base réelle, R30 : une séquence alterne email et
@@ -36,6 +36,8 @@ import {
 import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } from './campagnes.js';
 import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_SOURCES_DE_POST } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
+import { CANAUX_ETAPE_AFFICHES } from './etapes-sql.js';
+import type { CodeNomEtape } from './nom-etape.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
 import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 
@@ -44,7 +46,7 @@ import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 // ---------------------------------------------------------------------------
 
 /** Canaux affichés dans l'onglet (R19) : courrier et appel n'y figurent jamais. */
-const CANAUX_AFFICHES = ['email', 'linkedin_invite', 'linkedin_message'] as const;
+const CANAUX_AFFICHES = CANAUX_ETAPE_AFFICHES;
 type CanalAffiche = 'email' | 'linkedin';
 /**
  * Le canal tel qu'il est en base. `canal` le collapse en « linkedin » pour l'icône et le
@@ -60,12 +62,16 @@ function canalAffiche(channel: string): CanalAffiche {
 
 export interface EtapeVue {
   readonly id: string;
-  /** 1-based (`sequence_steps.position` part de 0), même conversion que `campagnes.ts`/`aujourdhui.ts`. */
+  /**
+   * Le RANG de l'étape dans la séquence, 1-based : « Étape 1 » est la première affichée, quelle que soit sa
+   * `sequence_steps.position` en base (voir `sqlRangEtape`, `etapes-sql.ts`). Jamais `position + 1`.
+   */
   readonly position: number;
   readonly canal: CanalAffiche;
   /** Le canal non collapsé : seul moyen de distinguer une invitation d'un message. */
   readonly canalDetaille: CanalEtape;
-  readonly titre: string;
+  /** Le titre de l'étape, en CODE : l'écran le traduit (`campagne.sequence.nomEtape.<code>`), jamais du français ici (#181). */
+  readonly titreCode: CodeNomEtape;
   /** `null` pour un canal sans objet (LinkedIn) ou une étape sans message écrit. */
   readonly sujet: string | null;
   readonly corps: string;
@@ -80,6 +86,10 @@ export interface VueSequence {
   readonly sources: { readonly providerId: string | null }[];
   readonly qualifies: number;
   readonly etapes: EtapeVue[];
+  /**
+   * Personnes (pas inscriptions) allées au bout de la séquence sans répondre. Une personne réinscrite puis
+   * terminée deux fois compte pour une, et une personne qui a fini puis répondu n'est plus « sans réponse ».
+   */
   readonly finDeSequence: { readonly termines: number };
   /**
    * Liste qui alimente la campagne (point 2, issue #120 ; revue F5, constat
@@ -114,22 +124,23 @@ function nomComplet(prenom: string | null, nom: string | null): string {
 }
 
 /**
- * Même vocabulaire que `nomEtape` (`file-du-jour.ts`) pour les étapes email —
- * étendu ici à « Dernier mot » pour la dernière étape d'une séquence à
+ * Même vocabulaire que `codeNomEtape` (`file-du-jour.ts`) pour les étapes email —
+ * étendu ici à « dernier_mot » pour la dernière étape d'une séquence à
  * plusieurs étapes — mais propre au canal LinkedIn (constaté en base, R30 :
  * une séquence réelle alterne email et invitations/messages LinkedIn ;
- * « Premier email » sur une invitation LinkedIn aurait été trompeur).
+ * « Premier email » sur une invitation LinkedIn aurait été trompeur). Un CODE,
+ * traduit à l'écran (#181).
  */
-function titreEtape(channel: string, indexAffiche: number, nbEtapesAffichees: number): string {
+function codeTitreEtape(channel: string, indexAffiche: number, nbEtapesAffichees: number): CodeNomEtape {
   const derniere = nbEtapesAffichees > 1 && indexAffiche === nbEtapesAffichees - 1;
-  if (channel === 'linkedin_invite') return 'Invitation LinkedIn';
+  if (channel === 'linkedin_invite') return 'invitation_linkedin';
   if (channel === 'linkedin_message') {
-    if (derniere) return 'Dernier message LinkedIn';
-    return indexAffiche === 0 ? 'Premier message LinkedIn' : 'Relance LinkedIn';
+    if (derniere) return 'dernier_message_linkedin';
+    return indexAffiche === 0 ? 'premier_message_linkedin' : 'relance_linkedin';
   }
-  if (indexAffiche === 0) return 'Premier email';
-  if (derniere) return 'Dernier mot';
-  return 'Relance';
+  if (indexAffiche === 0) return 'premier_email';
+  if (derniere) return 'dernier_mot';
+  return 'relance';
 }
 
 export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueSequence> {
@@ -165,10 +176,19 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
          from sequence_steps
         where campaign_id = $1 and channel::text = any($2::text[])
         order by position asc`,
-      [campagneId, CANAUX_AFFICHES as unknown as string[]],
+      [campagneId, [...CANAUX_AFFICHES]],
     ),
     ctx.ex.query<{ n: number }>(
-      `select count(*)::int as n /* jr:sequence_fin */ from enrollments where campaign_id = $1 and status = 'completed'`,
+      // Des PERSONNES : « 3 contacts sont allés au bout » s'affichait pour une campagne de 2 personnes, parce
+      // que la même personne, réinscrite (9 et 12/10), comptait pour deux inscriptions terminées. Et celle qui
+      // a fini PUIS répondu n'est plus « sans répondre » : `exclureApresReponse` l'a sortie de la campagne.
+      `select count(distinct e.contact_id)::int as n /* jr:sequence_fin */
+         from enrollments e
+        where e.campaign_id = $1 and e.status = 'completed'
+          and not exists (
+            select 1 from enrollments r
+             where r.campaign_id = e.campaign_id and r.contact_id = e.contact_id and r.status = 'replied'
+          )`,
       [campagneId],
     ),
   ]);
@@ -224,10 +244,10 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
     const repondus = repondusParEtape.get(e.id) ?? [];
     return {
       id: e.id,
-      position: e.position + 1,
+      position: index + 1,
       canal: canalAffiche(e.channel),
       canalDetaille: e.channel as CanalEtape,
-      titre: titreEtape(e.channel, index, etapesBrutes.length),
+      titreCode: codeTitreEtape(e.channel, index, etapesBrutes.length),
       sujet: gabarit?.subject ?? null,
       corps: gabarit?.body ?? '',
       delaiHeures: e.delay_hours,

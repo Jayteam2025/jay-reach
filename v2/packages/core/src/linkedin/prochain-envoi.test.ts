@@ -94,7 +94,7 @@ function creerExecuteur(depart: Partial<Etat> = {}): Executeur {
           })),
         ) as never;
       }
-      if (/order by sent_at desc/i.test(sql)) return rep(etat.dernierEnvoi ? [{ sent_at: etat.dernierEnvoi }] : []) as never;
+      if (/jr:linkedin_dernier_envoi_toutes_origines/.test(sql)) return rep(etat.dernierEnvoi ? [{ sent_at: etat.dernierEnvoi }] : []) as never;
       throw new Error(`requete inattendue : ${sql.slice(0, 80)}`);
     },
   };

@@ -29,6 +29,12 @@
       "post_date": "Publication date of the post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# email} other {# emails}}",
+    "linkedin": "{n, plural, one {# LinkedIn action} other {# LinkedIn actions}}",
+    "courrier": "{n, plural, one {# letter} other {# letters}}",
+    "appel": "{n, plural, one {# call} other {# calls}}"
+  },
   "login": {
     "title": "Sign in",
     "email": "Email",
@@ -281,7 +287,9 @@
         "replies": "Replies",
         "week": "This week"
       },
-      "steps": "{n, plural, one {# email step} other {# email steps}} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# mailbox} other {# mailboxes}}",
+      "noSteps": "No steps",
       "noSource": "no source",
       "listSource": "{nom}{autres, plural, =0 {} one { and # other} other { and # others}}",
       "status": {
@@ -300,6 +308,9 @@
       "titreCasse": "A connection has dropped",
       "sousTitre": "Six connections before prospecting runs on its own.",
       "sousTitreCasse": "The rest keeps running.",
+      "titreTerminee": "Everything is connected",
+      "sousTitreTerminee": "You can close this guide: it comes back if a connection drops.",
+      "fermer": "Close this guide",
       "avancement": "{faites} of {total}",
       "lignes": {
         "fournisseurs": {
@@ -334,7 +345,7 @@
         },
         "campagne": {
           "titre": "A live campaign",
-          "aide": "It ties the persona, the sources and the sequence together.",
+          "aide": "It ties the persona, the sources and the sequence together. It is ticked once a campaign is launched and no draft is waiting to be launched.",
           "bouton": "Open",
           "mesure": "{n} live"
         }
@@ -415,7 +426,7 @@
         "emailVerified": "Email verified",
         "inSequence": "In sequence",
         "pausedSuffix": "· {n} paused",
-        "delivered": "Emails sent",
+        "delivered": "{nature, select, email {Emails sent} linkedin {LinkedIn actions sent} other {Messages sent}}",
         "awaitingSendSuffix": "· {n} awaiting send",
         "replies": "Replies",
         "interested": "Interested"
@@ -450,8 +461,8 @@
         "seeAll": "View all",
         "empty": "No activity yet.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-          "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}} · step {etape}} other {{n, plural, one {# send dispatched} other {# sends dispatched}} · step {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}}} other {{n, plural, one {# send dispatched} other {# sends dispatched}}}}"
         }
       }
     },
@@ -485,6 +496,7 @@
         "a_repondu": "Replied",
         "interesse": "Interested",
         "ecarte": "Discarded",
+        "en_attente_coordonnee": "Waiting for contact details",
         "termine": "Finished",
         "rebond": "Bounced",
         "ne_plus_contacter": "Do not contact"
@@ -528,7 +540,8 @@
         "sentBy": "Sent by {boite} · linked to this mailbox for the whole sequence",
         "step": "{n}",
         "pausedLine": "Paused: {motif}",
-        "nextMessage": "Next message on {date}"
+        "nextMessage": "Next message on {date}",
+        "awaitingAcceptance": "The LinkedIn message is waiting for the invitation to be accepted. If it is not accepted by {date}, it is skipped and the sequence continues."
       },
       "conversation": {
         "openInInbox": "Open in the Inbox",
@@ -552,7 +565,13 @@
         "add": "Add"
       },
       "history": {
-        "empty": "No event for this contact."
+        "empty": "No event for this contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "LinkedIn message skipped: the invitation was not accepted within {jours, plural, one {# day} other {# days}}.",
+            "detail": "The sequence continues with the next step."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Discard from campaign",
@@ -560,8 +579,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email scheduled today} other {# emails scheduled today}}",
-      "description": "Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".",
+      "title": "{nature, select, email {{n, plural, one {# email scheduled today} other {# emails scheduled today}}} linkedin {{n, plural, one {# LinkedIn action scheduled today} other {# LinkedIn actions scheduled today}}} other {{n, plural, one {# send scheduled today} other {# sends scheduled today}}}}",
+      "description": "{nature, select, email {Spread by SalesBlink across the sending hours and mailboxes set for this campaign. Nothing awaits your approval, except sends marked \"to review\".} linkedin {Sent from your account's LinkedIn session, within the hours and limits set for LinkedIn. Nothing awaits your approval, except sends marked \"to review\".} other {Emails are spread by SalesBlink across the sending hours and mailboxes set for this campaign, LinkedIn actions go out from your account's session, within the hours and limits set for LinkedIn. Nothing awaits your approval, except sends marked \"to review\".}}",
       "filters": {
         "all": "{n, plural, one {All #} other {All #}}",
         "scheduled": "{n, plural, one {Scheduled #} other {Scheduled #}}",
@@ -579,7 +598,7 @@
         "status": "Status"
       },
       "group": {
-        "count": "{n, plural, one {# email} other {# emails}}"
+        "count": "{nature, select, email {{n, plural, one {# email} other {# emails}}} linkedin {{n, plural, one {# LinkedIn action} other {# LinkedIn actions}}} other {{n, plural, one {# send} other {# sends}}}}"
       },
       "step": "Step {n}",
       "status": {
@@ -609,7 +628,7 @@
       },
       "drawer": {
         "title": "Review before sending",
-        "description": "Email as it will be sent",
+        "description": "{canal, select, email {Email as it will be sent} linkedin_message {LinkedIn message as it will be sent} linkedin_invite {LinkedIn invitation, sent without a note} other {Send as it will go out}}",
         "close": "Close",
         "why": "Why this contact",
         "score": "Score {n}",
@@ -631,6 +650,16 @@
           "blocked": "blocked",
           "cancelled": "cancelled",
           "skipped": "skipped"
+        }
+      },
+      "awaitingAcceptance": {
+        "title": "{n, plural, one {# LinkedIn message waiting for the invitation to be accepted} other {# LinkedIn messages waiting for the invitation to be accepted}}",
+        "explanation": "Each message goes out as soon as the person accepts the invitation. Jay Reach checks once a day. If it is not accepted by the deadline, the step is skipped and the sequence continues.",
+        "noInvitation": "No invitation sent",
+        "columns": {
+          "step": "Step",
+          "invitation": "Invitation sent",
+          "deadline": "Accept by"
         }
       }
     },
@@ -848,7 +877,9 @@
         "sourcesTitle": "Sources",
         "sourcesSubtitle": "{n, plural, one {# source feeds} other {# sources feed}} this campaign, {m, plural, one {# qualified contact} other {# qualified contacts}} to date",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · imported on {date}",
-        "intoSequence": "Qualified contacts with a verified email enter the sequence",
+        "intoSequence": "Qualified contacts enter the sequence. One exception: a person spotted on LinkedIn (a post engager) whose email we don't have waits for it before being enrolled, because the sequence contains an email step.",
+        "intoSequenceSansEmail": "Qualified contacts enter the sequence: it has no email step, so no email is required, including for a person spotted on LinkedIn.",
+        "intoSequenceVide": "Add a first step. While the sequence is empty, a person spotted on LinkedIn (a post engager) whose email we don't have waits for it before being enrolled.",
         "delayDays": "{n, plural, one {# day after} other {# days after}}",
         "delayHours": "{n, plural, one {# hour after} other {# hours after}}",
         "endTitle": "End of sequence",
@@ -905,6 +936,18 @@
       "avertissements": {
         "messageSansInvitation": "Step {n}: a LinkedIn message only reaches a 1st-degree connection. Add an invitation step before it, or it will never be sent.",
         "noteDInvitation": "Step {n}: server-side sending cannot carry the invitation note yet. While it is there, the invitation is not sent. Remove it to launch."
+      },
+      "nomEtape": {
+        "premier_email": "First email",
+        "relance": "Follow-up",
+        "dernier_mot": "Final word",
+        "invitation_linkedin": "LinkedIn invitation",
+        "premier_message_linkedin": "First LinkedIn message",
+        "relance_linkedin": "LinkedIn follow-up",
+        "dernier_message_linkedin": "Last LinkedIn message",
+        "courrier": "Letter",
+        "appel": "Call",
+        "etape": "Step"
       }
     },
     "activite": {
@@ -926,8 +969,8 @@
       "previous": "Previous",
       "next": "Next",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}",
-        "withoutStep": "{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · step {etape} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}} · step {etape}} other {{n, plural, one {# send dispatched} other {# sends dispatched}} · step {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# email dispatched} other {# emails dispatched}} · {boites, plural, one {# mailbox} other {# mailboxes}}} linkedin {{n, plural, one {# LinkedIn action done} other {# LinkedIn actions done}}} other {{n, plural, one {# send dispatched} other {# sends dispatched}}}}"
       }
     },
     "reglages": {
@@ -982,6 +1025,7 @@
       },
       "who": {
         "errorName": "Give the campaign a name.",
+        "errorPersona": "Choose the persona you are looking for.",
         "name": "Campaign name",
         "namePlaceholder": "Follow-up with sales directors",
         "personaTitle": "Who are you looking for?",
@@ -1065,6 +1109,7 @@
         "channelLinkedinInvite": "LinkedIn invitation",
         "channelLinkedinMessage": "LinkedIn message",
         "inviteSansNote": "The invitation goes out without a note: server-side sending cannot carry one yet.",
+        "messageAfterInvitation": "This message only reaches people who have accepted your invitation. Jay Reach waits for that acceptance: until it happens, the message is retried once a day. After the delay set in Settings › Limits (7 days by default) without acceptance, it is skipped and the sequence carries on with the next step.",
         "subject": "Subject",
         "body": "Body",
         "delay": "Delay since the previous step",
@@ -1074,19 +1119,27 @@
         "remove": "Delete the step",
         "variablesHint": "Available variables: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "No step. Choose a model or add one.",
-        "errorEmpty": "The sequence needs at least one step."
+        "errorEmpty": "The sequence needs at least one step.",
+        "errorIncomplete": {
+          "emailVide": "Step {rang} is an empty email: write its subject and message before continuing.",
+          "emailObjet": "Step {rang} is an email without a subject: write its subject before continuing.",
+          "emailCorps": "Step {rang} is an email without a message: write its message before continuing.",
+          "messageLinkedinCorps": "Step {rang} is a LinkedIn message without text: write it before continuing."
+        }
       },
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "No source: contacts will be added manually.",
-        "recapSequenceValue": "{n} emails over {jours} days",
+        "recapSequenceValue": "{resume} over {jours, plural, =0 {a single day} one {# day} other {# days}}",
+        "recapSequenceVide": "No step yet",
         "recapEnvoiValue": "{n} mailboxes · {plafond} new contacts per day at most",
+        "recapEnvoiSansBoites": "{plafond} new contacts per day at most",
         "boxesTitle": "Sending mailboxes",
         "boxesEmpty": "No active sending mailbox. Connect one in Settings › Senders.",
         "boxesNoneActive": "Choose at least one mailbox.",
         "review": "Review of first sends",
         "reviewSuffix": "sends",
-        "reviewHint": "The first sends wait for manual approval before going out.",
+        "reviewHint": "{n, plural, =0 {No review: everything goes out without approval.} one {The first send of each step waits for your approval before going out. You will review it in the campaign's “Today's queue” tab.} other {The first # sends of each step wait for your approval before going out. You will review them in the campaign's “Today's queue” tab.}}",
         "summaryTitle": "Summary",
         "summaryPersona": "Persona",
         "summarySources": "Sources",
@@ -1271,7 +1324,7 @@
     },
     "plafonds": {
       "title": "Organization limits and defaults",
-      "lead": "Everything is set here, in the database. The environment only kicks in if a row is missing: the \"fallback\" column says which.",
+      "lead": "Your organization's daily limits. When a limit is reached, the task waits until the next day; nothing is lost.",
       "consommation": {
         "title": "Today's usage",
         "scoring": "Scorings (Anthropic)",
@@ -1292,19 +1345,18 @@
       "table": {
         "colReglage": "Setting",
         "colValeur": "Value",
-        "colDefaut": "Default",
-        "colRepli": "Fallback",
+        "colConseillee": "Recommended value",
         "colModifie": "Modified",
         "modifier": "Edit",
         "enregistrer": "Save",
         "annuler": "Cancel",
-        "aucunRepli": "none",
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
         "erreurNombre": "Enter a whole number, zero or positive.",
         "sansObjet": "Not a volume",
-        "arrete": "Stopped: nothing is produced",
+        "arrete": "Paused: this limit is 0, so this task no longer runs.",
+        "arreteEnrichissement": "Paused: no email will be looked up, so contacts without an email will not get an email step.",
         "colConsomme": "Used"
       },
       "lignes": {
@@ -1339,6 +1391,16 @@
         "ageMaxOffresJours": {
           "nom": "Maximum posting age",
           "description": "default for sources · in days",
+          "suffixe": "days"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Wait for LinkedIn acceptance",
+          "description": "a LinkedIn message waits for the invitation to be accepted, then is skipped · in days",
+          "suffixe": "days"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Maximum signal age for buying an email",
+          "description": "older signals are no longer enriched · from 1 day up to how long signals are kept",
           "suffixe": "days"
         }
       },
@@ -1387,6 +1449,7 @@
         "cleValide": "Valid key",
         "connecte": "Connected",
         "aRenseigner": "To fill in",
+        "facultatif": "Optional",
         "echec": "Connection error"
       },
       "nom": {
@@ -1411,7 +1474,7 @@
         "microsoft_graph": "Reply polling, mailbox by mailbox",
         "adzuna": "Job postings from French sites",
         "francetravail": "Postings from the public employment agency",
-        "apify": "Server-side LinkedIn reading · required for the LinkedIn channel"
+        "apify": "Reading job postings published on LinkedIn · optional: the LinkedIn channel does not need it"
       },
       "lien": {
         "reglerPlafond": "Set the limit",
@@ -1428,7 +1491,10 @@
       },
       "reglagesTitre": "Settings",
       "enregistrerReglages": "Save",
-      "champConfigDefaut": "Default: {defaut}."
+      "champConfigDefaut": "Default: {defaut}.",
+      "detailsTechniques": "Technical details",
+      "modeleNotation": "Scoring model",
+      "modeleLeger": "Light-task model"
     },
     "personas": {
       "title": "Personas",
@@ -1548,7 +1614,7 @@
         "aucuneTache": "None",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}",
         "linkedin": "LinkedIn",
-        "purge": "Retention purge",
+        "purge": "Cleanup of old data",
         "purgeOk": "Last run {quand}",
         "purgeJamais": "Never run",
         "purgeRetard": "Overdue: last run {quand}",
@@ -1570,13 +1636,16 @@
         "titre": "Run a task now",
         "sousTitre": "without waiting for the next scheduled run",
         "lancer": "Run",
+        "confirmer": "Yes, run it",
+        "annuler": "Cancel",
         "enCours": "Running",
         "erreur": "The task could not be started.",
         "continuAideGabarit": "Runs continuously server-side, about every {minutes} minutes. No manual trigger is possible here.",
         "sources": {
           "titre": "Run all sources",
           "detailGabarit": "{actives, plural, one {# active source} other {# active sources}} · last run {dernier}",
-          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet"
+          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet",
+          "confirmation": "This starts collecting from every active source right now, without waiting for its scheduled run. New jobs and people found will then be scored, within today's limits."
         },
         "scoring": {
           "titre": "Score pending signals",
@@ -1591,7 +1660,8 @@
         "releve": {
           "titre": "SalesBlink reply polling",
           "detailGabarit": "last poll {quand}",
-          "detailJamais": "never polled yet"
+          "detailJamais": "never polled yet",
+          "confirmation": "This reads incoming replies right away, without waiting for the next scheduled run. Nothing is sent."
         }
       },
       "erreurs": {
@@ -1719,9 +1789,8 @@
           "detail": "Closed on purpose: {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Stopped: the network exit is not the expected one.",
-          "detail": "Seen at {ip} ({origine}) instead of the expected address. Nothing was sent to LinkedIn.",
-          "detailSansOrigine": "Seen at {ip} instead of the expected address. Nothing was sent to LinkedIn.",
+          "phrase": "The LinkedIn connection no longer goes out through the expected address: collection and sending are suspended.",
+          "detail": "Nothing was sent to LinkedIn. The address seen and the operator are listed under \"Technical details\".",
           "detailSansIp": "The network exit could not be read. Nothing was sent to LinkedIn."
         }
       },
@@ -1764,7 +1833,11 @@
         "compte": "Connected account",
         "comptePasEncore": "Read on the first send",
         "sortie": "Network exit",
-        "operateur": "Operator and country",
+        "operateur": "Operator",
+        "ip": "IP address",
+        "sortieValeur": "Exit through a residential IP — country: {pays}",
+        "sortieValeurSansPays": "Exit through a residential IP",
+        "detailsTechniques": "Technical details",
         "collecte": "Last collection",
         "inconnu": "Unknown",
         "jamais": "Never"
@@ -1875,6 +1948,8 @@
         "connecter": "Connect my LinkedIn account",
         "reconnecter": "Reconnect",
         "deconnecter": "Disconnect this account",
+        "deconnecterConfirmation": "Disconnecting this account stops LinkedIn collection and sending for your organization until an account is connected again.",
+        "deconnecterConfirmer": "Yes, disconnect",
         "annuler": "Cancel",
         "valider": "Submit code",
         "identifiant": "LinkedIn username",
@@ -1962,6 +2037,7 @@
       "a_repondu": "Replied",
       "interesse": "Interested",
       "ecarte": "Discarded",
+      "en_attente_coordonnee": "Waiting for contact details",
       "termine": "Finished",
       "rebond": "Bounced",
       "ne_plus_contacter": "Do not contact"

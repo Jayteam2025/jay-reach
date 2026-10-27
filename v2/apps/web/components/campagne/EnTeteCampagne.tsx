@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { CampagneEnTete } from '@jay-reach/core';
 import { Puce, TuileLogo } from '../ui';
 import type { PuceTon } from '../ui';
+import { aUneEtapeEmail } from '../../lib/canaux-sequence';
 
 /**
  * Textes déjà traduits, fournis par l'appelant (le layout de campagne, un
@@ -55,7 +56,8 @@ export function EnTeteCampagne({ campagne, libelles, action, onglets }: EnTeteCa
           {action}
         </div>
       </div>
-      {campagne.boites.length > 0 && (
+      {/* Les boîtes n'écrivent que les étapes email : « Envoie depuis » n'a pas de sens pour une campagne 100 % LinkedIn. */}
+      {aUneEtapeEmail(campagne.canauxEtapes) && campagne.boites.length > 0 && (
         <div className="jr-expediteurs">
           {libelles.envoieDepuis}
           {campagne.boites.map((boite) => (

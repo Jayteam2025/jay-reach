@@ -27,6 +27,9 @@ function libellesPour(demarrage: Demarrage): ListeDemarrageProps['libelles'] {
     titreCasse: d.titreCasse,
     sousTitre: d.sousTitre,
     sousTitreCasse: d.sousTitreCasse,
+    titreTerminee: d.titreTerminee,
+    sousTitreTerminee: d.sousTitreTerminee,
+    fermer: d.fermer,
     avancement: t('avancement', { faites: demarrage.faites, total: demarrage.total }),
     lignes: {
       fournisseurs: pour('fournisseurs'),
@@ -40,9 +43,11 @@ function libellesPour(demarrage: Demarrage): ListeDemarrageProps['libelles'] {
 }
 
 /** Le rendu complet, libellés compris, pour un jeu de lignes. */
-function rendre(lignes: LigneDemarrage[]): string {
+function rendre(lignes: LigneDemarrage[], actionFermer?: () => Promise<void>): string {
   const dem = demarrage(lignes);
-  return texte(renderToStaticMarkup(<ListeDemarrage demarrage={dem} libelles={libellesPour(dem)} />));
+  return texte(
+    renderToStaticMarkup(<ListeDemarrage demarrage={dem} libelles={libellesPour(dem)} actionFermer={actionFermer} />),
+  );
 }
 
 function ligne(cle: LigneDemarrage['cle'], p: Partial<LigneDemarrage> = {}): LigneDemarrage {
@@ -61,25 +66,45 @@ function texte(html: string): string {
 const toutesFaites = [
   ligne('fournisseurs', { compte: 7 }),
   ligne('boites', { compte: 3 }),
-  ligne('persona', { compte: 2 }),
   ligne('linkedin', { compte: null }),
+  ligne('persona', { compte: 2 }),
   ligne('source', { compte: 2 }),
   ligne('campagne', { compte: 1 }),
 ];
 
 describe('la liste de démarrage', () => {
-  // Elle ne survit pas à sa raison d'être : un bloc d'accueil qui reste pour toujours devient
-  // du décor, et on cesse de le lire.
-  it('tout branché, elle ne s’affiche pas du tout', () => {
-    expect(rendre(toutesFaites)).toBe('');
+  // Elle ne se masque plus d'elle-même : une organisation qui porte déjà les restes d'une recette
+  // aurait « tout vert » avant que l'opérateur ait rien fait. C'est lui qui la ferme.
+  it('tout branché, elle reste à l’écran et dit qu’on peut la fermer', () => {
+    const html = rendre(toutesFaites);
+    expect(html).toContain(d.titreTerminee);
+    expect(html).toContain(d.sousTitreTerminee);
+    expect(html).toContain('6 sur 6');
+    expect(html).not.toContain(d.titre);
+  });
+
+  it('elle porte un bouton de fermeture seulement quand l’écran lui donne une action', () => {
+    expect(rendre(toutesFaites)).not.toContain(d.fermer);
+    const html = rendre(toutesFaites, async () => {});
+    expect(html).toContain(d.fermer);
+    expect(html).toContain('<form');
+  });
+
+  it('quand un branchement a lâché, elle ne propose pas de se fermer : elle resterait à l’écran', () => {
+    const lignes = toutesFaites.map((l) =>
+      l.cle === 'linkedin' ? ligne('linkedin', { faite: false, compte: null, casse: true }) : l,
+    );
+    const html = rendre(lignes, async () => {});
+    expect(html).not.toContain(d.fermer);
+    expect(html).not.toContain('<form');
   });
 
   it('au premier passage, elle compte et montre le chemin de chaque ligne manquante', () => {
     const lignes = [
       ligne('fournisseurs', { compte: 7 }),
       ligne('boites', { compte: 3 }),
-      ligne('persona', { compte: 2 }),
       ligne('linkedin', { faite: false, compte: null, lien: '/settings/linkedin' }),
+      ligne('persona', { compte: 2 }),
       ligne('source', { faite: false, compte: null, lien: '/campaigns' }),
       ligne('campagne', { faite: false, compte: null, lien: '/campaigns' }),
     ];

@@ -16,6 +16,7 @@ function campagne(overrides: Partial<CampagneEnTete> = {}): CampagneEnTete {
     scoreMin: 60,
     relecturePremiersEnvois: 3,
     dailyCap: null,
+    canauxEtapes: ['email'],
     ...overrides,
   };
 }
@@ -83,6 +84,30 @@ describe('EnTeteCampagne', () => {
     );
     expect(html).toContain('prospection@get-exemple.fr');
     expect(html).not.toContain('<img');
+  });
+
+  it('campagne 100 % LinkedIn : jamais de ligne « Envoie depuis », même avec des boîtes connectées dans l\'organisation', () => {
+    const html = renderToStaticMarkup(
+      <EnTeteCampagne
+        campagne={campagne({ canauxEtapes: ['linkedin_invite'], boites: [{ id: 'b1', identite: 'prospection@get-exemple.fr', marque: null }] })}
+        libelles={LIBELLES}
+        action={null}
+      />,
+    );
+    expect(html).not.toContain('Envoie depuis');
+    expect(html).not.toContain('prospection@get-exemple.fr');
+  });
+
+  it('campagne mixte (invitation LinkedIn puis email) : la ligne « Envoie depuis » reste', () => {
+    const html = renderToStaticMarkup(
+      <EnTeteCampagne
+        campagne={campagne({ canauxEtapes: ['linkedin_invite', 'email'], boites: [{ id: 'b1', identite: 'prospection@get-exemple.fr', marque: null }] })}
+        libelles={LIBELLES}
+        action={null}
+      />,
+    );
+    expect(html).toContain('Envoie depuis');
+    expect(html).toContain('prospection@get-exemple.fr');
   });
 
   it("aucune boîte -> pas de ligne « Envoie depuis »", () => {

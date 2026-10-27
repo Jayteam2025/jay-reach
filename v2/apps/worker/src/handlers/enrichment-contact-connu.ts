@@ -38,11 +38,14 @@ import {
   type FullEnrichContactInput,
   type FullEnrichContactResult,
 } from '@jay-reach/providers/enrichment';
-import { achatRetenuParUnPost, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
+import { achatRetenuParUnPost, ageMaxEnrichissementJours, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import { mapEmailStatus } from '../enrichment-persist.js';
 import { rawStatusOf } from './enrich.js';
 import { lienProfilDeduit } from './post-engagement.js';
 import { resolveProviderCredentials } from '../credentials.js';
+// Lu seulement à l'intérieur d'une fonction (jamais au chargement) : le module d'en face fait partie
+// d'un cycle d'imports déjà connu (voir `linkedin/posts-fiches.ts`).
+import { AGE_MAX_SIGNAL_JOURS } from '../producer.js';
 
 /** Identifiant du fournisseur dans `credentials` et `provider_daily_usage`. */
 const FOURNISSEUR = 'fullenrich';
@@ -125,6 +128,8 @@ export type IssueEnrichissement =
   | 'deja_enrichi'
   /** Le post qui a fait réagir cette personne n'est pas relu : aucune campagne ne peut l'inscrire. */
   | 'post_a_relire'
+  /** Le signal d'origine a dépassé l'âge maximal : on n'achète que pour ce qui arrive maintenant. */
+  | 'signal_trop_ancien'
   | 'panne_fournisseur'
   /** Le fournisseur a répondu et l'adresse est payée, mais NOTRE base refuse de l'écrire. */
   | 'ecriture_echouee'
@@ -194,6 +199,8 @@ export const MSG = {
   sansCle: (organizationId: string) => `FullEnrich non configuré pour l’org ${organizationId} — job ignoré`,
   postARelire: (contactId: string) =>
     `le post qui a fait réagir le contact ${contactId} n'est pas validé — aucune campagne ne peut l'inscrire, aucun appel, aucun crédit`,
+  signalTropAncien: (contactId: string, maxJours: number) =>
+    `le signal du contact ${contactId} a plus de ${maxJours} jours — aucun appel, aucun crédit`,
   plafond: (organizationId: string) => `plafond quotidien d'enrichissement atteint pour l'organisation ${organizationId} — contact reporté à demain`,
   tropDeTentatives: (contactId: string, tentatives: number) =>
     `contact ${contactId} abandonné après ${tentatives} tentative(s) PAYÉE(S) sans résultat — remettre enrichment_attempts à zéro pour réessayer`,
@@ -243,6 +250,23 @@ async function marquerTraite(pool: Pool, organizationId: string, contactId: stri
     contactId,
     organizationId,
   ]);
+}
+
+/**
+ * « Le signal qui a fait entrer ce contact date de plus de `maxJours` jours. »
+ *
+ * Même borne, même colonne (`signals.occurred_at`), même signal (`contacts.source_signal_id`)
+ * que la sélection du producteur. Sans signal rattaché : faux — il n'y a rien à comparer, et un
+ * contact sans origine vient d'un import ou d'une reprise à la main que l'opérateur a voulus.
+ */
+async function signalTropAncien(pool: Pool, organizationId: string, contactId: string, maxJours: number): Promise<boolean> {
+  const res = await pool.query<{ trop_ancien: boolean }>(
+    `select s.occurred_at < now() - make_interval(days => $3) as trop_ancien /* jr:signal_trop_ancien */
+       from contacts c join signals s on s.id = c.source_signal_id and s.organization_id = c.organization_id
+      where c.id = $1 and c.organization_id = $2`,
+    [contactId, organizationId, maxJours],
+  );
+  return res.rows[0]?.trop_ancien === true;
 }
 
 export async function enrichirContactConnu(
@@ -311,6 +335,21 @@ export async function enrichirContactConnu(
   if (await achatRetenuParUnPost(pool, org, job.contactId)) {
     console.warn(`${MSG.prefixe} ${MSG.postARelire(job.contactId)}`);
     return 'post_a_relire';
+  }
+
+  // ON N'ACHÈTE QUE POUR CE QUI ARRIVE MAINTENANT, contrôle AUTORITAIRE : le producteur pose la
+  // même borne en SQL, mais un job déposé autrement (reprise à la main, file d'avant le
+  // changement, serveur MCP à venir) partirait acheter l'arriéré. La garde vit dans la fonction
+  // qui DÉPENSE.
+  //
+  // Aucune marque posée : la purge d'ancienneté efface la personne avec son signal, et marquer
+  // `enriched_at` rouvrirait l'épargne que la purge accorde à un email acheté.
+  // L'âge est celui que l'organisation a réglé à l'écran (`enrichissement_age_max_jours`), repli
+  // sur la rétention des signaux quand la ligne est absente : la MÊME valeur que le producteur.
+  const ageMax = await ageMaxEnrichissementJours(pool, org, AGE_MAX_SIGNAL_JOURS);
+  if (await signalTropAncien(pool, org, job.contactId, ageMax)) {
+    console.warn(`${MSG.prefixe} ${MSG.signalTropAncien(job.contactId, ageMax)}`);
+    return 'signal_trop_ancien';
   }
 
   const apiKey = await deps.cleFullEnrich(org);

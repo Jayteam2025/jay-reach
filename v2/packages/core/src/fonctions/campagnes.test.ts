@@ -4,6 +4,7 @@ import type { Executeur } from '../executeur.js';
 import type { Contexte } from './contexte.js';
 import { ErreurEntree, ErreurIntrouvable } from './contexte.js';
 import {
+  CASE_STATUT_DERIVE,
   ORDRE_STATUTS,
   archiver,
   creerCampagne,
@@ -207,12 +208,26 @@ describe('ORDRE_STATUTS', () => {
       'interesse',
       'a_repondu',
       'ecarte',
+      'en_attente_coordonnee',
       'termine',
       'en_pause',
       'en_sequence',
       'sans_email',
       'a_contacter',
     ]);
+  });
+});
+
+describe('CASE_STATUT_DERIVE : une inscription arrêtée faute de coordonnée', () => {
+  it('se lit `en_attente_coordonnee`, distincte de `ecarte`, après le signal écarté et avant l\u2019arrêt ordinaire', () => {
+    // Forme du SQL seule : le résultat réel est prouvé sur Postgres (accroche-post.mjs, contrôles 48a et 48b).
+    const sql = CASE_STATUT_DERIVE;
+    const iSignal = sql.indexOf("when s.status = 'discarded' then 'ecarte'");
+    const iAttente = sql.indexOf("when e.status = 'stopped' and e.stop_reason = 'not_sendable' then 'en_attente_coordonnee'");
+    const iArret = sql.indexOf("when e.status = 'stopped' then 'ecarte'");
+    expect(iSignal).toBeGreaterThan(-1);
+    expect(iAttente).toBeGreaterThan(iSignal);
+    expect(iArret).toBeGreaterThan(iAttente);
   });
 });
 
@@ -273,6 +288,7 @@ describe('listerCampagnes', () => {
       const ligne = {
         status: 'active',
         sources: [],
+        canaux_etapes: ['email'],
         qualifies: 0,
         contacts: 0,
         en_sequence: 0,
@@ -305,6 +321,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: ['adzuna'],
+          canaux_etapes: ['email'],
           qualifies: 20,
           contacts: 18,
           en_sequence: 5,
@@ -345,6 +362,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 167,
           en_sequence: 165,
@@ -367,7 +385,7 @@ describe('listerCampagnes', () => {
     const ctx = faux({
       'jr:campagnes_liste': [
         {
-          id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: {}, sources: ['adzuna'],
+          id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: {}, sources: ['adzuna'], canaux_etapes: ['email'],
           qualifies: 20, contacts: 18, en_sequence: 5, en_pause: 1, partis: 20, reponses: 2, interesses: 1, derniere_activite: null,
         },
       ],
@@ -390,6 +408,7 @@ describe('listerCampagnes', () => {
             status: 'active',
             entry_rules: {},
             sources: [],
+            canaux_etapes: ['email'],
             qualifies: 0,
             contacts: 0,
             en_sequence: 0,
@@ -417,7 +436,7 @@ describe('listerCampagnes', () => {
     async () => {
       const ctx = faux({
         'jr:campagnes_liste': [
-          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], canaux_etapes: ['email'], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
         ],
         'jr:boites_actives': [],
         'jr:tendance_partis': [],
@@ -438,7 +457,7 @@ describe('listerCampagnes', () => {
     async () => {
       const ctx = faux({
         'jr:campagnes_liste': [
-          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], canaux_etapes: ['email'], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
         ],
         'jr:boites_actives': [],
         'jr:tendance_partis': [],
@@ -465,6 +484,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -510,6 +530,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -533,6 +554,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: { boiteIds: ['send-2'] },
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -559,6 +581,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 4,
           contacts: 2,
           en_sequence: 2,
@@ -589,7 +612,7 @@ describe('lireVueDEnsemble', () => {
   function ctxComplet(role: Contexte['role'] = 'viewer') {
     return faux(
       {
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40 }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40, canaux_etapes: [] }],
         'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
         'organization_settings': [],
         // F13 (décision du 18/09) : `engages` (dénominateur de tauxLivres) et `partis` au sens
@@ -651,7 +674,7 @@ describe('lireVueDEnsemble', () => {
 
   it('expose la projection de la file du jour (revue F5, point 10)', async () => {
     const ctx = faux({
-      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40 }],
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40, canaux_etapes: [] }],
       'jr:boites_actives': [],
       organization_settings: [],
       'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
@@ -675,7 +698,7 @@ describe('lireVueDEnsemble', () => {
 
   it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null (jamais un plantage)', () => {
     const ctx = faux({
-      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null }],
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
       'jr:boites_actives': [],
       organization_settings: [],
       'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
@@ -700,7 +723,7 @@ describe('lireVueDEnsemble', () => {
   describe('campagne à liste (point 2, issue #120)', () => {
     it('entonnoir "liste" (contacts importés → email vérifié), listeSource exposée, jamais "0 offres et profils trouvés"', async () => {
       const ctx = faux({
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
         'jr:boites_actives': [],
         organization_settings: [],
         'jr:campagne_liste_source': [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }],
@@ -746,7 +769,7 @@ describe('lireVueDEnsemble', () => {
     // (le plus d'inscriptions) fait le texte, les autres comptent dans `autresListes`.
     it('plusieurs listes distinctes (deux imports successifs) : la dominante fait le texte, les autres comptent', async () => {
       const ctx = faux({
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
         'jr:boites_actives': [],
         organization_settings: [],
         // La requête réelle trie déjà par nombre d'inscriptions décroissant : la dominante en tête.
@@ -787,7 +810,7 @@ describe('lireVueDEnsemble', () => {
           return { rows: [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }], rowCount: 1 };
         }
         if (/jr:campagne_entete/i.test(sql)) {
-          return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }], rowCount: 1 };
+          return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }], rowCount: 1 };
         }
         if (/jr:entonnoir_commun/i.test(sql)) {
           return { rows: [{ en_sequence: 165, en_pause: 2, partis: 110, reponses: 1, interesses: 0 }], rowCount: 1 };
@@ -1631,38 +1654,47 @@ describe('lireContraintesSendersDuJour (revue F5, point 10)', () => {
 
 describe('evenementsEnvoisGroupes (point 3.a, fil d’activité, lignes simulées)', () => {
   it('construit une donnée structurée avec étape (1-based) et nombre de boîtes, sans texte français (revue F5, point 4)', () => {
-    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 }]);
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 }]);
     expect(r).toEqual([
       {
-        id: 'envois-2026-09-17T08:00:00.000Z-0',
+        id: 'envois-2026-09-17T08:00:00.000Z-0-email',
         quand: '2026-09-17T08:00:00.000Z',
         type: 'action_sent',
         libelle: null,
         detail: null,
-        donneesEnvois: { n: 24, etape: 1, boites: 3 },
+        donneesEnvois: { n: 24, etape: 1, boites: 3, canal: 'email' },
       },
     ]);
   });
 
   it('sans étape connue (action orpheline), `donneesEnvois.etape` reste `null`', () => {
-    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, n: 2, boites: 1 }]);
+    const r = evenementsEnvoisGroupes([{ heure: '2026-09-17T08:00:00.000Z', etape: null, canal: 'email', n: 2, boites: 1 }]);
     expect(r[0]!.libelle).toBeNull();
-    expect(r[0]!.donneesEnvois).toEqual({ n: 2, etape: null, boites: 1 });
+    expect(r[0]!.donneesEnvois).toEqual({ n: 2, etape: null, boites: 1, canal: 'email' });
   });
 
   it('un groupe par ligne, plusieurs groupes restent distincts', () => {
     const r = evenementsEnvoisGroupes([
-      { heure: '2026-09-17T08:00:00.000Z', etape: 0, n: 24, boites: 3 },
-      { heure: '2026-09-17T09:00:00.000Z', etape: 1, n: 5, boites: 2 },
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 },
+      { heure: '2026-09-17T09:00:00.000Z', etape: 1, canal: 'email', n: 5, boites: 2 },
     ]);
     expect(r).toHaveLength(2);
-    expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0', 'envois-2026-09-17T09:00:00.000Z-1']);
+    expect(r.map((e) => e.id)).toEqual(['envois-2026-09-17T08:00:00.000Z-0-email', 'envois-2026-09-17T09:00:00.000Z-1-email']);
+  });
+
+  it('une même heure et une même étape, deux canaux : deux groupes, deux identifiants, chacun son canal', () => {
+    const r = evenementsEnvoisGroupes([
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'email', n: 4, boites: 2 },
+      { heure: '2026-09-17T08:00:00.000Z', etape: 0, canal: 'linkedin_invite', n: 3, boites: 0 },
+    ]);
+    expect(new Set(r.map((e) => e.id)).size).toBe(2);
+    expect(r.map((e) => e.donneesEnvois?.canal)).toEqual(['email', 'linkedin']);
   });
 
   // `date_trunc('hour', a.dispatched_at)` (`timestamptz`) revient de `pg` en objet `Date`, jamais
   // une chaîne (F4, `temps.ts`) : `quand` doit rester une chaîne ISO honnête malgré cette entrée.
   it('accepte un objet `Date` en provenance de `pg`, rend une chaîne ISO (F4, jamais l’objet tel quel)', () => {
-    const r = evenementsEnvoisGroupes([{ heure: new Date('2026-09-17T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }]);
+    const r = evenementsEnvoisGroupes([{ heure: new Date('2026-09-17T08:00:00.000Z'), etape: 0, canal: 'email', n: 24, boites: 3 }]);
     expect(r[0]!.quand).toBe('2026-09-17T08:00:00.000Z');
     expect(typeof r[0]!.quand).toBe('string');
   });
@@ -1706,13 +1738,13 @@ describe('listerActivite', () => {
         'jr:activite_campagne_tout_audit': [
           { id: 'ev-1', created_at: '2026-09-14T07:00:00Z', entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée à 10h04.' } },
         ],
-        'jr:activite_campagne_tout_envois': [{ heure: '2026-09-14T08:00:00.000Z', etape: 0, n: 24, boites: 3 }],
+        'jr:activite_campagne_tout_envois': [{ heure: '2026-09-14T08:00:00.000Z', etape: 0, canal: 'email', n: 24, boites: 3 }],
       });
       const r = await listerActivite(ctx, { campagneId });
       expect(r.total).toBe(2);
       // Le groupe d'envois (8h) est plus récent que le lancement (7h) : en tête.
       expect(r.evenements[0]!.libelle).toBeNull();
-      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3, canal: 'email' });
       expect(r.evenements[1]!.id).toBe('ev-1');
     });
 
@@ -1725,11 +1757,11 @@ describe('listerActivite', () => {
         'jr:activite_campagne_tout_audit': [
           { id: 'ev-1', created_at: new Date('2026-09-14T07:00:00.000Z'), entity_type: 'campaign', action: 'campaign_activated', diff: { libelle: 'Campagne lancée.' } },
         ],
-        'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, n: 24, boites: 3 }],
+        'jr:activite_campagne_tout_envois': [{ heure: new Date('2026-09-14T08:00:00.000Z'), etape: 0, canal: 'email', n: 24, boites: 3 }],
       });
       const r = await listerActivite(ctx, { campagneId });
       expect(r.evenements[0]!.libelle).toBeNull();
-      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3 });
+      expect(r.evenements[0]!.donneesEnvois).toEqual({ n: 24, etape: 1, boites: 3, canal: 'email' });
       expect(r.evenements[1]!.id).toBe('ev-1');
       expect(typeof r.evenements[0]!.quand).toBe('string');
       expect(typeof r.evenements[1]!.quand).toBe('string');
@@ -2120,7 +2152,12 @@ describe('manquesPourLancer', () => {
    */
   it('refuse de lancer une invitation LinkedIn dont le message porte une note', async () => {
     const ctx = faux({
-      'jr:manques_etapes': [{ position: 2, channel: 'linkedin_invite', template_parent_id: 'tpl-note' }],
+      // Positions 0, 4, 7 : la numérotation lue est le RANG (3e étape), pas la position stockée.
+      'jr:manques_etapes': [
+        { position: 0, channel: 'linkedin_invite', template_parent_id: 'tpl-1' },
+        { position: 4, channel: 'linkedin_invite', template_parent_id: 'tpl-1' },
+        { position: 7, channel: 'linkedin_invite', template_parent_id: 'tpl-note' },
+      ],
       'jr:manques_note_invitation': [{ parent: 'tpl-note' }],
       'jr:manques_genres': [],
       'jr:manques_session_linkedin': [{ status: 'active' }],

@@ -184,6 +184,29 @@ describe('ecarterDuneCampagne', () => {
     expect(String(ecritureActions?.[0])).toMatch(/organization_id = \$2/);
   });
 
+  it('arrête aussi une inscription déjà arrêtée faute de coordonnée, et lui donne le motif `operator_skip` (#179)', async () => {
+    // La forme du SQL seule : la preuve sur Postgres est dans le harnais accroche-post (contrôles 60 à 60c).
+    const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_inscriptions': [] });
+    await ecarterDuneCampagne(ctx, { contactId, campagneId });
+    const sql = String(appelsDe(ctx).find((a) => /jr:ecarter_inscriptions/i.test(String(a[0])))?.[0]);
+    expect(sql).toMatch(/status = 'stopped' and stop_reason = 'not_sendable'/);
+    expect(sql).toMatch(/case when status = 'stopped' then 'operator_skip'/);
+    expect(sql).toMatch(/organization_id = \$3/);
+  });
+
+  it('annule les lignes LinkedIn encore en attente de la personne pour CETTE campagne, et écarte leurs actions, filtrées par organisation', async () => {
+    // La forme du SQL seule : sa preuve sur Postgres est la section 10 du harnais linkedin-attente-acceptation.
+    const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_file_linkedin': [{ action_id: actionId }] });
+    await ecarterDuneCampagne(ctx, { contactId, campagneId });
+    const ecriture = appelsDe(ctx).find((a) => /jr:ecarter_file_linkedin/i.test(String(a[0])));
+    expect(ecriture?.[1]).toEqual([contactId, campagneId, 'org-1']);
+    const sql = String(ecriture?.[0]);
+    expect(sql).toMatch(/status = 'cancelled'/);
+    expect(sql).toMatch(/q\.status = 'pending'/);
+    expect(sql).toMatch(/q\.organization_id = \$3/);
+    expect(sql).toMatch(/e\.campaign_id = \$2/);
+  });
+
   it('n’écrit aucune annulation d’action quand le contact n’a aucune inscription active', async () => {
     const ctx = faux({ 'jr:ecarter_campagne': [{ id: campagneId }], 'jr:ecarter_inscriptions': [] });
     await ecarterDuneCampagne(ctx, { contactId, campagneId });
@@ -353,7 +376,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: 'tpl-1',
-          position: 0,
+          rang: 0,
+          channel: 'email',
           locale: 'fr',
           first_name: 'Nadia',
           last_name: 'Lemaire',
@@ -402,7 +426,8 @@ describe('apercuEnvoi', () => {
       score: 88,
       pourquoi: { titre: 'A commenté un post', detail: 'Correspond au persona cible' },
       etapePosition: 1,
-      etapeNom: 'Premier email',
+      etapeCode: 'premier_email',
+      canal: 'email',
       heurePrevue: '2026-09-15T09:40:00.000Z',
       statut: 'pending_approval',
     });
@@ -418,7 +443,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: 'tpl-1',
-          position: 1,
+          rang: 1,
+          channel: 'email',
           locale: null,
           first_name: 'Karim',
           last_name: null,
@@ -458,7 +484,7 @@ describe('apercuEnvoi', () => {
     expect(r.variablesManquantes.sort()).toEqual(['contexte', 'signal_titre']);
     expect(r.pourquoi).toBeNull();
     expect(r.etapePosition).toBe(2);
-    expect(r.etapeNom).toBe('Relance');
+    expect(r.etapeCode).toBe('relance');
   });
 
   it('sans gabarit relié à l’étape, renvoie un objet et un corps vides plutôt que d’échouer', async () => {
@@ -471,7 +497,8 @@ describe('apercuEnvoi', () => {
           contact_id: contactId,
           campaign_id: campagneId,
           template_parent_id: null,
-          position: 0,
+          rang: 0,
+          channel: 'email',
           locale: null,
           first_name: null,
           last_name: null,
@@ -491,5 +518,36 @@ describe('apercuEnvoi', () => {
     expect(r.destinataire).toBeNull();
     expect(r.variablesManquantes).toEqual([]);
     expect(r.statut).toBe('blocked');
+  });
+
+  it('une action LinkedIn se présente comme telle : canal et nom d’étape, jamais « Premier email »', async () => {
+    const ctx = faux({
+      'jr:apercu_lire': [
+        {
+          id: actionId,
+          status: 'scheduled',
+          scheduled_for: null,
+          contact_id: contactId,
+          campaign_id: campagneId,
+          template_parent_id: null,
+          rang: 0,
+          channel: 'linkedin_invite',
+          locale: null,
+          first_name: 'Karim',
+          last_name: null,
+          job_title: null,
+          entreprise: null,
+          expediteur: null,
+          score: null,
+          signal_titre: null,
+          score_reason: null,
+        },
+      ],
+      'jr:valeurs_contact\\b': [],
+    });
+    const r = await apercuEnvoi(ctx, { actionId });
+    expect(r.canal).toBe('linkedin_invite');
+    expect(r.etapeCode).toBe('invitation_linkedin');
+    expect(r.etapePosition).toBe(1);
   });
 });

@@ -5,7 +5,7 @@ export {
   raisonDeNePasAcheter,
   MSG,
 } from '../../apps/worker/src/handlers/enrichment-contact-connu.js';
-export { enqueueEnrichmentContactsConnus, ecarterSignauxTropAnciens } from '../../apps/worker/src/producer.js';
+export { enqueueEnrichmentContactsConnus, enqueueEnrichmentForQualified, ecarterSignauxTropAnciens, AGE_MAX_SIGNAL_JOURS } from '../../apps/worker/src/producer.js';
 export { enregistrerEngageur } from '../../apps/worker/src/handlers/post-engagement.js';
 export { runScore } from '../../apps/worker/src/handlers/score.js';
 export { persistEnrichedContact } from '../../apps/worker/src/enrichment-persist.js';

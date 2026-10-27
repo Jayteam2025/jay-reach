@@ -79,13 +79,12 @@ export function ligneMoteurLinkedIn(
  */
 export function varianteDetailSession(
   session: SessionLinkedIn | null,
-): 'detail' | 'detailSansCollecte' | 'detailSansOrigine' | 'detailSansIp' {
+): 'detail' | 'detailSansCollecte' | 'detailSansIp' {
   const cle = cleDeLaSession(session);
   if (cle === 'prete') return session?.derniereCollecte ? 'detail' : 'detailSansCollecte';
-  if (cle === 'sortieInattendue') {
-    if (!session?.ipVue) return 'detailSansIp';
-    return session.operateur || session.pays ? 'detail' : 'detailSansOrigine';
-  }
+  // L'adresse vue et l'opérateur ne sont plus dans la phrase : ils se lisent sous « Détails techniques »,
+  // comme dans l'état normal. Seule une sortie qu'on n'a pas pu relever change de gabarit.
+  if (cle === 'sortieInattendue') return session?.ipVue ? 'detail' : 'detailSansIp';
   return 'detail';
 }
 
@@ -164,12 +163,13 @@ export function phraseEtatEnvoi(
     case 'plafond_horaire_atteint':
       return { ton: 'attention', cle: prochain.disponibleA ? 'plafondHoraireDate' : 'plafondHoraire' };
     // Inatteignables par `prochainEnvoiLinkedIn` : `too_soon` y arrive toujours avec un délai,
-    // donc avec une date, et `race_retry` comme `contact_exclu` n'appartiennent qu'à la réclamation. Nommés quand même,
+    // donc avec une date, et `race_retry` comme `contact_exclu` et `sequence_arretee` n'appartiennent qu'à la réclamation. Nommés quand même,
     // parce qu'un motif rangé dans un fourre-tout silencieux est un motif qu'on ne verra pas
     // changer de sens.
     case 'too_soon':
     case 'race_retry':
     case 'contact_exclu':
+    case 'sequence_arretee':
       return { ton: 'bon', cle: 'rienAEnvoyer' };
     // Le `never` fait échouer la COMPILATION si un motif nouveau apparaît ; le `return` qui suit
     // garde l'écran debout à l'exécution, car un écran de réglages ne doit pas tomber parce que
@@ -179,5 +179,22 @@ export function phraseEtatEnvoi(
       void _exhaustif;
       return { ton: 'bon', cle: 'rienAEnvoyer' };
     }
+  }
+}
+
+/**
+ * Le pays de la sortie réseau, en toutes lettres dans la langue de l'écran (« FR » → « France »).
+ * Le code vient de la donnée réellement relevée à l'ouverture de la session (`last_egress_country`) :
+ * rien n'est supposé. Un code que la plateforme ne connaît pas (ou absent) ne se traduit pas, on ne
+ * l'invente pas — `null` quand rien n'est relevé, le code brut quand il est inconnu d'Intl.
+ */
+export function nomDuPays(code: string | null | undefined, locale: string): string | null {
+  const propre = code?.trim();
+  if (!propre) return null;
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(propre.toUpperCase()) ?? propre;
+  } catch {
+    // `of` lève une RangeError sur un code qui n'est pas une région (« Liberty », « 12 »).
+    return propre;
   }
 }

@@ -22,11 +22,20 @@ export function SectionHistorique({ historique, fuseau }: SectionHistoriqueProps
         </p>
       ) : (
         <Journal
-          entrees={historique.map((e) => ({
-            heure: dateCourte(e.quand, undefined, fuseau),
-            texte: e.libelle || e.type,
-            note: e.detail ?? undefined,
-          }))}
+          entrees={historique.map((e) =>
+            // Un événement en CODE (#181) se traduit ici ; un événement ancien garde son libellé français, en repli.
+            e.code
+              ? {
+                  heure: dateCourte(e.quand, undefined, fuseau),
+                  texte: t(`history.codes.${e.code}.libelle`, e.parametres),
+                  note: t(`history.codes.${e.code}.detail`, e.parametres),
+                }
+              : {
+                  heure: dateCourte(e.quand, undefined, fuseau),
+                  texte: e.libelle || e.type,
+                  note: e.detail ?? undefined,
+                },
+          )}
         />
       )}
     </>

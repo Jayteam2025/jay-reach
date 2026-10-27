@@ -10,7 +10,8 @@ import {
 } from '@jay-reach/core';
 import { contexteCourant } from '../../../../../lib/contexte';
 import { EtatVide } from '../../../../../components/ui';
-import { TablePosts, ligneValidable, type LignePostEcran, type MorceauEcran } from '../../../../../components/campagne/TablePosts';
+import { TablePosts } from '../../../../../components/campagne/TablePosts';
+import { ligneValidable, type LignePostEcran, type MorceauEcran } from '../../../../../components/campagne/ligne-post';
 
 export const revalidate = 0;
 

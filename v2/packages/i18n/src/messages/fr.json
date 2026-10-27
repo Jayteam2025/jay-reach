@@ -29,6 +29,12 @@
       "post_date": "Date de publication du post"
     }
   },
+  "canauxSequence": {
+    "email": "{n, plural, one {# email} other {# emails}}",
+    "linkedin": "{n, plural, one {# action LinkedIn} other {# actions LinkedIn}}",
+    "courrier": "{n, plural, one {# courrier} other {# courriers}}",
+    "appel": "{n, plural, one {# appel} other {# appels}}"
+  },
   "login": {
     "title": "Connexion",
     "email": "Email",
@@ -281,7 +287,9 @@
         "replies": "Réponses",
         "week": "Cette semaine"
       },
-      "steps": "{n, plural, one {# étape email} other {# étapes email}} · {boites, plural, one {# boîte} other {# boîtes}}",
+      "steps": "{resume}",
+      "stepsBoxes": "{resume} · {boites, plural, one {# boîte} other {# boîtes}}",
+      "noSteps": "Aucune étape",
       "noSource": "aucune source",
       "listSource": "{nom}{autres, plural, =0 {} one { et # autre} other { et # autres}}",
       "status": {
@@ -300,6 +308,9 @@
       "titreCasse": "Un branchement a lâché",
       "sousTitre": "Six branchements avant que la prospection parte toute seule.",
       "sousTitreCasse": "Le reste continue de tourner.",
+      "titreTerminee": "Tout est branché",
+      "sousTitreTerminee": "Vous pouvez fermer ce guide : il reviendra si un branchement lâche.",
+      "fermer": "Fermer ce guide",
       "avancement": "{faites} sur {total}",
       "lignes": {
         "fournisseurs": {
@@ -334,7 +345,7 @@
         },
         "campagne": {
           "titre": "Une campagne lancée",
-          "aide": "Elle relie le persona, les sources et la séquence.",
+          "aide": "Elle relie le persona, les sources et la séquence. Elle est cochée quand une campagne est lancée et qu'aucun brouillon n'attend son lancement.",
           "bouton": "Ouvrir",
           "mesure": "{n, plural, one {# active} other {# actives}}"
         }
@@ -415,7 +426,7 @@
         "emailVerified": "Email vérifié",
         "inSequence": "En séquence",
         "pausedSuffix": "· {n} en pause",
-        "delivered": "Emails partis",
+        "delivered": "{nature, select, email {Emails partis} linkedin {Actions LinkedIn parties} other {Envois partis}}",
         "awaitingSendSuffix": "· {n} en attente d'envoi",
         "replies": "Réponses",
         "interested": "Intéressés"
@@ -450,8 +461,8 @@
         "seeAll": "Tout voir",
         "empty": "Aucune activité pour le moment.",
         "envoisGroupes": {
-          "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-          "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
+          "withStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}} · étape {etape}} other {{n, plural, one {# envoi remis} other {# envois remis}} · étape {etape}}}",
+          "withoutStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}}} other {{n, plural, one {# envoi remis} other {# envois remis}}}}"
         }
       }
     },
@@ -485,6 +496,7 @@
         "a_repondu": "A répondu",
         "interesse": "Intéressé",
         "ecarte": "Écarté",
+        "en_attente_coordonnee": "En attente d’une coordonnée",
         "termine": "Terminé",
         "rebond": "Rebond",
         "ne_plus_contacter": "Ne plus contacter"
@@ -528,7 +540,8 @@
         "sentBy": "Envoyé par {boite} · lié à cette boîte pour toute la séquence",
         "step": "{n}",
         "pausedLine": "En pause : {motif}",
-        "nextMessage": "Prochain message le {date}"
+        "nextMessage": "Prochain message le {date}",
+        "awaitingAcceptance": "Le message LinkedIn attend que l’invitation soit acceptée. Si elle ne l’est pas d’ici le {date}, il est passé et la séquence continue."
       },
       "conversation": {
         "openInInbox": "Ouvrir dans la Réception",
@@ -552,7 +565,13 @@
         "add": "Ajouter"
       },
       "history": {
-        "empty": "Aucun événement pour ce contact."
+        "empty": "Aucun événement pour ce contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "Message LinkedIn passé : l’invitation n’a pas été acceptée en {jours, plural, one {# jour} other {# jours}}.",
+            "detail": "La séquence continue à l’étape suivante."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Écarter de la campagne",
@@ -560,8 +579,8 @@
       }
     },
     "file": {
-      "title": "{n, plural, one {# email prévu aujourd'hui} other {# emails prévus aujourd'hui}}",
-      "description": "Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».",
+      "title": "{nature, select, email {{n, plural, one {# email prévu aujourd'hui} other {# emails prévus aujourd'hui}}} linkedin {{n, plural, one {# action LinkedIn prévue aujourd'hui} other {# actions LinkedIn prévues aujourd'hui}}} other {{n, plural, one {# envoi prévu aujourd'hui} other {# envois prévus aujourd'hui}}}}",
+      "description": "{nature, select, email {Répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne. Rien n'attend votre accord, sauf les envois marqués « à relire ».} linkedin {Envoyées depuis la session LinkedIn de votre compte, aux heures et dans les plafonds réglés pour LinkedIn. Rien n'attend votre accord, sauf les envois marqués « à relire ».} other {Les emails sont répartis par SalesBlink sur les heures et boîtes d'envoi réglées pour cette campagne, les actions LinkedIn partent de la session de votre compte, aux heures et dans les plafonds réglés pour LinkedIn. Rien n'attend votre accord, sauf les envois marqués « à relire ».}}",
       "filters": {
         "all": "{n, plural, one {Tous #} other {Tous #}}",
         "scheduled": "{n, plural, one {Prévu #} other {Prévus #}}",
@@ -579,7 +598,7 @@
         "status": "État"
       },
       "group": {
-        "count": "{n, plural, one {# email} other {# emails}}"
+        "count": "{nature, select, email {{n, plural, one {# email} other {# emails}}} linkedin {{n, plural, one {# action LinkedIn} other {# actions LinkedIn}}} other {{n, plural, one {# envoi} other {# envois}}}}"
       },
       "step": "Étape {n}",
       "status": {
@@ -609,7 +628,7 @@
       },
       "drawer": {
         "title": "Relire avant envoi",
-        "description": "Email tel qu'il partira",
+        "description": "{canal, select, email {Email tel qu'il partira} linkedin_message {Message LinkedIn tel qu'il partira} linkedin_invite {Invitation LinkedIn, qui part sans note} other {Envoi tel qu'il partira}}",
         "close": "Fermer",
         "why": "Pourquoi ce contact",
         "score": "Score {n}",
@@ -631,6 +650,16 @@
           "blocked": "bloqué",
           "cancelled": "annulé",
           "skipped": "sauté"
+        }
+      },
+      "awaitingAcceptance": {
+        "title": "{n, plural, one {# message LinkedIn attend l'acceptation de l'invitation} other {# messages LinkedIn attendent l'acceptation de l'invitation}}",
+        "explanation": "Chaque message part dès que la personne accepte l'invitation. Jay Reach vérifie une fois par jour. Sans acceptation à la date limite, l'étape est passée et la séquence continue.",
+        "noInvitation": "Pas d'invitation envoyée",
+        "columns": {
+          "step": "Étape",
+          "invitation": "Invitation envoyée le",
+          "deadline": "Limite d’acceptation"
         }
       }
     },
@@ -848,7 +877,9 @@
         "sourcesTitle": "Sources",
         "sourcesSubtitle": "{n, plural, one {# source alimente} other {# sources alimentent}} cette campagne, {m, plural, one {# contact qualifié} other {# contacts qualifiés}} à ce jour",
         "sourcesListSubtitle": "{n, plural, one {# contact} other {# contacts}} · importée le {date}",
-        "intoSequence": "Les contacts qualifiés avec un email vérifié entrent en séquence",
+        "intoSequence": "Les contacts qualifiés entrent en séquence. Seule exception : une personne repérée sur LinkedIn (engageur d'un post) dont on n'a pas l'email attend de l'avoir avant d'être inscrite, car la séquence contient une étape email.",
+        "intoSequenceSansEmail": "Les contacts qualifiés entrent en séquence : elle ne comporte aucune étape email, aucun email n'est requis, y compris pour une personne repérée sur LinkedIn.",
+        "intoSequenceVide": "Ajoutez une première étape. Tant que la séquence est vide, une personne repérée sur LinkedIn (engageur d'un post) dont on n'a pas l'email attend de l'avoir avant d'être inscrite.",
         "delayDays": "{n, plural, one {# jour après} other {# jours après}}",
         "delayHours": "{n, plural, one {# heure après} other {# heures après}}",
         "endTitle": "Fin de séquence",
@@ -905,6 +936,18 @@
       "avertissements": {
         "messageSansInvitation": "Étape {n} : un message LinkedIn n'atteint qu'une relation de 1er degré. Ajoutez une étape d'invitation avant lui, sinon il ne partira jamais.",
         "noteDInvitation": "Étape {n} : l'envoi depuis le serveur ne sait pas encore porter la note d'invitation. Tant qu'elle est là, l'invitation ne part pas. Retirez-la pour lancer."
+      },
+      "nomEtape": {
+        "premier_email": "Premier email",
+        "relance": "Relance",
+        "dernier_mot": "Dernier mot",
+        "invitation_linkedin": "Invitation LinkedIn",
+        "premier_message_linkedin": "Premier message LinkedIn",
+        "relance_linkedin": "Relance LinkedIn",
+        "dernier_message_linkedin": "Dernier message LinkedIn",
+        "courrier": "Courrier",
+        "appel": "Appel",
+        "etape": "Étape"
       }
     },
     "activite": {
@@ -926,8 +969,8 @@
       "previous": "Précédent",
       "next": "Suivant",
       "envoisGroupes": {
-        "withStep": "{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}",
-        "withoutStep": "{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}"
+        "withStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · étape {etape} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}} · étape {etape}} other {{n, plural, one {# envoi remis} other {# envois remis}} · étape {etape}}}",
+        "withoutStep": "{canal, select, email {{n, plural, one {# email remis} other {# emails remis}} · {boites, plural, one {# boîte} other {# boîtes}}} linkedin {{n, plural, one {# action LinkedIn réalisée} other {# actions LinkedIn réalisées}}} other {{n, plural, one {# envoi remis} other {# envois remis}}}}"
       }
     },
     "reglages": {
@@ -982,6 +1025,7 @@
       },
       "who": {
         "errorName": "Donnez un nom à la campagne.",
+        "errorPersona": "Choisissez le persona que vous cherchez.",
         "name": "Nom de la campagne",
         "namePlaceholder": "Relance directeurs commerciaux",
         "personaTitle": "Qui cherchez-vous ?",
@@ -1065,6 +1109,7 @@
         "channelLinkedinInvite": "Invitation LinkedIn",
         "channelLinkedinMessage": "Message LinkedIn",
         "inviteSansNote": "L’invitation part sans note : l’envoi serveur ne sait pas encore en transmettre une.",
+        "messageAfterInvitation": "Ce message n'atteint que les personnes qui ont accepté votre invitation. Jay Reach attend cette acceptation : tant qu'elle n'a pas eu lieu, le message est retenté une fois par jour. Au bout du délai réglé dans Réglages › Plafonds (7 jours par défaut) sans acceptation, il est sauté et la séquence continue à l'étape suivante.",
         "subject": "Objet",
         "body": "Corps",
         "delay": "Délai depuis l'étape précédente",
@@ -1074,19 +1119,27 @@
         "remove": "Supprimer l'étape",
         "variablesHint": "Variables disponibles : '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "Aucune étape. Choisissez un modèle ou ajoutez-en une.",
-        "errorEmpty": "La séquence a besoin d'au moins une étape."
+        "errorEmpty": "La séquence a besoin d'au moins une étape.",
+        "errorIncomplete": {
+          "emailVide": "L'étape {rang} est un email vide : écrivez son objet et son message avant de continuer.",
+          "emailObjet": "L'étape {rang} est un email sans objet : écrivez son objet avant de continuer.",
+          "emailCorps": "L'étape {rang} est un email sans message : écrivez son message avant de continuer.",
+          "messageLinkedinCorps": "L'étape {rang} est un message LinkedIn sans texte : écrivez-le avant de continuer."
+        }
       },
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
         "recapSourcesEmpty": "Aucune source : les contacts seront ajoutés manuellement.",
-        "recapSequenceValue": "{n} emails sur {jours} jours",
+        "recapSequenceValue": "{resume} sur {jours, plural, =0 {un seul jour} one {# jour} other {# jours}}",
+        "recapSequenceVide": "Aucune étape pour l'instant",
         "recapEnvoiValue": "{n} boîtes · {plafond} nouveaux contacts par jour au plus",
+        "recapEnvoiSansBoites": "{plafond} nouveaux contacts par jour au plus",
         "boxesTitle": "Boîtes qui enverront",
         "boxesEmpty": "Aucune boîte d'envoi active. Connectez-en une dans Réglages › Expéditeurs.",
         "boxesNoneActive": "Choisissez au moins une boîte.",
         "review": "Relecture des premiers envois",
         "reviewSuffix": "envois",
-        "reviewHint": "Les premiers envois attendent une validation manuelle avant de partir.",
+        "reviewHint": "{n, plural, =0 {Aucune relecture : tout part sans validation.} one {Le premier envoi de chaque étape attend votre validation avant de partir. Vous le relirez dans l'onglet « File du jour » de la campagne.} other {Les # premiers envois de chaque étape attendent votre validation avant de partir. Vous les relirez dans l'onglet « File du jour » de la campagne.}}",
         "summaryTitle": "Récapitulatif",
         "summaryPersona": "Persona",
         "summarySources": "Sources",
@@ -1271,7 +1324,7 @@
     },
     "plafonds": {
       "title": "Plafonds et défauts de l'organisation",
-      "lead": "Tout se règle ici, en base. L'environnement ne sert que si une ligne manque : la colonne « repli » dit laquelle.",
+      "lead": "Les limites quotidiennes de votre organisation. Un plafond atteint met la tâche en attente jusqu'au lendemain, rien n'est perdu.",
       "consommation": {
         "title": "Consommation du jour",
         "scoring": "Scorings (Anthropic)",
@@ -1292,19 +1345,18 @@
       "table": {
         "colReglage": "Réglage",
         "colValeur": "Valeur",
-        "colDefaut": "Défaut",
-        "colRepli": "Repli",
+        "colConseillee": "Valeur conseillée",
         "colModifie": "Modifié",
         "modifier": "Modifier",
         "enregistrer": "Enregistrer",
         "annuler": "Annuler",
-        "aucunRepli": "aucun",
         "jamaisModifie": "jamais",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modifié {date}} other {Modifié le {date}}}",
         "erreurNombre": "Entrez un nombre entier positif ou nul.",
         "sansObjet": "Ne se consomme pas",
-        "arrete": "Arrêté : plus rien ne se produit",
+        "arrete": "En pause : ce plafond est à 0, cette tâche ne s'exécute plus.",
+        "arreteEnrichissement": "En pause : aucun email ne sera cherché, les contacts sans email ne recevront pas d'étape email.",
         "colConsomme": "Consommé"
       },
       "lignes": {
@@ -1339,6 +1391,16 @@
         "ageMaxOffresJours": {
           "nom": "Âge maximal des offres",
           "description": "défaut des sources · en jours",
+          "suffixe": "jours"
+        },
+        "linkedinAttenteAcceptationJours": {
+          "nom": "Attente de l’acceptation LinkedIn",
+          "description": "un message LinkedIn attend l’invitation acceptée, puis est passé · en jours",
+          "suffixe": "jours"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Âge maximal d’un signal pour acheter l’adresse",
+          "description": "au-delà, la personne n’est plus enrichie · de 1 jour à la durée de conservation des signaux",
           "suffixe": "jours"
         }
       },
@@ -1387,6 +1449,7 @@
         "cleValide": "Clé valide",
         "connecte": "Connecté",
         "aRenseigner": "À renseigner",
+        "facultatif": "Facultatif",
         "echec": "Erreur de connexion"
       },
       "nom": {
@@ -1411,7 +1474,7 @@
         "microsoft_graph": "Relève des réponses, boîte par boîte",
         "adzuna": "Offres d'emploi des sites français",
         "francetravail": "Offres de l'agence publique",
-        "apify": "Lecture de LinkedIn côté serveur · nécessaire au canal LinkedIn"
+        "apify": "Lecture des offres d'emploi publiées sur LinkedIn · facultatif : le canal LinkedIn n'en a pas besoin"
       },
       "lien": {
         "reglerPlafond": "Régler le plafond",
@@ -1428,7 +1491,10 @@
       },
       "reglagesTitre": "Réglages",
       "enregistrerReglages": "Enregistrer",
-      "champConfigDefaut": "Défaut : {defaut}."
+      "champConfigDefaut": "Défaut : {defaut}.",
+      "detailsTechniques": "Détails techniques",
+      "modeleNotation": "Modèle de notation",
+      "modeleLeger": "Modèle des tâches légères"
     },
     "personas": {
       "title": "Personas",
@@ -1548,7 +1614,7 @@
         "aucuneTache": "Aucune",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichissement} other {# enrichissements}}",
         "linkedin": "LinkedIn",
-        "purge": "Purge de rétention",
+        "purge": "Nettoyage des anciennes données",
         "purgeOk": "Dernier passage {quand}",
         "purgeJamais": "Aucun passage",
         "purgeRetard": "En retard : dernier passage {quand}",
@@ -1570,13 +1636,16 @@
         "titre": "Lancer une tâche maintenant",
         "sousTitre": "sans attendre le prochain passage planifié",
         "lancer": "Lancer",
+        "confirmer": "Oui, lancer",
+        "annuler": "Annuler",
         "enCours": "En cours",
         "erreur": "La tâche n'a pas pu être lancée.",
         "continuAideGabarit": "Tourne en continu côté serveur, toutes les {minutes} minutes environ. Aucun déclenchement manuel possible ici.",
         "sources": {
           "titre": "Passage de toutes les sources",
           "detailGabarit": "{actives, plural, one {# source active} other {# sources actives}} · dernier passage {dernier}",
-          "detailAucunPassage": "{actives, plural, one {# source active} other {# sources actives}} · aucun passage encore"
+          "detailAucunPassage": "{actives, plural, one {# source active} other {# sources actives}} · aucun passage encore",
+          "confirmation": "Cela lance dès maintenant la collecte de toutes les sources actives, sans attendre leur passage prévu. Les nouvelles offres et personnes trouvées seront ensuite notées, dans la limite des plafonds du jour."
         },
         "scoring": {
           "titre": "Scoring des signaux en attente",
@@ -1591,7 +1660,8 @@
         "releve": {
           "titre": "Relève des réponses SalesBlink",
           "detailGabarit": "dernière relève {quand}",
-          "detailJamais": "jamais encore relevée"
+          "detailJamais": "jamais encore relevée",
+          "confirmation": "Cela relit tout de suite les réponses reçues, sans attendre le prochain passage. Rien n'est envoyé."
         }
       },
       "erreurs": {
@@ -1719,9 +1789,8 @@
           "detail": "Fermée volontairement : {quand}."
         },
         "sortieInattendue": {
-          "phrase": "Arrêtée : la sortie réseau n'est pas celle attendue.",
-          "detail": "Vue à {ip} ({origine}) au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
-          "detailSansOrigine": "Vue à {ip} au lieu de l'adresse attendue. Rien n'est parti vers LinkedIn.",
+          "phrase": "La connexion LinkedIn ne sort plus par l'adresse prévue : la collecte et les envois sont suspendus.",
+          "detail": "Rien n'est parti vers LinkedIn. L'adresse vue et l'opérateur se lisent dans « Détails techniques ».",
           "detailSansIp": "La sortie réseau n'a pas pu être relevée. Rien n'est parti vers LinkedIn."
         }
       },
@@ -1764,7 +1833,11 @@
         "compte": "Compte connecté",
         "comptePasEncore": "Lu au premier envoi",
         "sortie": "Sortie réseau",
-        "operateur": "Opérateur et pays",
+        "operateur": "Opérateur",
+        "ip": "Adresse IP",
+        "sortieValeur": "Sortie par une IP résidentielle — pays : {pays}",
+        "sortieValeurSansPays": "Sortie par une IP résidentielle",
+        "detailsTechniques": "Détails techniques",
         "collecte": "Dernière collecte",
         "inconnu": "Inconnu",
         "jamais": "Jamais"
@@ -1875,6 +1948,8 @@
         "connecter": "Connecter mon compte LinkedIn",
         "reconnecter": "Reconnecter",
         "deconnecter": "Déconnecter ce compte",
+        "deconnecterConfirmation": "Déconnecter ce compte arrête la collecte et les envois LinkedIn de votre organisation, tant qu'aucun compte n'est reconnecté.",
+        "deconnecterConfirmer": "Oui, déconnecter",
         "annuler": "Annuler",
         "valider": "Valider le code",
         "identifiant": "Identifiant LinkedIn",
@@ -1962,6 +2037,7 @@
       "a_repondu": "A répondu",
       "interesse": "Intéressé",
       "ecarte": "Écarté",
+      "en_attente_coordonnee": "En attente d’une coordonnée",
       "termine": "Terminé",
       "rebond": "Rebond",
       "ne_plus_contacter": "Ne plus contacter"

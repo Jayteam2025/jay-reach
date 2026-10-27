@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
  *
  * Réglages (B1, revue finale) : l'entrée du menu principal n'a pas d'écran
  * propre, elle redirige vers la première page de la sous-navigation
- * (Expéditeurs) — seul parcours qui clique cette entrée depuis Aujourd'hui,
+ * (LinkedIn) — seul parcours qui clique cette entrée depuis Aujourd'hui,
  * les autres y vont par URL directe.
  *
  * Déconnexion : `Réglages › Compte` (R89) — carte « Session », bouton
@@ -43,11 +43,11 @@ test('connexion : arrivée sur Aujourd\'hui avec le menu à cinq entrées', asyn
     await expect(nav.getByRole('link', { name: nom })).toBeVisible();
   }
 
-  // Réglages (B1) : le clic depuis Aujourd'hui atterrit sur Expéditeurs,
+  // Réglages (B1) : le clic depuis Aujourd'hui atterrit sur LinkedIn,
   // première page de la sous-navigation.
   await nav.getByRole('link', { name: 'Réglages' }).click();
-  await page.waitForURL('/settings/senders');
-  await expect(page.getByRole('heading', { name: 'Boîtes email' })).toBeVisible();
+  await page.waitForURL('/settings/linkedin');
+  await expect(page.getByRole('heading', { name: 'LinkedIn', exact: true })).toBeVisible();
 
   // Déconnexion (Réglages › Compte, carte « Session »).
   await page.goto('/settings/account');
