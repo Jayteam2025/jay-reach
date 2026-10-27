@@ -85,6 +85,8 @@ interface Monde {
   ouvrir: ReturnType<typeof vi.fn>;
   pool: DependancesReleve['pool'];
   requetes: string[];
+  /** En-têtes passés à chaque requête vers LinkedIn, dans l'ordre de `requetes`. */
+  entetes: (Record<string, string> | undefined)[];
   /** Contacts par identifiant normalisé (rattachement par URN). */
   parUrn: Map<string, string[]>;
   /** Contacts par URL normalisée (rattachement de repli). */
@@ -138,6 +140,7 @@ function monde(opts: {
     ouvrir: vi.fn(),
     pool: undefined as unknown as DependancesReleve['pool'],
     requetes: [],
+    entetes: [],
     parUrn: new Map(Object.entries(opts.contactsParUrn ?? {})),
     parUrl: new Map(Object.entries(opts.contactsParUrl ?? {})),
     requetesSql: [],
@@ -230,8 +233,9 @@ function monde(opts: {
     presserEntree: async () => undefined,
     texte: async () => '',
     attendre: async () => true,
-    requete: async (u) => {
+    requete: async (u, entetes) => {
       w.requetes.push(u);
+      w.entetes.push(entetes);
       if (u.startsWith(URL_PROFILS)) {
         const slug = decodeURIComponent(u.slice(URL_PROFILS.length));
         w.profilsDemandes.push(slug);
@@ -291,6 +295,19 @@ describe('garde, plage horaire et verrou', () => {
     await traiterReleveLinkedIn(deps(w, { env: {} }), JOB);
     expect(w.requetesSql).toEqual([]);
     expect(w.ouvrir).not.toHaveBeenCalled();
+  });
+
+  it('la messagerie est demandee en JSON simple : le format normalise range les conversations dans `included`, illisible pour l analyseur', async () => {
+    // Releve reel du 27/10 : avec `accept: application/vnd.linkedin.normalized+json+2.1`, LinkedIn rend
+    // `data.data.messengerConversationsBySyncToken['*elements']` (des references) et les objets dans
+    // `included` ; le premier passage en production est tombe sur `IllisibleMessagerie`. Avec
+    // `application/json` (l'en-tete de l'ancienne extension), les vingt conversations portent tous les
+    // champs lus par `analyserConversations`.
+    const w = monde({ compte: MOI_NU, curseur: new Date(AVANT), conversations: { statut: 200, corps: charge() } });
+    await traiterReleveLinkedIn(deps(w), JOB);
+    const i = w.requetes.indexOf(URL_CONVERSATIONS);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(w.entetes[i]?.accept).toBe('application/json');
   });
 
   it('sans session active, le navigateur ne s ouvre pas', async () => {
