@@ -308,6 +308,9 @@
       "titreCasse": "A connection has dropped",
       "sousTitre": "Six connections before prospecting runs on its own.",
       "sousTitreCasse": "The rest keeps running.",
+      "titreTerminee": "Everything is connected",
+      "sousTitreTerminee": "You can close this guide: it comes back if a connection drops.",
+      "fermer": "Close this guide",
       "avancement": "{faites} of {total}",
       "lignes": {
         "fournisseurs": {

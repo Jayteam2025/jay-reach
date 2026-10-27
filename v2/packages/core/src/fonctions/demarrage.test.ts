@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertesSansDoublonDemarrage, lireDemarrage, type Demarrage } from './demarrage.js';
+import { alertesSansDoublonDemarrage, demarrageAffichee, lireDemarrage, type Demarrage } from './demarrage.js';
 import type { Alerte } from './aujourdhui.js';
 import type { Contexte } from './contexte.js';
 
@@ -24,12 +24,13 @@ const toutBranche = {
   linkedin_motif: null,
   sources: 2,
   campagnes: 1,
+  brouillons: 0,
 };
 
 describe('la liste de démarrage', () => {
   it('neuve, elle ne coche rien et compte zéro sur six', async () => {
     const d = await lireDemarrage(
-      contexte({ cles: 0, boites: 0, personas: 0, linkedin_statut: null, linkedin_motif: null, sources: 0, campagnes: 0 }),
+      contexte({ cles: 0, boites: 0, personas: 0, linkedin_statut: null, linkedin_motif: null, sources: 0, campagnes: 0, brouillons: 0 }),
     );
     expect(d.faites).toBe(0);
     expect(d.total).toBe(6);
@@ -37,7 +38,7 @@ describe('la liste de démarrage', () => {
     expect(d.lignes.every((l) => !l.faite && !l.casse)).toBe(true);
   });
 
-  it('tout branché, elle se déclare terminée — l’écran ne l’affichera plus', async () => {
+  it('tout branché, elle se déclare terminée — l’écran propose de la fermer', async () => {
     const d = await lireDemarrage(contexte(toutBranche));
     expect(d.faites).toBe(6);
     expect(d.terminee).toBe(true);
@@ -93,6 +94,61 @@ describe('la liste de démarrage', () => {
     expect(d.lignes.find((l) => l.cle === 'campagne')?.faite).toBe(false);
     expect(d.terminee).toBe(false);
   });
+
+  // Le cas d'Alexandre : la campagne d'un collègue tourne déjà, la sienne est construite et pas
+  // lancée. « Une campagne lancée » ne doit pas se cocher à sa place.
+  it('un brouillon qui attend garde la ligne « campagne » à faire, même si une autre tourne', async () => {
+    const d = await lireDemarrage(contexte({ ...toutBranche, campagnes: 1, brouillons: 1 }));
+    const campagne = d.lignes.find((l) => l.cle === 'campagne');
+    expect(campagne?.faite).toBe(false);
+    // Le compte reste celui des campagnes actives : on ne mesure que ce qui l'est réellement.
+    expect(campagne?.compte).toBe(1);
+    expect(d.terminee).toBe(false);
+  });
+
+  it('un brouillon seul, sans campagne active, laisse aussi la ligne à faire', async () => {
+    const d = await lireDemarrage(contexte({ ...toutBranche, campagnes: 0, brouillons: 1 }));
+    expect(d.lignes.find((l) => l.cle === 'campagne')?.faite).toBe(false);
+  });
+
+  it('une source portée par aucune campagne vivante n’est pas « qui collecte »', async () => {
+    // Le SQL renvoie 0 dans ce cas (voir le harnais) : la ligne reste à faire.
+    const d = await lireDemarrage(contexte({ ...toutBranche, sources: 0 }));
+    expect(d.lignes.find((l) => l.cle === 'source')?.faite).toBe(false);
+  });
+
+  // Les connexions d'abord (ce que JB pose une fois), puis le parcours d'Alexandre : persona,
+  // source, campagne. L'ordre est celui des onglets de Réglages pour les connexions.
+  it('présente les points dans l’ordre du parcours, chacun avec son lien', async () => {
+    const d = await lireDemarrage(contexte(toutBranche));
+    expect(d.lignes.map((l) => [l.cle, l.lien])).toEqual([
+      ['fournisseurs', '/settings/providers'],
+      ['boites', '/settings/senders'],
+      ['linkedin', '/settings/linkedin'],
+      ['persona', '/settings/personas'],
+      ['source', '/campaigns'],
+      ['campagne', '/campaigns'],
+    ]);
+  });
+});
+
+describe('la fermeture du guide', () => {
+  // Les états viennent de `lireDemarrage`, pas d'un objet fabriqué à la main.
+  const sain = () => lireDemarrage(contexte(toutBranche));
+  const casse = () => lireDemarrage(contexte({ ...toutBranche, linkedin_statut: 'bloquee', linkedin_motif: 'defi' }));
+
+  it('ouvert, le guide est à l’écran, même quand tout est branché', async () => {
+    expect(demarrageAffichee(await sain(), false)).toBe(true);
+  });
+
+  it('fermé, il disparaît', async () => {
+    expect(demarrageAffichee(await sain(), true)).toBe(false);
+  });
+
+  // La fermeture éteint le tutoriel, pas le diagnostic.
+  it('fermé, il revient pour un branchement qui a lâché', async () => {
+    expect(demarrageAffichee(await casse(), true)).toBe(true);
+  });
 });
 
 describe('la subordination des alertes', () => {
@@ -112,6 +168,12 @@ describe('la subordination des alertes', () => {
 
   it('une fois la liste disparue, l’alerte reprend son rôle', () => {
     const gardees = alertesSansDoublonDemarrage(alertes, effacee);
+    expect(gardees).toHaveLength(2);
+  });
+
+  // Fermé par l'opérateur, le guide ne dit plus rien : l'alerte ne doit pas disparaître avec lui.
+  it('guide fermé, l’alerte reprend son rôle', () => {
+    const gardees = alertesSansDoublonDemarrage(alertes, visible, false);
     expect(gardees).toHaveLength(2);
   });
 

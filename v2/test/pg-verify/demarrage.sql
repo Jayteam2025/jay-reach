@@ -21,10 +21,24 @@ insert into personas (organization_id, name) values (:'A', 'Directeur commercial
 insert into sources (organization_id, provider_id, name, is_active)
   values (:'A', 'adzuna', 'Source A', true),
          (:'A', 'adzuna', 'Source A éteinte', false),
+         (:'A', 'adzuna', 'Source A orpheline', true),
+         (:'A', 'adzuna', 'Source A en pause', true),
          (:'B', 'adzuna', 'Source B', true);
 insert into campaigns (organization_id, name, status, entry_rules)
   values (:'A', 'Campagne A', 'active', '{}'), (:'A', 'Brouillon A', 'draft', '{}'),
+         (:'A', 'Active sans étape A', 'active', '{}'), (:'A', 'Pause A', 'paused', '{}'),
          (:'B', 'Campagne B', 'active', '{}');
+-- Une campagne lancée a de quoi envoyer : seule « Campagne A » (et celle de B) porte une étape.
+insert into sequence_steps (campaign_id, position, channel)
+  select id, 1, 'email' from campaigns where name in ('Campagne A', 'Campagne B');
+-- Les sources ne comptent que reliées à une campagne vivante (brouillon ou active) :
+-- « éteinte » est reliée mais inactive, « orpheline » n'est reliée à rien, « en pause » n'est
+-- reliée qu'à une campagne en pause, et celle de B appartient à l'autre organisation.
+insert into campaign_sources (campaign_id, source_id)
+  select c.id, s.id from campaigns c, sources s
+   where (c.name = 'Campagne A' and s.name in ('Source A', 'Source A éteinte'))
+      or (c.name = 'Pause A' and s.name = 'Source A en pause')
+      or (c.name = 'Campagne B' and s.name = 'Source B');
 insert into linkedin_server_sessions (organization_id, status) values (:'A', 'active');
 
 do $$
@@ -35,8 +49,9 @@ begin
   if r.cles <> 1 then raise exception 'FAIL 1a : cles = %, attendu 1 (ni celle de B, ni une cle unconfigured)', r.cles; end if;
   if r.boites <> 1 then raise exception 'FAIL 1b : boites = %, attendu 1 (ni la boite inactive, ni celle de B, ni le sender linkedin)', r.boites; end if;
   if r.personas <> 1 then raise exception 'FAIL 1c : personas = %, attendu 1', r.personas; end if;
-  if r.sources <> 1 then raise exception 'FAIL 1d : sources = %, attendu 1 (la source eteinte ne compte pas)', r.sources; end if;
-  if r.campagnes <> 1 then raise exception 'FAIL 1e : campagnes = %, attendu 1 (le brouillon ne compte pas)', r.campagnes; end if;
+  if r.sources <> 1 then raise exception 'FAIL 1d : sources = %, attendu 1 (ni l''eteinte, ni l''orpheline, ni celle d''une campagne en pause, ni celle de B)', r.sources; end if;
+  if r.campagnes <> 1 then raise exception 'FAIL 1e : campagnes = %, attendu 1 (ni le brouillon, ni la pause, ni l''active sans etape, ni celle de B)', r.campagnes; end if;
+  if r.brouillons <> 1 then raise exception 'FAIL 1g : brouillons = %, attendu 1 (le brouillon de A, pas celui de personne d''autre)', r.brouillons; end if;
   if r.linkedin_statut is distinct from 'active' then raise exception 'FAIL 1f : statut linkedin = %', r.linkedin_statut; end if;
   raise notice 'OK 1 : les six comptes d''A sont justes, sans fuite depuis B';
 end $$;
@@ -49,6 +64,9 @@ begin
   if r.personas <> 0 then raise exception 'FAIL 2a : personas de B = %, attendu 0', r.personas; end if;
   if r.linkedin_statut is not null then raise exception 'FAIL 2b : B a un statut LinkedIn = %', r.linkedin_statut; end if;
   if r.boites <> 1 then raise exception 'FAIL 2c : boites de B = %, attendu 1', r.boites; end if;
+  if r.sources <> 1 or r.campagnes <> 1 or r.brouillons <> 0 then
+    raise exception 'FAIL 2d : B = % sources, % campagnes, % brouillons, attendu 1/1/0', r.sources, r.campagnes, r.brouillons;
+  end if;
   raise notice 'OK 2 : une organisation sans persona ni session le dit, et ne voit rien de l''autre';
 end $$;
 

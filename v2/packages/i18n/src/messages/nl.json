@@ -308,6 +308,9 @@
       "titreCasse": "Een koppeling is weggevallen",
       "sousTitre": "Zes koppelingen voordat de prospectie vanzelf loopt.",
       "sousTitreCasse": "De rest blijft draaien.",
+      "titreTerminee": "Alles is gekoppeld",
+      "sousTitreTerminee": "U kunt deze gids sluiten: hij komt terug als een koppeling wegvalt.",
+      "fermer": "Deze gids sluiten",
       "avancement": "{faites} van {total}",
       "lignes": {
         "fournisseurs": {

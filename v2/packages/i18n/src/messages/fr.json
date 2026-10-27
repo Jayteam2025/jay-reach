@@ -308,6 +308,9 @@
       "titreCasse": "Un branchement a lâché",
       "sousTitre": "Six branchements avant que la prospection parte toute seule.",
       "sousTitreCasse": "Le reste continue de tourner.",
+      "titreTerminee": "Tout est branché",
+      "sousTitreTerminee": "Vous pouvez fermer ce guide : il reviendra si un branchement lâche.",
+      "fermer": "Fermer ce guide",
       "avancement": "{faites} sur {total}",
       "lignes": {
         "fournisseurs": {

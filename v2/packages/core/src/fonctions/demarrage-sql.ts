@@ -21,8 +21,19 @@ export const SQL_DEMARRAGE = `
     -- avec le statut bloquee et le motif revoquee (migration 20261005130000).
     (select l.blocked_reason from linkedin_server_sessions l
       where l.organization_id = $1) as linkedin_motif,
-    (select count(*)::int from sources so
-      where so.organization_id = $1 and so.is_active) as sources,
+    -- Une source ne compte que si une campagne vivante (brouillon ou active) la porte : une source
+    -- active reliée à aucune campagne, ou seulement à une campagne en pause ou archivée, ne
+    -- collecte rien. Le compte brut d'avant la faisait passer au vert sur des restes de recette.
+    (select count(distinct so.id)::int from sources so
+      join campaign_sources cs on cs.source_id = so.id
+      join campaigns ca on ca.id = cs.campaign_id
+      where so.organization_id = $1 and so.is_active
+        and ca.organization_id = $1 and ca.status in ('draft', 'active')) as sources,
+    -- Une campagne lancée est ACTIVE et a de quoi envoyer : au moins une étape de séquence.
     (select count(*)::int from campaigns ca
-      where ca.organization_id = $1 and ca.status = 'active') as campagnes
+      where ca.organization_id = $1 and ca.status = 'active'
+        and exists (select 1 from sequence_steps st where st.campaign_id = ca.id)) as campagnes,
+    -- Un brouillon est une campagne construite et pas encore lancée : c'est ce qu'il reste à faire.
+    (select count(*)::int from campaigns ca
+      where ca.organization_id = $1 and ca.status = 'draft') as brouillons
   /* jr:demarrage_six_verites */`;
