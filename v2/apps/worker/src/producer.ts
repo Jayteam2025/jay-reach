@@ -581,7 +581,7 @@ export async function enqueueEnrichmentForQualified(
  *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
  *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
  *
- * Un quatrième borne l'ÂGE : le signal d'origine ne dépasse pas `AGE_MAX_SIGNAL_JOURS`,
+ * Un quatrième critère borne l'ÂGE : le signal d'origine ne dépasse pas `AGE_MAX_SIGNAL_JOURS`,
  * comme sur le chemin entreprise. On n'achète que pour ce qui arrive maintenant.
  *
  * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine

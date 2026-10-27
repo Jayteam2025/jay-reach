@@ -487,7 +487,7 @@ describe('enqueueEnrichmentContactsConnus', () => {
         retryBackoff: false,
       },
     ]);
-    // Les trois conditions de sélection sont bien celles qu'on croit. Leur
+    // Les quatre critères de sélection sont bien ceux qu'on croit (la borne d'âge est assertée par le test suivant). Leur
     // EFFET est prouvé sur Postgres (test/pg-verify/linkedin-enrichissement.sh) ;
     // ici on ne vérifie que la file visée, à un caractère de `enrichment.contacts`.
     const requete = sql.find((s) => /from contacts/i.test(s)) ?? '';
