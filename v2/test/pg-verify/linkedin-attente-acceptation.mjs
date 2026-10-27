@@ -29,6 +29,9 @@
 //  15. file.ts, `prochainesCandidates` : retirer `e.status is distinct from 'paused_absence'` : 10c, 10c-ter. (Faire annuler
 //      `paused_absence` par la garde est INATTEIGNABLE : le filtre des candidates l'écarte avant, aucun contrôle ne peut le voir.)
 //  16. file.ts, `reglerMessagePasEncoreRelation` : rendre `sans_sequence` au lieu de `deja_reglee` : 9c, 11b.
+//  Vague 2 (#180), chacune seule :
+//  17. sequence.ts, `reprendreAbsencesEchues` : neutraliser la garde `etapePrecedenteAttendSonDepart` (`&& false`) : 12a, 12c, 12e, 12f, 12h, 12j.
+//  18. sequence.ts, `etapePrecedenteAttendSonDepart` : retirer `approved` de la liste des statuts : 12j.
 import pg from 'pg';
 import {
   tickDueEnrollments,
@@ -559,7 +562,82 @@ async function sortiesPendantLAttente() {
     avantD.status === 'completed' && rd.action?.id === der.queue, JSON.stringify({ avantD, motif: rd.motif }));
 }
 
-await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue);
+// ---------------------------------------------------------------- 12. une absence pendant l'attente (#180)
+/** Capte les `console.warn` du tick le temps d'un passage : « étape précédente pas partie » ne doit jamais s'y répéter. */
+async function avertissementsDe(f) {
+  const lus = [];
+  const origine = console.warn;
+  console.warn = (...a) => lus.push(a.join(' '));
+  try {
+    await f();
+  } finally {
+    console.warn = origine;
+  }
+  return lus;
+}
+
+async function absencePendantLAttente() {
+  console.log('\n12. une absence pendant l\'attente de l\'acceptation : la reprise ne pose pas l\'échéance de l\'étape suivante (#180)');
+  const m = await monde();
+
+  /** Message refusé (il attend), puis une réponse d'absence : l'inscription passe `paused_absence`. */
+  async function enAbsence(prenom) {
+    const p = await personne(m, { invitationIlYa: 2, prenom });
+    await essayerEtRefuser(m);
+    const ra = await recordInboundReply(pool, m.org, { contactId: p.contact, channel: 'email', body: 'Je suis absent du bureau, de retour la semaine prochaine.', receivedAt: new Date() });
+    check(`0. précondition (${prenom}) : absence, l'inscription est en pause d'absence, la ligne attend`,
+      ra.classification === 'auto_absence' && (await inscriptionDe(p.inscription)).status === 'paused_absence' && (await file(p.queue)).status === 'pending', JSON.stringify({ c: ra.classification, i: await inscriptionDe(p.inscription) }));
+    return p;
+  }
+
+  // (a) reprise, puis acceptation.
+  const a = await enAbsence('AbsenteAccepte');
+  const lues = await avertissementsDe(async () => {
+    await reprendreAbsencesEchues(pool, dans(30 * JOUR_MS));
+    await tick(dans(60 * JOUR_MS));
+    await tick(dans(61 * JOUR_MS));
+  });
+  const apres = await inscriptionDe(a.inscription);
+  check('12a. après la reprise, l\'inscription est active SANS échéance : le message de l\'étape précédente n\'est pas parti',
+    apres.status === 'active' && apres.next_action_at === null, JSON.stringify(apres));
+  check('12b. current_step est intact (2) : l\'invariant « après le départ de l\'étape R, current_step vaut R + 1 » tient',
+    apres.current_step === 2, JSON.stringify(apres));
+  check('12c. le tick ne journalise jamais « étape précédente pas partie » (deux passages)',
+    !lues.some((l) => /pas partie/.test(l) && l.includes(a.inscription)) && (await actionsDe(a.inscription)).length === 2, JSON.stringify(lues));
+
+  const r = await reclamerProchaineAction(pool, m.org, dans(31 * JOUR_MS));
+  check('12d. la ligne en attente est réclamable après la reprise', r.action?.id === a.queue, r.motif ?? '');
+  await regler(deps(), m.ctx, r.action, { type: 'envoye' });
+  const parti = await inscriptionDe(a.inscription);
+  check('12e. à l\'acceptation, l\'échéance de l\'email vaut le départ RÉEL + delay_hours (+96 h, jitter près), pas le retour d\'absence + délai',
+    parti.status === 'active' && parti.current_step === 2 && parti.next_action_at !== null && vers96h(parti.next_action_at), JSON.stringify(parti));
+
+  // (b) reprise, puis saut (délai écoulé).
+  const b = await enAbsence('AbsenteSautee');
+  await reprendreAbsencesEchues(pool, dans(30 * JOUR_MS));
+  check('12f. (saut) après la reprise, toujours aucune échéance', (await inscriptionDe(b.inscription)).next_action_at === null && (await inscriptionDe(b.inscription)).status === 'active');
+  await q(`update linkedin_action_queue set sent_at = now() - interval '8 days' where organization_id = $1 and contact_id = $2 and kind = 'invite'`, [m.org, b.contact]);
+  const rb = await essayerEtRefuser(m, dans(32 * JOUR_MS));
+  check('12g. le message est sauté (délai écoulé)', rb.reclamee?.id === b.queue && (await file(b.queue)).status === 'cancelled' && (await action(b.inscription, 1))?.status === 'skipped', JSON.stringify({ motif: rb.motif, f: await file(b.queue) }));
+  const sautee = await inscriptionDe(b.inscription);
+  check('12h. l\'échéance de l\'email vaut le saut + delay_hours (+96 h), current_step intact',
+    sautee.current_step === 2 && sautee.next_action_at !== null && vers96h(sautee.next_action_at), JSON.stringify(sautee));
+  const lues2 = await avertissementsDe(async () => {
+    await q(`update enrollments set next_action_at = now() - interval '1 minute' where id = $1`, [b.inscription]);
+    await tick();
+  });
+  check('12i. l\'email suivant part sans avertissement « étape précédente pas partie »',
+    (await action(b.inscription, 2))?.status === 'scheduled' && !lues2.some((l) => /pas partie/.test(l) && l.includes(b.inscription)), JSON.stringify({ lues2, e: await action(b.inscription, 2) }));
+
+  // (c) l'action a été approuvée (`approved`) : elle n'est pas partie non plus.
+  const c = await enAbsence('AbsenteApprouvee');
+  await q(`update actions set status = 'approved' where enrollment_id = $1 and status = 'scheduled'`, [c.inscription]);
+  await reprendreAbsencesEchues(pool, dans(30 * JOUR_MS));
+  check('12j. une action `approved` (pas encore partie) retient aussi l\'échéance',
+    (await inscriptionDe(c.inscription)).status === 'active' && (await inscriptionDe(c.inscription)).next_action_at === null, JSON.stringify(await inscriptionDe(c.inscription)));
+}
+
+await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente);
 
 await pool.end();
 console.log(failures === 0 ? '\nTOUS LES CONTRÔLES PASSENT' : `\n${failures} CONTRÔLE(S) EN ÉCHEC`);

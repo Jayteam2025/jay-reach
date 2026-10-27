@@ -814,6 +814,31 @@ interface AbsenceEchueRow {
 }
 
 /**
+ * Vrai quand l'action de l'étape de rang `current_step - 1` d'une inscription n'est pas encore partie
+ * (`scheduled`, `approved` ou `pending_approval`) : l'échéance de l'étape suivante se posera à son départ réel
+ * (ou à son saut), jamais avant (#180). Faux à l'étape 0 (pas d'étape précédente), sans action, ou quand l'action
+ * est déjà partie ou terminée. Filtré par organisation : le worker tourne avec la clé de service.
+ */
+async function etapePrecedenteAttendSonDepart(
+  pool: Pool,
+  inscription: { id: string; organization_id: string; campaign_id: string; current_step: number },
+): Promise<boolean> {
+  if (inscription.current_step <= 0) return false;
+  const res = await pool.query(
+    `select 1 from actions a /* jr:absence_etape_precedente */
+      where a.organization_id = $1 and a.enrollment_id = $2
+        and a.status in ('scheduled', 'approved', 'pending_approval')
+        and a.step_id = (select s.id from sequence_steps s
+                          where s.campaign_id = $3
+                          order by s.position asc
+                         offset $4 limit 1)
+      limit 1`,
+    [inscription.organization_id, inscription.id, inscription.campaign_id, inscription.current_step - 1],
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+/**
  * Reprend les inscriptions `paused_absence` dont le retour (`resume_at`) est
  * atteint (F10) : rien d'autre ne les reprend jamais — ni le tick (`due` ne
  * sélectionne que `status = 'active'`), ni un événement `resume` de la
@@ -957,6 +982,7 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
 
     let ecrit = false;
     let etapeRejouee = false;
+    let attendLeDepart = false;
     if (etapeId && ligneBloquee && !ligneBloquee.deja_envoyee) {
       // Rejeu de l'étape bloquée (paused -> paused_absence direct) : le délai
       // repart entièrement depuis le retour (règle produit, F10) — jamais
@@ -993,6 +1019,16 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
         [cle, candidat.organization_id, new Date(echeanceRejeu).toISOString()],
       );
       etapeRejouee = (rejeu.rowCount ?? 0) > 0;
+    } else if (etapeId && (await etapePrecedenteAttendSonDepart(pool, candidat))) {
+      // #180. L'action de l'étape PRÉCÉDENTE (rang `current_step - 1`) n'est pas encore partie : typiquement un
+      // message LinkedIn qui attend l'acceptation de l'invitation (action `scheduled`, ligne de file replanifiée
+      // d'un jour à l'autre). Poser l'échéance ici, depuis `resume_at`, la rendrait vraie avant le départ : le tick
+      // journaliserait « étape précédente pas partie » à chaque passage, puis, à l'acceptation ou au saut,
+      // `poserEcheanceApresDepart` (garde `next_action_at is null`) ne réécrirait rien et l'étape suivante partirait
+      // sans son `delay_hours`. On laisse `next_action_at` à null, comme pour toute inscription entre la création
+      // d'une action et son départ : le départ réel, ou le saut, posera l'échéance (`cloreDepartReel`).
+      // `current_step` n'est PAS touché (il vaut déjà R + 1, l'invariant tient).
+      attendLeDepart = true;
     } else if (etapeId) {
       // Cas normal (aucune action bloquée à cette étape), ou l'action
       // bloquée porte déjà une preuve d'envoi (garde M3) : rien à rejouer,
@@ -1016,7 +1052,7 @@ export async function reprendreAbsencesEchues(pool: Pool, now: Date = new Date()
       console.warn('[journal] enrollment_resumed', err);
     }
 
-    if (ecrit || etapeRejouee) {
+    if (ecrit || etapeRejouee || attendLeDepart) {
       reprises += 1;
     } else {
       // Repli (trouvé à la relecture) : la séquence a perdu l'étape attendue

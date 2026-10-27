@@ -894,6 +894,8 @@ describe('reprendreAbsencesEchues (F10)', () => {
     etape?: { id: string; delay_hours: number };
     /** Action `blocked`/`failed` déjà en base pour cette étape (cas `paused -> paused_absence`). */
     actionBloquee?: { messageId: string | null };
+    /** Statut de l'action de l'étape PRÉCÉDENTE (rang `current_step - 1`), absente = aucune action (#180). */
+    precedente?: { status: string };
   }
 
   /**
@@ -971,6 +973,10 @@ describe('reprendreAbsencesEchues (F10)', () => {
         etat = { ...etat, next_action_at: nextActionAt };
         return { rows: [], rowCount: 1 };
       }
+      if (/jr:absence_etape_precedente/.test(sql)) {
+        const attend = ['scheduled', 'approved', 'pending_approval'].includes(reponses.precedente?.status ?? '');
+        return { rows: attend ? [{ '?column?': 1 }] : [], rowCount: attend ? 1 : 0 };
+      }
       if (ETAPE.test(sql)) {
         return ligne(reponses.etape ? [{ id: reponses.etape.id, delay_hours: reponses.etape.delay_hours }] : []);
       }
@@ -1026,6 +1032,54 @@ describe('reprendreAbsencesEchues (F10)', () => {
     const attendu = echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 96);
     expect(etat().next_action_at).toEqual(new Date(attendu!).toISOString());
     expect(new Date(attendu!).getUTCDate()).toBe(24);
+  });
+
+  it("#180 : l'action de l'étape précédente attend encore son départ (message LinkedIn qui attend l'acceptation) : aucune échéance n'est posée, ni le repli, current_step intact", async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 2,
+      resume_at: resumeAt,
+    };
+    for (const status of ['scheduled', 'approved', 'pending_approval']) {
+      const { pool, appels, etat } = creerPoolAbsence(
+        [candidat],
+        { status: 'paused_absence', next_action_at: resumeAt, current_step: 2 },
+        { etape: { id: STEP_ID_ABSENCE, delay_hours: 24 }, precedente: { status } },
+      );
+      await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+      expect(etat().status, status).toBe('active');
+      expect(etat().next_action_at, status).toBeNull();
+      expect(etat().current_step, status).toBe(2);
+      // Ni la pose, ni le repli `next_action_at = now()` : l'inscription attend le départ (ou le saut) de l'action.
+      expect(appels.some((a) => /set next_action_at/i.test(a.sql)), status).toBe(false);
+      // La question est posée pour l'étape de rang current_step - 1, sous l'organisation.
+      const q = appels.find((a) => /jr:absence_etape_precedente/.test(a.sql))!;
+      expect(q.values).toEqual([ORG_ID, ENROLLMENT_ID, CAMPAIGN_ID, 1]);
+      expect(q.sql).toMatch(/a\.organization_id = \$1/);
+    }
+  });
+
+  it("#180 : une action précédente déjà partie (`dispatched`) ou terminée ne retient rien : l'échéance se pose depuis le retour", async () => {
+    const resumeAt = new Date('2026-09-10T00:00:00.000Z');
+    const candidat: CandidatAbsence = {
+      id: ENROLLMENT_ID,
+      organization_id: ORG_ID,
+      contact_id: CONTACT_ID,
+      campaign_id: CAMPAIGN_ID,
+      current_step: 2,
+      resume_at: resumeAt,
+    };
+    const { pool, etat } = creerPoolAbsence(
+      [candidat],
+      { status: 'paused_absence', next_action_at: resumeAt, current_step: 2 },
+      { etape: { id: STEP_ID_ABSENCE, delay_hours: 24 }, precedente: { status: 'dispatched' } },
+    );
+    await reprendreAbsencesEchues(pool, new Date('2026-09-15T10:00:00.000Z'));
+    expect(etat().next_action_at).toEqual(new Date(echeanceEtapeSuivante(resumeAt.getTime(), ENROLLMENT_ID, 24)!).toISOString());
   });
 
   it('reprise échue depuis plusieurs jours : l’échéance se calcule depuis resume_at, jamais depuis now', async () => {
