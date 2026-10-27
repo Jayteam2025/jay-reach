@@ -19,7 +19,7 @@ import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.j
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
 import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
-import { sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -292,7 +292,7 @@ interface LigneCampagne {
   id: string;
   name: string;
   status: CampagneResume['statut'];
-  canaux_etapes: CanalEtapeSequence[];
+  canaux_etapes: string[];
   boites: number;
   sources: (string | null)[] | null;
   contacts: number;
@@ -619,7 +619,7 @@ export async function lireAujourdhui(ctx: Contexte): Promise<Aujourdhui> {
     id: r.id,
     nom: r.name,
     statut: r.status,
-    canauxEtapes: r.canaux_etapes,
+    canauxEtapes: lireCanauxEtapes(r.canaux_etapes),
     boites: r.boites,
     sources: r.sources ?? [],
     contacts: r.contacts,

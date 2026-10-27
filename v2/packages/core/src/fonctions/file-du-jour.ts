@@ -14,7 +14,7 @@ import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
 import type { EtatEnvoi } from './aujourdhui.js';
-import { sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanalEtape, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -446,7 +446,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
     pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
     etapePosition: rang + 1,
     etapeNom: nomEtape(rang, ligne.channel),
-    canal: ligne.channel as CanalEtapeSequence,
+    canal: lireCanalEtape(ligne.channel),
     heurePrevue: ligne.scheduled_for,
     statut: ligne.status,
   };

@@ -10,7 +10,7 @@ import { FUSEAU_PAR_DEFAUT, dateCourte } from '../../../../lib/dates';
 import { formatPourcentage, localeCourante } from '../../../../lib/nombres';
 import { compterEnFile, compterPartis, segmentsNonNuls } from '../../../../lib/file-du-jour';
 import { tauxLivresAffiche } from '../../../../lib/entonnoir';
-import { aUneEtapeEmail, natureDesCanaux } from '../../../../lib/canaux-sequence';
+import { aUneEtapeEmail, afficherEtapeEmailVerifie, natureDesCanaux } from '../../../../lib/canaux-sequence';
 import { parametresValeurConsommation } from '../../../../lib/plafonds-affichage';
 import { Avatar, Carte, CleValeur, Entonnoir, Journal, TuileLogo } from '../../../../components/ui';
 
@@ -100,7 +100,9 @@ export default async function CampagneVueDEnsemblePage({ params }: { params: Pro
     vue.entonnoir.origine === 'liste'
       ? [
           { valeur: vue.entonnoir.contactsImportes, libelle: t('overview.funnel.imported') },
-          { valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') },
+          ...(afficherEtapeEmailVerifie(canauxEtapes)
+            ? [{ valeur: vue.entonnoir.emailVerifie, libelle: t('overview.funnel.emailVerified') }]
+            : []),
           { valeur: vue.entonnoir.enSequence, libelle: t('overview.funnel.inSequence'), taux: enPauseSuffixe },
           { valeur: vue.entonnoir.partis, libelle: libelleEnvoisPartis, taux: tauxLivresTexte },
           { valeur: vue.entonnoir.reponses, libelle: t('overview.funnel.replies'), taux: tauxOuZero(vue.entonnoir.tauxReponses) },

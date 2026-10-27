@@ -17,7 +17,7 @@ import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
-import { sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
 import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
@@ -745,7 +745,7 @@ interface LigneCampagneListe {
   derniere_activite: string | null;
   /** `sqlListeSourceResumeCampagne` (revue F5, point 1) — `null` pour une campagne à sources. */
   liste_source: { nom: string; autres: number } | null;
-  canaux_etapes: CanalEtapeSequence[];
+  canaux_etapes: string[];
 }
 
 /** Une campagne réduite à ce qu'un menu déroulant affiche (`listerCampagnesPourFiltre`). */
@@ -888,7 +888,7 @@ export async function listerCampagnes(ctx: Contexte): Promise<CampagneListeResum
     interesses: r.interesses,
     derniereActivite: r.derniere_activite,
     listeSource: r.liste_source ? { nom: r.liste_source.nom, autresListes: r.liste_source.autres } : null,
-    canauxEtapes: r.canaux_etapes,
+    canauxEtapes: lireCanauxEtapes(r.canaux_etapes),
   }));
 }
 
@@ -904,7 +904,7 @@ interface LigneCampagneEnTete {
   status: CampaignStatus;
   entry_rules: unknown;
   daily_cap: number | null;
-  canaux_etapes: CanalEtapeSequence[];
+  canaux_etapes: string[];
 }
 
 async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<CampagneEnTete> {
@@ -932,7 +932,7 @@ async function lireCampagneEnTete(ctx: Contexte, campagneId: string): Promise<Ca
         ? entryRules.relecturePremiersEnvois
         : Number(reglages.relecture_premiers_envois_defaut),
     dailyCap: ligne.daily_cap,
-    canauxEtapes: ligne.canaux_etapes,
+    canauxEtapes: lireCanauxEtapes(ligne.canaux_etapes),
   };
 }
 

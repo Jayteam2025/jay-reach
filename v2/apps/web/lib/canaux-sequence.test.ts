@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aUneEtapeEmail, compterCanaux, ligneEtapesEtBoites, natureDesCanaux, resumeCanaux, sequenceSansEmail, type LibellesCanaux } from './canaux-sequence';
+import { aUneEtapeEmail, afficherEtapeEmailVerifie, compterCanaux, ligneEtapesEtBoites, natureDesCanaux, resumeCanaux, sequenceSansEmail, type LibellesCanaux } from './canaux-sequence';
 
 /** Libellés factices au singulier/pluriel français : rend le décompte lisible dans l'assertion. */
 const LIBELLES: LibellesCanaux = {
@@ -97,5 +97,27 @@ describe('ligneEtapesEtBoites', () => {
 
   it('une séquence vide le dit', () => {
     expect(ligneEtapesEtBoites([], 3, LIBELLES, t)).toBe('Aucune étape');
+  });
+});
+
+describe('afficherEtapeEmailVerifie : la marche « Email vérifié » de l’entonnoir d’une liste', () => {
+  it('une séquence sans étape email ne parle pas d’email : la marche disparaît', () => {
+    expect(afficherEtapeEmailVerifie(['linkedin_invite'])).toBe(false);
+    expect(afficherEtapeEmailVerifie(['linkedin_invite', 'linkedin_message'])).toBe(false);
+  });
+
+  it('dès qu’une étape est un email, la marche reste', () => {
+    expect(afficherEtapeEmailVerifie(['email'])).toBe(true);
+    expect(afficherEtapeEmailVerifie(['linkedin_invite', 'email', 'linkedin_message'])).toBe(true);
+  });
+
+  it('une séquence vide ne dit pas par quel canal elle écrira : la marche reste', () => {
+    expect(afficherEtapeEmailVerifie([])).toBe(true);
+  });
+
+  it('suit la même définition que le moteur (sequenceSansEmail)', () => {
+    for (const canaux of [[], ['email'], ['linkedin_invite'], ['letter', 'call'], ['call', 'email']]) {
+      expect(afficherEtapeEmailVerifie(canaux)).toBe(!sequenceSansEmail(canaux));
+    }
   });
 });

@@ -6,7 +6,29 @@
  */
 
 /** Les canaux qu'une étape de séquence peut porter (`channel_kind`, `20260817120000_init_schema.sql`). */
-export type CanalEtapeSequence = 'email' | 'linkedin_invite' | 'linkedin_message' | 'letter' | 'call';
+export const CANAUX_ETAPE_SEQUENCE = ['email', 'linkedin_invite', 'linkedin_message', 'letter', 'call'] as const;
+export type CanalEtapeSequence = (typeof CANAUX_ETAPE_SEQUENCE)[number];
+
+/** Garde de type : une valeur lue en base est-elle un canal connu ? */
+export function estCanalEtapeSequence(brut: string): brut is CanalEtapeSequence {
+  return CANAUX_ETAPE_SEQUENCE.some((canal) => canal === brut);
+}
+
+/**
+ * Lit UN canal rendu par la base. Un canal inconnu LÈVE une erreur, il ne se replie jamais sur « email » :
+ * cet écran dirait alors une chose fausse (boîtes, « email tel qu'il partira »). Il n'est atteignable que
+ * si une migration ajoute une valeur à `channel_kind` sans mettre à jour `CANAUX_ETAPE_SEQUENCE`
+ * (un test compare les deux).
+ */
+export function lireCanalEtape(brut: string): CanalEtapeSequence {
+  if (estCanalEtapeSequence(brut)) return brut;
+  throw new Error(`Canal d'étape inconnu : « ${brut} » (channel_kind a évolué sans CANAUX_ETAPE_SEQUENCE)`);
+}
+
+/** Lit la liste rendue par `sqlCanauxEtapes`, avec la même règle pour un canal inconnu. */
+export function lireCanauxEtapes(brut: readonly string[]): CanalEtapeSequence[] {
+  return brut.map(lireCanalEtape);
+}
 
 /**
  * Le RANG (0-based) d'une étape dans sa campagne : combien d'étapes la précèdent.

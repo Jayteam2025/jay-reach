@@ -77,6 +77,17 @@ export function sequenceSansEmail(canaux: readonly string[]): boolean {
 }
 
 /**
+ * La marche « Email vérifié » de l'entonnoir d'une campagne à liste. Le moteur n'exige un email que d'une séquence qui
+ * contient une étape email (`sequenceSansEmail`) : pour une séquence sans étape email, un contact entre sans email, donc
+ * le nombre de contacts à email vérifié ne décrit aucune condition de la campagne. Rien ne la remplace (l'entrée ne
+ * pose aucune autre condition mesurée) : la marche disparaît plutôt que de parler d'email. Séquence vide : on ne sait
+ * pas par quel canal elle écrira, la marche reste.
+ */
+export function afficherEtapeEmailVerifie(canaux: readonly string[]): boolean {
+  return !sequenceSansEmail(canaux);
+}
+
+/**
  * La nature d'un ensemble de canaux (étapes d'une séquence, ou actions d'une journée). Un canal absent, courrier,
  * appel ou inconnu rend le tout `mixte` : on ne le dit pas email, on ne le dit pas LinkedIn.
  */

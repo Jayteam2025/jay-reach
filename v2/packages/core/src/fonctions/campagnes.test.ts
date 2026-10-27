@@ -273,6 +273,7 @@ describe('listerCampagnes', () => {
       const ligne = {
         status: 'active',
         sources: [],
+        canaux_etapes: ['email'],
         qualifies: 0,
         contacts: 0,
         en_sequence: 0,
@@ -305,6 +306,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: ['adzuna'],
+          canaux_etapes: ['email'],
           qualifies: 20,
           contacts: 18,
           en_sequence: 5,
@@ -345,6 +347,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 167,
           en_sequence: 165,
@@ -367,7 +370,7 @@ describe('listerCampagnes', () => {
     const ctx = faux({
       'jr:campagnes_liste': [
         {
-          id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: {}, sources: ['adzuna'],
+          id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: {}, sources: ['adzuna'], canaux_etapes: ['email'],
           qualifies: 20, contacts: 18, en_sequence: 5, en_pause: 1, partis: 20, reponses: 2, interesses: 1, derniere_activite: null,
         },
       ],
@@ -390,6 +393,7 @@ describe('listerCampagnes', () => {
             status: 'active',
             entry_rules: {},
             sources: [],
+            canaux_etapes: ['email'],
             qualifies: 0,
             contacts: 0,
             en_sequence: 0,
@@ -417,7 +421,7 @@ describe('listerCampagnes', () => {
     async () => {
       const ctx = faux({
         'jr:campagnes_liste': [
-          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], canaux_etapes: ['email'], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
         ],
         'jr:boites_actives': [],
         'jr:tendance_partis': [],
@@ -438,7 +442,7 @@ describe('listerCampagnes', () => {
     async () => {
       const ctx = faux({
         'jr:campagnes_liste': [
-          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
+          { id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, sources: [], canaux_etapes: ['email'], qualifies: 0, contacts: 0, en_sequence: 0, reponses: 0, interesses: 0, derniere_activite: null },
         ],
         'jr:boites_actives': [],
         'jr:tendance_partis': [],
@@ -465,6 +469,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -510,6 +515,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -533,6 +539,7 @@ describe('listerCampagnes', () => {
           status: 'draft',
           entry_rules: { boiteIds: ['send-2'] },
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 0,
           contacts: 0,
           en_sequence: 0,
@@ -559,6 +566,7 @@ describe('listerCampagnes', () => {
           status: 'active',
           entry_rules: {},
           sources: [],
+          canaux_etapes: ['email'],
           qualifies: 4,
           contacts: 2,
           en_sequence: 2,
@@ -589,7 +597,7 @@ describe('lireVueDEnsemble', () => {
   function ctxComplet(role: Contexte['role'] = 'viewer') {
     return faux(
       {
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40 }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Directeur commercial', status: 'active', entry_rules: { min_score: 80 }, daily_cap: 40, canaux_etapes: [] }],
         'jr:boites_actives': [{ id: 'send-1', identity: 'camille@outlook.com' }],
         'organization_settings': [],
         // F13 (décision du 18/09) : `engages` (dénominateur de tauxLivres) et `partis` au sens
@@ -651,7 +659,7 @@ describe('lireVueDEnsemble', () => {
 
   it('expose la projection de la file du jour (revue F5, point 10)', async () => {
     const ctx = faux({
-      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40 }],
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'active', entry_rules: {}, daily_cap: 40, canaux_etapes: [] }],
       'jr:boites_actives': [],
       organization_settings: [],
       'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
@@ -675,7 +683,7 @@ describe('lireVueDEnsemble', () => {
 
   it('R70 (tour de correction 4) : une source sans aucun repère de fournisseur renvoie providerId null (jamais un plantage)', () => {
     const ctx = faux({
-      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null }],
+      'jr:campagne_entete': [{ id: 'camp-1', name: 'C', status: 'draft', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
       'jr:boites_actives': [],
       organization_settings: [],
       'jr:entonnoir_commun': [{ list_id: null, en_sequence: 0, en_pause: 0, engages: 0, partis: 0, reponses: 0, interesses: 0 }],
@@ -700,7 +708,7 @@ describe('lireVueDEnsemble', () => {
   describe('campagne à liste (point 2, issue #120)', () => {
     it('entonnoir "liste" (contacts importés → email vérifié), listeSource exposée, jamais "0 offres et profils trouvés"', async () => {
       const ctx = faux({
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
         'jr:boites_actives': [],
         organization_settings: [],
         'jr:campagne_liste_source': [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }],
@@ -746,7 +754,7 @@ describe('lireVueDEnsemble', () => {
     // (le plus d'inscriptions) fait le texte, les autres comptent dans `autresListes`.
     it('plusieurs listes distinctes (deux imports successifs) : la dominante fait le texte, les autres comptent', async () => {
       const ctx = faux({
-        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }],
+        'jr:campagne_entete': [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }],
         'jr:boites_actives': [],
         organization_settings: [],
         // La requête réelle trie déjà par nombre d'inscriptions décroissant : la dominante en tête.
@@ -787,7 +795,7 @@ describe('lireVueDEnsemble', () => {
           return { rows: [{ list_id: 'liste-1', nom: 'RH avril 2026', importee_le: '2026-09-10T08:00:00.000Z', contacts: 167 }], rowCount: 1 };
         }
         if (/jr:campagne_entete/i.test(sql)) {
-          return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null }], rowCount: 1 };
+          return { rows: [{ id: 'camp-1', name: 'Jay coach - RH', status: 'active', entry_rules: {}, daily_cap: null, canaux_etapes: [] }], rowCount: 1 };
         }
         if (/jr:entonnoir_commun/i.test(sql)) {
           return { rows: [{ en_sequence: 165, en_pause: 2, partis: 110, reponses: 1, interesses: 0 }], rowCount: 1 };
