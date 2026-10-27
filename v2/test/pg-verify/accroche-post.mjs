@@ -157,6 +157,10 @@
 //      qu'aucune campagne ne nomme. Chaque DISJOINT a sa mutation : retirer la branche des
 //      signaux fait rougir 41a seul, retirer celle de `linkedin_posts_traites` fait rougir 41e
 //      (et les sections de rattrapage, qui passent toutes par elle).
+//  74. producer.ts : retirer le second `not exists` (`enrollments e3`) de `sqlPairesEligibles` — 45 rougit :
+//      une personne dont la séquence est terminée revient dans la même campagne.
+//  75. sequence.ts : retirer le `not exists (select 1 from enrollments where contact_id = $3 and
+//      campaign_id = $2)` de l'insertion de `tenterInscription` — 46 rougit pour les quatre statuts.
 //  70. approbation.ts : faire diverger les deux écritures de la règle — 40b rougit en NOMMANT
 //      les entrées fautives. Trois façons, toutes vérifiées : retirer la clause `channels` du
 //      SQL ; revenir à l'opérateur permissif `jsonb ?` (les deux formes pathologiques
@@ -3199,8 +3203,59 @@ async function lienHistoriqueSourceCampagne() {
     (await q(`select 1 from signals where id = $1`, [p.signal_id])).rowCount === 1);
 }
 
+/**
+ * UNE inscription par campagne, quel qu'en soit le statut (tâche 8 du lot « prêt pour Alex »).
+ *
+ * Constaté le 12/10 sur la campagne de recette du lot 4b : une personne inscrite le 09/10, sa
+ * séquence terminée (`completed`), puis réinscrite le 12/10 sur le MÊME signal. Deux gardes ne
+ * voyaient que les inscriptions VIVANTES : la requête de candidats du producteur, et l'insertion
+ * de `enrollContact` (l'index partiel `enrollments_one_active_uidx` et son `on conflict`). Les deux
+ * sont éprouvées séparément : le producteur par un tour complet, l'insertion en l'appelant seule.
+ */
+async function uneInscriptionParCampagne() {
+  console.log('\n# une personne n\'a qu\'UNE inscription par campagne, quel qu\'en soit le statut');
+  const m = await monde();
+  await etapeAvecCorps(m, SANS_ACCROCHE);
+  const personne = await engageurDUnPost(m, 41, { etat: 'approved' });
+  const jumeau = await engageurDUnPost(m, 42, { memePost: personne });
+  const compte = async (contactId, campagneId = m.campagne) =>
+    (await q(`select count(*)::int as n from enrollments where contact_id = $1 and campaign_id = $2`, [contactId, campagneId])).rows[0].n;
+  // L'identifiant du job d'inscription porte le jour UTC : un second tour le MÊME jour serait
+  // dédupliqué par pg-boss et masquerait le défaut. En production le retour se fait des jours plus
+  // tard ; on efface donc les jobs déposés, comme l'archivage le ferait.
+  const oublierLesJobs = () => q(`delete from pgboss.job where name = 'sequence.enroll' and data->>'organizationId' = $1`, [m.org]);
+
+  const premier = await tourDInscription(m.org);
+  check('44. premier tour : la personne ET son jumeau sont proposés et inscrits',
+    premier.some((j) => j.contactId === personne.contact_id) && (await compte(personne.contact_id)) === 1
+      && (await compte(jumeau.contact_id)) === 1, JSON.stringify(premier));
+
+  // Producteur : séquence terminée, la personne ne revient pas ; le jumeau, lui, est encore vivant.
+  await q(`update enrollments set status = 'completed', ended_at = now() where contact_id = $1`, [personne.contact_id]);
+  await oublierLesJobs();
+  const second = await tourDInscription(m.org);
+  check('45. producteur : une personne dont la séquence est `completed` n\'est PAS reproposée à la même campagne',
+    !second.some((j) => j.contactId === personne.contact_id) && (await compte(personne.contact_id)) === 1, JSON.stringify(second));
+
+  // Contrôle autoritaire, pour CHAQUE statut terminal : l'insertion seule refuse, sans passer par le producteur.
+  for (const statut of ['completed', 'stopped', 'replied', 'bounced']) {
+    await q(`update enrollments set status = $2::enrollment_status, ended_at = now() where contact_id = $1`, [personne.contact_id, statut]);
+    const id = await enrollContact(pool, { organizationId: m.org, campaignId: m.campagne, contactId: personne.contact_id, signalId: personne.signal_id });
+    check(`46. enrollContact refuse une inscription \`${statut}\` existante de la même campagne`,
+      id === null && (await compte(personne.contact_id)) === 1, String(id));
+  }
+
+  // La règle est PAR CAMPAGNE : la même personne reste inscriptible à une AUTRE campagne.
+  const autre = (
+    await q(`insert into campaigns (organization_id, name, status, entry_rules) values ($1, 'Autre', 'active', $2::jsonb) returning id`,
+      [m.org, JSON.stringify({ personas: [m.persona] })])
+  ).rows[0].id;
+  const idAutre = await enrollContact(pool, { organizationId: m.org, campaignId: autre, contactId: personne.contact_id, signalId: personne.signal_id });
+  check('47. la règle est par campagne : la personne s\'inscrit à une autre campagne', typeof idAutre === 'string' && (await compte(personne.contact_id, autre)) === 1, String(idAutre));
+}
+
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne, uneInscriptionParCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

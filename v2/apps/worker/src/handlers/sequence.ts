@@ -158,6 +158,14 @@ async function tenterInscription(pool: Pool, job: EnrollJob): Promise<ResultatIn
       where not exists (
         select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
       )
+      -- UNE inscription par campagne, quel qu'en soit le statut. L'index partiel et sa clause
+      -- on conflict ne voient que les inscriptions VIVANTES : une séquence terminée (completed,
+      -- stopped, replied, bounced) laissait la même personne se réinscrire à la même campagne et
+      -- recevoir deux fois les mêmes messages (constaté le 12/10, recette du lot 4b). Dans
+      -- l'insertion elle-même, comme la garde ci-dessus : pas de fenêtre entre lecture et écriture.
+        and not exists (
+          select 1 from enrollments where contact_id = $3 and campaign_id = $2
+        )
      on conflict (contact_id) where status in ('active','paused','paused_absence')
      do nothing
      returning id`,

@@ -288,6 +288,24 @@ describe('enqueueEnrollments (revue F5, point 1, tour de correction 2)', () => {
     expect(avertissements).not.toHaveBeenCalledWith(expect.stringContaining('validation du post'));
   });
 
+  // Constaté le 12/10 : la garde ne regardait que les inscriptions VIVANTES, donc une personne dont
+  // la séquence était terminée (`completed`, `stopped`, `replied`, `bounced`) revenait dans la même
+  // campagne et recevait deux fois les mêmes messages.
+  it('ne propose pas une personne déjà inscrite à CETTE campagne, quel que soit le statut de l’inscription', async () => {
+    const { pool, appels } = creerPoolFactice(null, 0);
+    const { boss } = fauxBoss();
+
+    await enqueueEnrollments(boss, pool);
+
+    const candidats = appels.find((a) => CANDIDATS.test(a.sql));
+    expect(candidats).toBeDefined();
+    const garde = /not exists \(\s*select 1 from enrollments e3\b[^)]*\)/i.exec(candidats!.sql);
+    expect(garde, 'une garde `not exists (select 1 from enrollments e3 ...)` sur la campagne').not.toBeNull();
+    expect(garde![0]).toMatch(/e3\.contact_id = ct\.id/);
+    expect(garde![0]).toMatch(/e3\.campaign_id = c\.id/);
+    expect(garde![0]).not.toMatch(/status/i);
+  });
+
   it('le pré-filtre de plafond ET le comptage qui suit lisent le jour de l’organisation, jamais celui du serveur', async () => {
     const { pool, appels } = creerPoolFactice(5, 2);
     const { boss, insert } = fauxBoss();

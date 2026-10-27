@@ -844,6 +844,16 @@ function sqlPairesEligibles(): string {
           select 1 from enrollments e
            where e.contact_id = ct.id
              and e.status in ('active', 'paused', 'paused_absence')
+        )
+       -- UNE inscription par campagne, QUEL QU'EN SOIT LE STATUT. La garde ci-dessus ne voit que les
+       -- inscriptions vivantes (c'est ce que l'index partiel enrollments_one_active_uidx protège) :
+       -- une séquence terminée (completed, stopped, replied, bounced) laissait la personne revenir dans
+       -- la même campagne et recevoir deux fois les mêmes messages. Constaté le 12/10 sur la campagne
+       -- de recette du lot 4b : inscrite le 09/10, terminée, réinscrite le 12/10 sur le même signal.
+        and not exists (
+          select 1 from enrollments e3
+           where e3.contact_id = ct.id
+             and e3.campaign_id = c.id
         )`;
 }
 

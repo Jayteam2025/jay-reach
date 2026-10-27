@@ -1307,3 +1307,27 @@ describe('enrollContact — garde d’entrée sur la validation du post (tâche 
     expect(appels.some((a) => POST_RETIENT.test(a.sql))).toBe(false);
   });
 });
+
+describe('enrollContact — une personne n’a qu’UNE inscription par campagne, quel qu’en soit le statut', () => {
+  // Constaté le 12/10 sur la campagne de recette du lot 4b : une personne inscrite le 09/10 puis
+  // de nouveau le 12/10 sur le même signal, la première étant `completed`. L'index partiel et sa
+  // clause `on conflict` ne voient que les inscriptions VIVANTES.
+  it('l’insertion refuse toute inscription existante du couple (contact, campagne), sans filtre de statut', async () => {
+    const { pool, appels } = creerPoolFactice([
+      { motif: CAMPAGNE_NOMME_UN_POST, repondre: () => ligne([{ nomme: false }]) },
+      { motif: PLAFOND_CAMPAGNE, repondre: () => ligne([{ daily_cap: null }]) },
+      { motif: INSERT_ENROLLMENT, repondre: () => ligne([]) },
+    ]);
+
+    expect(await enrollContact(pool, jobDInscription())).toBeNull();
+
+    const insertion = appels.find((a) => INSERT_ENROLLMENT.test(a.sql));
+    expect(insertion).toBeDefined();
+    const garde = /not exists \(\s*select 1 from enrollments[^)]*\)/i.exec(insertion!.sql);
+    expect(garde, 'une garde `not exists (... from enrollments ...)` dans l’insertion').not.toBeNull();
+    expect(garde![0]).toMatch(/contact_id = \$3/);
+    expect(garde![0]).toMatch(/campaign_id = \$2/);
+    // Le piège : borner la garde aux statuts vivants la rendrait aveugle à `completed`.
+    expect(garde![0]).not.toMatch(/status/i);
+  });
+});
