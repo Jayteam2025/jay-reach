@@ -85,7 +85,9 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // Premium ni Sales Navigator, ordre de grandeur connu). Elles ne figurent ni dans les envois ni
   // dans le plafond horaire de requêtes, qui ne distingue pas une vue d'une lecture de réactions :
   // la source « changement de poste » relit des profils par roulement et pouvait en consommer
-  // sans que rien l'arrête. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
+  // sans que rien l'arrête. Ce plafond compte aussi les profils que la RELÈVE des messages ouvre pour
+  // résoudre l'URN d'un contact (`kind = 'resolution_profil'`) : c'est la même page vue par LinkedIn.
+  // Il ne compte PAS la résolution faite par l'envoi, qui part sous le plafond d'envoi de l'action. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
   // seuil quotidien ; pas de `HARD_CAP_7_DAYS` ici, qui ne borne que les envois.
   { cle: 'linkedin_visites_profil_par_semaine', defaut: 100, env: 'LINKEDIN_PROFILE_VIEWS_WEEKLY_CAP' },
   // Le RATTRAPAGE des fiches de post : la collecte capture déjà chaque fiche gratuitement, ce travail
@@ -725,10 +727,11 @@ export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn
 
 /**
  * Nature d'une requête tracée. `null` (absent) = non qualifiée : toutes les requêtes d'avant la
- * colonne, et celles qui ne relèvent d'aucun plafond propre. Seule 'profil' est lue aujourd'hui,
- * par `compterVisitesProfilLinkedIn`.
+ * colonne, et celles qui ne relèvent d'aucun plafond propre. `compterVisitesProfilLinkedIn` lit
+ * 'profil' (la collecte ouvre un profil) ET 'resolution_profil' (la relève résout l'URN d'un contact :
+ * même requête vers LinkedIn, donc même visite).
  */
-export type KindRequeteLinkedIn = 'profil' | 'fiche' | 'messagerie';
+export type KindRequeteLinkedIn = 'profil' | 'fiche' | 'messagerie' | 'resolution_profil';
 
 /**
  * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
@@ -760,6 +763,24 @@ export async function tracerRequeteMessagerie(ctx: Pick<Contexte, 'ex' | 'organi
     `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_messagerie_tracer */
      values ($1, $2)`,
     [ctx.organisationId, KIND_MESSAGERIE],
+  );
+}
+
+const KIND_RESOLUTION_PROFIL: KindRequeteLinkedIn = 'resolution_profil';
+
+/**
+ * Consigne UNE résolution d'URN de la relève (une page de profil ouverte pour lire l'identifiant d'un
+ * contact), au moment où elle part. Même table et même fenêtre horaire que la collecte, donc le même
+ * budget ; et elle compte comme une VISITE DE PROFIL dans le plafond hebdomadaire
+ * (`compterVisitesProfilLinkedIn`). Comme la messagerie, elle ne se rattache à aucun passage, action ni
+ * fiche : `kind = 'resolution_profil'` est le second cas sans origine que la contrainte accepte.
+ * L'envoi, qui résout aussi un profil, trace sa requête sous l'action (`tracerEnvoiLinkedIn`), pas ici.
+ */
+export async function tracerResolutionProfil(ctx: Pick<Contexte, 'ex' | 'organisationId'>): Promise<void> {
+  await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_resolution_tracer */
+     values ($1, $2)`,
+    [ctx.organisationId, KIND_RESOLUTION_PROFIL],
   );
 }
 
@@ -832,7 +853,8 @@ export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organi
 }
 
 /**
- * Visites de profil depuis `depuis` (inclus) : les requêtes tracées en `kind = 'profil'`. Même
+ * Visites de profil depuis `depuis` (inclus) : les requêtes tracées en `kind = 'profil'` (la collecte)
+ * et en `kind = 'resolution_profil'` (la résolution d'URN de la relève). Même
  * principe que `compterRequetesLinkedIn` (l'horodatage de chaque requête, jamais le démarrage du
  * passage), sur une fenêtre que l'appelant fixe à sept jours glissants. Les requêtes d'avant la
  * colonne ne sont pas requalifiables et ne comptent pas.
@@ -842,7 +864,7 @@ export async function compterVisitesProfilLinkedIn(ctx: Pick<Contexte, 'ex' | 'o
     `select count(*)::int as n /* jr:linkedin_visites_profil_compter */
        from linkedin_requetes
       where organization_id = $1
-        and kind = 'profil'
+        and kind in ('profil', 'resolution_profil')
         and requested_at >= $2`,
     [ctx.organisationId, depuis],
   );

@@ -16,11 +16,13 @@ import {
   jourCourantDansFuseau,
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
   lireConsommationDuJour,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
   tracerRequeteMessagerie,
+  tracerResolutionProfil,
   lireReglages,
   lireReglagesDetail,
   plafondDuJour,
@@ -460,6 +462,24 @@ describe('plafonds LinkedIn', () => {
     expect(sql).toMatch(/insert into linkedin_requetes/);
     expect(sql).not.toMatch(/source_run_id|action_queue_id|post_id/);
     expect(params).toEqual(['org-1', 'messagerie']);
+  });
+
+  it('tracerResolutionProfil trace une visite de profil de la releve : nature propre, sans origine, pour cette organisation', async () => {
+    const ctx = faux({});
+    await tracerResolutionProfil(ctx);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/insert into linkedin_requetes/);
+    expect(sql).not.toMatch(/source_run_id|action_queue_id|post_id/);
+    expect(params).toEqual(['org-1', 'resolution_profil']);
+  });
+
+  it('compterVisitesProfilLinkedIn compte les visites de la collecte ET les resolutions de la releve', async () => {
+    const ctx = faux({ 'jr:linkedin_visites_profil_compter': [{ n: 7 }] });
+    const depuis = new Date('2026-10-20T00:00:00Z');
+    expect(await compterVisitesProfilLinkedIn(ctx, depuis)).toBe(7);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/kind in \('profil', 'resolution_profil'\)/);
+    expect(params).toEqual(['org-1', depuis]);
   });
 });
 

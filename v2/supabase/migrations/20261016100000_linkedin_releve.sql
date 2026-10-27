@@ -3,7 +3,9 @@
 -- 1. `linkedin_requetes` : une relève de messagerie est une requête LinkedIn comme une autre et
 --    compte dans le même budget, mais elle ne se rattache ni à un passage de collecte, ni à une
 --    action d'envoi, ni à une fiche de post. La contrainte « exactement une origine » devient :
---    zéro origine UNIQUEMENT pour `kind = 'messagerie'`, exactement une dans tous les autres cas
+--    zéro origine UNIQUEMENT pour `kind = 'messagerie'` et `kind = 'resolution_profil'` (la résolution
+--    d'URN de la relève : un profil ouvert hors de toute collecte ; elle compte dans le plafond de
+--    visites de profil), exactement une dans tous les autres cas
 --    (y compris `kind` nul, celui des traces de collecte existantes). Un simple `<= 1` laisserait
 --    passer une trace de collecte orpheline.
 -- 2. `linkedin_server_sessions` : curseur de relève et compte connecté lors du dernier passage.
@@ -27,10 +29,19 @@ alter table public.linkedin_requetes
   add constraint linkedin_requetes_une_origine
   check (
     case
-      when kind = 'messagerie' then num_nonnulls(source_run_id, action_queue_id, post_id) <= 1
+      when kind in ('messagerie', 'resolution_profil') then num_nonnulls(source_run_id, action_queue_id, post_id) <= 1
       else num_nonnulls(source_run_id, action_queue_id, post_id) = 1
     end
   );
+
+-- Le plafond de visites de profil compte `kind in ('profil', 'resolution_profil')`. L'index partiel
+-- `linkedin_requetes_profil_idx` (20261014140000, `where kind = 'profil'`) ne sert plus cette requête :
+-- le planificateur ne peut l'utiliser que si le prédicat de la requête IMPLIQUE celui de l'index, et
+-- `kind in (...)` n'implique pas `kind = 'profil'`. Même forme, prédicat élargi ; l'ancien reste (il est
+-- dans une migration déjà appliquée, dont l'auto-contrôle le réclame), il ne sert plus que d'ancêtre.
+create index if not exists linkedin_requetes_visites_idx
+  on public.linkedin_requetes (organization_id, requested_at)
+  where kind in ('profil', 'resolution_profil');
 
 -- 2. Curseur de relève
 -- Mémoire de l'état d'AVANT : la colonne est-elle créée par CETTE exécution ? Le contrôle final « le curseur
@@ -183,7 +194,28 @@ begin
     insert into _origine_test (id, organization_id, source_run_id, post_id) values (5, gen_random_uuid(), gen_random_uuid(), gen_random_uuid());
   exception when check_violation then v_ok := true; end;
   if not v_ok then raise exception 'linkedin_requetes_une_origine admet deux origines'; end if;
+  -- résolution d'URN de la relève sans origine : admise ; avec deux origines : REFUSÉE
+  insert into _origine_test (id, organization_id, kind) values (6, gen_random_uuid(), 'resolution_profil');
+  v_ok := false;
+  begin
+    insert into _origine_test (id, organization_id, kind, source_run_id, post_id) values (7, gen_random_uuid(), 'resolution_profil', gen_random_uuid(), gen_random_uuid());
+  exception when check_violation then v_ok := true; end;
+  if not v_ok then raise exception 'linkedin_requetes_une_origine admet une résolution de profil à deux origines'; end if;
+  -- la collecte (kind profil) garde son origine obligatoire
+  v_ok := false;
+  begin
+    insert into _origine_test (id, organization_id, kind) values (8, gen_random_uuid(), 'profil');
+  exception when check_violation then v_ok := true; end;
+  if not v_ok then raise exception 'linkedin_requetes_une_origine admet une trace orpheline de kind profil'; end if;
   drop table pg_temp._origine_test;
+
+  if not exists (
+    select 1 from pg_indexes
+     where schemaname = 'public' and tablename = 'linkedin_requetes' and indexname = 'linkedin_requetes_visites_idx'
+       and indexdef like '%resolution_profil%'
+  ) then
+    raise exception 'index linkedin_requetes_visites_idx manquant ou de forme inattendue';
+  end if;
 
   -- 4 : plus aucun doublon, index unique partiel de la bonne forme
   if exists (
