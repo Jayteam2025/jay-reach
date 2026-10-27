@@ -345,7 +345,7 @@
         },
         "campagne": {
           "titre": "A live campaign",
-          "aide": "It ties the persona, the sources and the sequence together.",
+          "aide": "It ties the persona, the sources and the sequence together. It is ticked once a campaign is launched and no draft is waiting to be launched.",
           "bouton": "Open",
           "mesure": "{n} live"
         }

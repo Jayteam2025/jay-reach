@@ -345,7 +345,7 @@
         },
         "campagne": {
           "titre": "Een lopende campagne",
-          "aide": "Die verbindt persona, bronnen en reeks.",
+          "aide": "Die verbindt persona, bronnen en reeks. Ze wordt afgevinkt zodra een campagne is gelanceerd en er geen concept meer op zijn lancering wacht.",
           "bouton": "Openen",
           "mesure": "{n} actief"
         }

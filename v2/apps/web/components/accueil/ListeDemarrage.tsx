@@ -77,7 +77,9 @@ export function ListeDemarrage({ demarrage, libelles, actionFermer }: ListeDemar
         })}
       </ul>
 
-      {actionFermer && (
+      {/* Un branchement qui a lâché garde le guide à l'écran quoi qu'on fasse : proposer de le
+          fermer promettrait une chose que l'écran ne ferait pas. */}
+      {actionFermer && !casse && (
         <form action={actionFermer} className="jr-demarrage-pied">
           <button type="submit" className="jr-lien">
             {libelles.fermer}

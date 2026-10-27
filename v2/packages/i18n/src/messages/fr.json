@@ -345,7 +345,7 @@
         },
         "campagne": {
           "titre": "Une campagne lancée",
-          "aide": "Elle relie le persona, les sources et la séquence.",
+          "aide": "Elle relie le persona, les sources et la séquence. Elle est cochée quand une campagne est lancée et qu'aucun brouillon n'attend son lancement.",
           "bouton": "Ouvrir",
           "mesure": "{n, plural, one {# active} other {# actives}}"
         }

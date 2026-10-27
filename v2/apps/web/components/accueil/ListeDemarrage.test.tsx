@@ -90,6 +90,15 @@ describe('la liste de démarrage', () => {
     expect(html).toContain('<form');
   });
 
+  it('quand un branchement a lâché, elle ne propose pas de se fermer : elle resterait à l’écran', () => {
+    const lignes = toutesFaites.map((l) =>
+      l.cle === 'linkedin' ? ligne('linkedin', { faite: false, compte: null, casse: true }) : l,
+    );
+    const html = rendre(lignes, async () => {});
+    expect(html).not.toContain(d.fermer);
+    expect(html).not.toContain('<form');
+  });
+
   it('au premier passage, elle compte et montre le chemin de chaque ligne manquante', () => {
     const lignes = [
       ligne('fournisseurs', { compte: 7 }),
