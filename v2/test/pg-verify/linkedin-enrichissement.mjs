@@ -31,6 +31,11 @@
 //       que le contrôle 24 interdit.
 //  R11. producer.ts : retirer `s.occurred_at >= now() - make_interval(...)` -> 40 rouge.
 //  R12. handler : neutraliser `signalTropAncien` -> 41, 41b et 41c rouges (l'achat PAYANT part).
+//  R13. producer.ts, contact connu : l'âge par organisation remplacé par une clé qui n'existe pas -> 42a, 42c, 42d
+//       rouges (« A=1 » : l'âge réglé à 3 est ignoré, la personne de 5 jours est enfilée).
+//  R14. producer.ts, chemin entreprise : même remplacement -> 45a rouge (« A=1 »).
+//  R15. handler : `ageMax` -> `AGE_MAX_SIGNAL_JOURS` dans l'appel de `signalTropAncien` -> 43, 43b, 43c rouges (l'achat part).
+//  R16. core, `resoudreAgeMaxEnrichissement` : retirer `Math.min(jours, retention)` -> 44 et 44b rouges.
 import pg from 'pg';
 import {
   AGE_MAX_SIGNAL_JOURS,
@@ -39,6 +44,7 @@ import {
   ecarterSignauxTropAnciens,
   ecrireReglage,
   enqueueEnrichmentContactsConnus,
+  enqueueEnrichmentForQualified,
   enregistrerEngageur,
   enrichirContactConnu,
   persistEnrichedContact,
@@ -854,6 +860,93 @@ async function signalAncien() {
     r2.valeur === 'achete' && a.vus.length === 1, `${r2.valeur} appels=${a.vus.length}`);
 }
 
+// ------------------------------- 13. l'âge d'achat est réglé par l'organisation (#182)
+
+async function ageReglePourLOrganisation() {
+  console.log('l’âge maximal d’un signal pour acheter une adresse est celui que l’ORGANISATION a réglé, repli sur la rétention');
+  const A = await monde();
+  const B = await monde();
+  const ctxA = { ex: pool, organisationId: A.org, utilisateurId: A.admin, role: 'admin' };
+  const dater = (contactId, jours) =>
+    q(`update signals set occurred_at = now() - make_interval(days => $2)
+        where id = (select source_signal_id from contacts where id = $1)`, [contactId, jours]);
+  const jobs = [];
+  const faux = { insert: async (lot) => { jobs.push(...lot); } };
+  const pour = (id) => jobs.filter((j) => j.data.contactId === id).length;
+
+  // Même personne de 5 jours dans deux organisations : A règle 3 jours, B n'a rien réglé (repli : 14).
+  const ca = await engageurQualifie(A, 'aga', 'Aga Cinqjours', 'Directrice commerciale', 'https://www.linkedin.com/in/aga-cinqjours');
+  const cb = await engageurQualifie(B, 'bob', 'Bob Cinqjours', 'Directeur commercial', 'https://www.linkedin.com/in/bob-cinqjours');
+  await dater(ca.id, 5);
+  await dater(cb.id, 5);
+  await ecrireReglage(ctxA, { cle: 'enrichissement_age_max_jours', valeur: 3 });
+  await enqueueEnrichmentContactsConnus(faux, pool);
+  check('42a. contact connu : sous un âge réglé à 3 jours, la personne de 5 jours de A n’est PAS enfilée',
+    pour(ca.id) === 0, `A=${pour(ca.id)}`);
+  check('42b. l’organisation B, qui n’a rien réglé, garde le repli (la rétention) : sa personne de 5 jours est enfilée',
+    pour(cb.id) === 1, `B=${pour(cb.id)}`);
+  await ecrireReglage(ctxA, { cle: 'enrichissement_age_max_jours', valeur: 10 });
+  await enqueueEnrichmentContactsConnus(faux, pool);
+  check('42c. l’âge est relu à chaque tour : relevé à 10 jours, la même personne de A est enfilée',
+    pour(ca.id) === 1, `A=${pour(ca.id)}`);
+  await ecrireReglage(ctxA, { cle: 'enrichissement_age_max_jours', valeur: 3 });
+  // Témoin du retrait : réglé à 3, A n'est plus enfilée sur un tour neuf (autre faux boss), B si.
+  const jobs2 = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (lot) => { jobs2.push(...lot); } }, pool);
+  const nbA = jobs2.filter((j) => j.data.contactId === ca.id).length;
+  const nbB = jobs2.filter((j) => j.data.contactId === cb.id).length;
+  check('42d. de retour à 3 jours, A n’est plus enfilée alors que B l’est : la cause est bien le réglage', nbA === 0 && nbB === 1, `A=${nbA} B=${nbB}`);
+
+  // Le handler lit le MÊME réglage : un job déposé à la main pour la personne de A est refusé avant toute dépense.
+  const a = achat();
+  const uAvant = await usage(A.org);
+  const r = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: A.org, contactId: ca.id }));
+  const uApres = await usage(A.org);
+  check('43. handler : un signal de 5 jours est refusé quand l’organisation a réglé 3 jours, AVANT toute dépense',
+    r.valeur === 'signal_trop_ancien' && a.vus.length === 0 && (uApres?.used ?? 0) === (uAvant?.used ?? 0),
+    `${r.valeur} appels=${a.vus.length}`);
+  check('43b. le refus nomme l’âge réglé (3), pas la rétention',
+    r.lignes.includes(`${MSG.prefixe} ${MSG.signalTropAncien(ca.id, 3)}`), r.lignes.join(' | '));
+  const rb = await enEcoutant(() => enrichirContactConnu(a.deps(), { organizationId: B.org, contactId: cb.id }));
+  check('43c. témoin : la même personne de 5 jours chez B (rien réglé) s’achète', rb.valeur === 'achete' && a.vus.length === 1, `${rb.valeur} appels=${a.vus.length}`);
+
+  // Une ligne posée avant un abaissement de la rétention (ici 99, hors bornes de l'écran) est bornée à la rétention.
+  const C = await monde();
+  const cc = await engageurQualifie(C, 'cyd', 'Cyd Vieux', 'Directeur commercial', 'https://www.linkedin.com/in/cyd-vieux');
+  await dater(cc.id, AGE_MAX_SIGNAL_JOURS + 2);
+  await q(`insert into organization_settings (organization_id, key, value) values ($1, 'enrichissement_age_max_jours', '99'::jsonb)`, [C.org]);
+  const jobs3 = [];
+  await enqueueEnrichmentContactsConnus({ insert: async (lot) => { jobs3.push(...lot); } }, pool);
+  check('44. une ligne à 99 jours (hors bornes) est bornée à la rétention : un signal plus vieux qu’elle n’est pas enfilé',
+    jobs3.filter((j) => j.data.contactId === cc.id).length === 0);
+  const a3 = achat();
+  const r3 = await enEcoutant(() => enrichirContactConnu(a3.deps(), { organizationId: C.org, contactId: cc.id }));
+  check('44b. et le handler le refuse aussi, avec la rétention pour âge',
+    r3.valeur === 'signal_trop_ancien' && a3.vus.length === 0
+      && r3.lignes.includes(`${MSG.prefixe} ${MSG.signalTropAncien(cc.id, AGE_MAX_SIGNAL_JOURS)}`), `${r3.valeur} ${r3.lignes.join(' | ')}`);
+
+  // Chemin ENTREPRISE : même réglage, même borne, sur un compte à signal qualifié.
+  const compte = async (m, nom, jours) => {
+    await q(`update personas set title_patterns = array['directeur commercial'] where id = $1`, [m.persona]);
+    const acc = (await q(`insert into accounts (organization_id, name) values ($1, $2) returning id`, [m.org, nom])).rows[0].id;
+    await q(
+      `insert into signals (organization_id, source_id, external_id, kind, occurred_at, title, status, account_id)
+       values ($1, $2, $3, 'job_posting', now() - make_interval(days => $4), 'Directeur commercial', 'qualified', $5)`,
+      [m.org, m.source, `offre-${nom}`, jours, acc],
+    );
+    return acc;
+  };
+  const accA = await compte(A, 'Societe A', 5);
+  const accB = await compte(B, 'Societe B', 5);
+  const jobsE = [];
+  await enqueueEnrichmentForQualified({ insert: async (lot) => { jobsE.push(...lot); } }, pool, { limit: 500 });
+  const pourCompte = (id) => jobsE.filter((j) => j.data.accountId === id).length;
+  check('45a. chemin entreprise : le compte de A (signal de 5 jours, âge réglé à 3) n’est PAS enfilé',
+    pourCompte(accA) === 0, `A=${pourCompte(accA)}`);
+  check('45b. le compte de B (rien réglé, repli sur la rétention) l’est',
+    pourCompte(accB) === 1, `B=${pourCompte(accB)}`);
+}
+
 async function campagneLinkedInSeule() {
   console.log('une sequence 100 % LinkedIn n achete pas d adresse email');
   const m = await monde();
@@ -881,7 +974,7 @@ async function campagneLinkedInSeule() {
     (await enFilePour(paul.id)) === 1, `en file = ${await enFilePour(paul.id)}`);
 }
 
-await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes, campagneLinkedInSeule, signalAncien);
+await jouer(colonneDeCout, producteur, famine, fileReelle, handler, sansResultat, plafondEtRefus, apresLAchat, plafondNulEtMarquage, tentativesPayees, conflitDAdresse, retention, pannes, campagneLinkedInSeule, signalAncien, ageReglePourLOrganisation);
 await boss.stop({ graceful: false });
 await pool.end();
 console.log(failures === 0 ? '\nTOUT VERT' : `\n${failures} ÉCHEC(S)`);

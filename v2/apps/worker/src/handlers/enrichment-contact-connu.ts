@@ -38,7 +38,7 @@ import {
   type FullEnrichContactInput,
   type FullEnrichContactResult,
 } from '@jay-reach/providers/enrichment';
-import { achatRetenuParUnPost, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
+import { achatRetenuParUnPost, ageMaxEnrichissementJours, plafondDuJour, fuseauDeLOrganisation, jourCourantDansFuseau } from '@jay-reach/core';
 import { mapEmailStatus } from '../enrichment-persist.js';
 import { rawStatusOf } from './enrich.js';
 import { lienProfilDeduit } from './post-engagement.js';
@@ -344,8 +344,11 @@ export async function enrichirContactConnu(
   //
   // Aucune marque posée : la purge d'ancienneté efface la personne avec son signal, et marquer
   // `enriched_at` rouvrirait l'épargne que la purge accorde à un email acheté.
-  if (await signalTropAncien(pool, org, job.contactId, AGE_MAX_SIGNAL_JOURS)) {
-    console.warn(`${MSG.prefixe} ${MSG.signalTropAncien(job.contactId, AGE_MAX_SIGNAL_JOURS)}`);
+  // L'âge est celui que l'organisation a réglé à l'écran (`enrichissement_age_max_jours`), repli
+  // sur la rétention des signaux quand la ligne est absente : la MÊME valeur que le producteur.
+  const ageMax = await ageMaxEnrichissementJours(pool, org, AGE_MAX_SIGNAL_JOURS);
+  if (await signalTropAncien(pool, org, job.contactId, ageMax)) {
+    console.warn(`${MSG.prefixe} ${MSG.signalTropAncien(job.contactId, ageMax)}`);
     return 'signal_trop_ancien';
   }
 

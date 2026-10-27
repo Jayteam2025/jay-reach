@@ -26,6 +26,7 @@ import {
   sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
+  agesMaxEnrichissementParOrganisation,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
@@ -454,6 +455,7 @@ export async function enqueueEnrichmentForQualified(
   opts: { limit?: number } = {},
 ): Promise<number> {
   const limit = opts.limit ?? 25;
+  const agesAchat = await agesMaxEnrichissementParOrganisation(pool, AGE_MAX_SIGNAL_JOURS);
   const res = await pool.query<{
     organization_id: string;
     account_id: string;
@@ -476,7 +478,9 @@ export async function enqueueEnrichmentForQualified(
           and a.enriched_at is null
           and p.is_active
           and array_length(p.title_patterns, 1) > 0
-          and s.occurred_at >= now() - make_interval(days => $2)
+          -- L'âge d'achat est celui de l'ORGANISATION (ecran Plafonds, enrichissement_age_max_jours),
+          -- repli sur la rétention des signaux quand elle n'a rien réglé. $3 : { organization_id: jours }.
+          and s.occurred_at >= now() - make_interval(days => coalesce(($3::jsonb ->> a.organization_id::text)::int, $2::int))
         order by a.id, p.id, s.occurred_at desc, s.id
      )
      select organization_id, account_id, company_name, domain, country,
@@ -484,7 +488,7 @@ export async function enqueueEnrichmentForQualified(
        from candidats
       order by occurred_at desc, score desc nulls last, account_id
       limit $1`,
-    [limit, AGE_MAX_SIGNAL_JOURS],
+    [limit, AGE_MAX_SIGNAL_JOURS, JSON.stringify(agesAchat)],
   );
 
   let enqueued = 0;
@@ -581,8 +585,8 @@ export async function enqueueEnrichmentForQualified(
  *    vient de `lienProfilDeduit` elle-même, et non d'un préfixe recopié ici :
  *    appelée sur une chaîne vide, elle rend exactement ce préfixe.
  *
- * Un quatrième critère borne l'ÂGE : le signal d'origine ne dépasse pas `AGE_MAX_SIGNAL_JOURS`,
- * comme sur le chemin entreprise. On n'achète que pour ce qui arrive maintenant.
+ * Un quatrième critère borne l'ÂGE : le signal d'origine ne dépasse pas l'âge réglé par l'organisation
+ * (`enrichissement_age_max_jours`, repli `AGE_MAX_SIGNAL_JOURS`), comme sur le chemin entreprise. On n'achète que pour ce qui arrive maintenant.
  *
  * Plus récents d'abord : un signal frais vaut mieux qu'un signal de la semaine
  * dernière quand le plafond ne permet pas de tout prendre.
@@ -632,6 +636,7 @@ export async function enqueueEnrichmentContactsConnus(
   // celle qu'exécute le handler. Une organisation sans clé tourne donc à vide
   // sur SA PART du lot — un job perdu, pas une famine — et repart dès que la clé
   // est saisie.
+  const agesAchat = await agesMaxEnrichissementParOrganisation(pool, AGE_MAX_SIGNAL_JOURS);
   const res = await pool.query<{ organization_id: string; contact_id: string }>(
     `with candidats as (
        select c.organization_id, c.id as contact_id,
@@ -650,7 +655,9 @@ export async function enqueueEnrichmentContactsConnus(
           -- borne que le chemin entreprise (enqueueEnrichmentForQualified). Sans elle, ce chemin
           -- rachetait des adresses pour des signaux de plusieurs semaines, dans la limite du
           -- plafond du jour. Contrôle autoritaire refait dans enrichirContactConnu, qui dépense.
-          and s.occurred_at >= now() - make_interval(days => $4)
+          -- L'âge est celui de l'ORGANISATION (ecran Plafonds, enrichissement_age_max_jours), repli
+          -- sur la rétention des signaux ($4). $5 : { organization_id: jours }.
+          and s.occurred_at >= now() - make_interval(days => coalesce(($5::jsonb ->> c.organization_id::text)::int, $4::int))
           and ${sqlAdresseResolvable('c' as FragmentSql, '$3' as FragmentSql)}
           -- Et ne pas ACHETER une adresse email a une campagne qui n'en enverra jamais : une
           -- sequence 100 % LinkedIn ecrit avec l'URN. Troisieme etage de la meme regle (voir
@@ -669,7 +676,7 @@ export async function enqueueEnrichmentContactsConnus(
       where rang <= $1
       order by rang, organization_id
       limit $2`,
-    [limit, limiteGlobale, lienProfilDeduit(''), AGE_MAX_SIGNAL_JOURS],
+    [limit, limiteGlobale, lienProfilDeduit(''), AGE_MAX_SIGNAL_JOURS, JSON.stringify(agesAchat)],
   );
 
   let enqueued = 0;

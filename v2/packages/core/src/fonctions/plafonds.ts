@@ -45,6 +45,7 @@ export type ClePlafond =
   | 'linkedin_releve_intervalle_min'
   | 'linkedin_attente_acceptation_jours'
   | 'age_max_offres_jours'
+  | 'enrichissement_age_max_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
   | 'fuseau';
@@ -63,6 +64,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_releve_intervalle_min',
   'linkedin_attente_acceptation_jours',
   'age_max_offres_jours',
+  'enrichissement_age_max_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
   'fuseau',
@@ -114,6 +116,12 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // 7 : le délai de Gojiberry. Une DURÉE, pas un plafond de trafic : aucune variable d'environnement.
   { cle: 'linkedin_attente_acceptation_jours', defaut: 7 },
   { cle: 'age_max_offres_jours', defaut: 14 },
+  // Âge maximal du signal d'origine pour qu'on ACHETE l'adresse d'une personne (chemin entreprise
+  // et chemin contact connu). 14 : la rétention réelle des signaux, qui est aussi la borne haute
+  // (`schemaEcrireReglage`) : au-delà, la purge d'ancienneté a déjà effacé le signal et l'écran
+  // promettrait ce que le moteur ne peut pas tenir. `SIGNAL_MAX_AGE_DAYS` n'est que le repli quand
+  // la ligne est absente (`ageMaxEnrichissementJours`).
+  { cle: 'enrichissement_age_max_jours', defaut: 14, env: 'SIGNAL_MAX_AGE_DAYS' },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
   { cle: 'fuseau', defaut: 'Europe/Paris' },
@@ -275,6 +283,48 @@ export async function plafondDuJour(ex: Executeur, organisationId: string, cle: 
   return resoudrePlafondNumerique(ex, organisationId, cle, res.rows[0]?.value, def.defaut, def.env);
 }
 
+/**
+ * Âge maximal (jours) du signal d'origine pour acheter une adresse, à partir de la valeur BRUTE
+ * lue en base. Invalide, absente, sous 1 : `retention` (le repli, c'est-à-dire `SIGNAL_MAX_AGE_DAYS`).
+ * Valeur au-dessus de la rétention (ligne posée avant un abaissement de la variable) : bornée à
+ * `retention`, car la purge a déjà effacé ce que la garde laisserait passer.
+ */
+export function resoudreAgeMaxEnrichissement(brut: unknown, retention: number): number {
+  const n = valeurNumeriqueValide(brut);
+  if (n === null) return retention;
+  const jours = Math.trunc(n);
+  if (jours < 1) return retention;
+  return Math.min(jours, retention);
+}
+
+/** Âge maximal d'achat d'UNE organisation (garde du contact connu, `enrichment-contact-connu.ts`). Sans cache : le prochain appel relit la base. */
+export async function ageMaxEnrichissementJours(ex: Executeur, organisationId: string, retention: number): Promise<number> {
+  const res = await ex.query<{ value: unknown }>(
+    `select value from organization_settings /* jr:age_max_enrichissement */
+      where organization_id = $1 and key = 'enrichissement_age_max_jours'`,
+    [organisationId],
+  );
+  return resoudreAgeMaxEnrichissement(res.rows[0]?.value, retention);
+}
+
+/**
+ * Les âges d'achat de TOUTES les organisations qui ont réglé la ligne, `{ organization_id: jours }`,
+ * pour les requêtes du producteur qui balaient plusieurs organisations en une fois (le SQL applique
+ * `coalesce(($n::jsonb ->> organization_id)::int, retention)`, la validation reste ici).
+ */
+export async function agesMaxEnrichissementParOrganisation(ex: Executeur, retention: number): Promise<Record<string, number>> {
+  const res = await ex.query<{ organization_id: string; value: unknown }>(
+    `select organization_id, value from organization_settings /* jr:ages_max_enrichissement */
+      where key = 'enrichissement_age_max_jours'`,
+  );
+  const sortie: Record<string, number> = {};
+  for (const r of res.rows) {
+    if (valeurNumeriqueValide(r.value) === null) continue;
+    sortie[r.organization_id] = resoudreAgeMaxEnrichissement(r.value, retention);
+  }
+  return sortie;
+}
+
 /** Repli de `SIGNAL_MAX_AGE_DAYS`, le même que celui du moteur (`lireAgeMaxSignalJours`). */
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
 
@@ -292,7 +342,7 @@ const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
  * `fenetreValidationPost`). Poser la variable des deux côtés, ou ne la poser nulle part, est ce
  * qui garde les deux d'accord.
  */
-function ageMaxSignalJours(): number {
+export function ageMaxSignalJours(): number {
   const brut = process.env.SIGNAL_MAX_AGE_DAYS;
   if (brut === undefined || brut.trim() === '') return AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT;
   const valeur = Number(brut);
@@ -394,6 +444,19 @@ export const schemaEcrireReglage = z
           code: z.ZodIssueCode.custom,
           path: ['valeur'],
           message: `L'attente de l'acceptation ne peut pas dépasser ${ATTENTE_ACCEPTATION_MAX_JOURS} jours.`,
+        });
+      }
+    }
+    // L'âge d'achat va de 1 jour à la rétention réelle des signaux : sous 1, rien ne serait jamais
+    // acheté (une garde à 0 jour écarte tout, sans le dire) ; au-delà, la purge d'ancienneté a déjà
+    // effacé le signal d'origine, donc la valeur affichée ne serait jamais atteinte.
+    if (entree.cle === 'enrichissement_age_max_jours' && typeof entree.valeur === 'number') {
+      const retention = ageMaxSignalJours();
+      if (entree.valeur < 1 || entree.valeur > retention) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['valeur'],
+          message: `L'âge maximal d'un signal pour acheter une adresse doit être compris entre 1 et ${retention} jours (la durée pendant laquelle un signal est conservé).`,
         });
       }
     }

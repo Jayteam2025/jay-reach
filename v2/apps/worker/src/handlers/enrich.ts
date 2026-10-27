@@ -8,6 +8,12 @@
  * traduit l'interface Supabase attendue par le moteur en requêtes `pg` et
  * cloisonne par organisation. Sans lui, chaque entreprise résolue deux fois était
  * payée deux fois. La dédup (dedupContext) est volontairement omise.
+ *
+ * Âge du signal : le chemin ENTREPRISE ne le garde que dans la FILE (`enqueueEnrichmentForQualified`,
+ * `producer.ts`, qui lit `enrichissement_age_max_jours` de l'organisation), et c'est exprès : ces
+ * handlers n'ont pas de garde d'âge, pour que le bouton manuel « Chercher l'email » de l'écran reste
+ * possible sur un signal ancien (l'opérateur le veut, il le déclenche lui-même). Le chemin CONTACT
+ * CONNU, lui, n'a pas de bouton : sa garde d'âge vit dans `enrichirContactConnu`, la fonction qui dépense.
  */
 import {
   resolveCompany,

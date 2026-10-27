@@ -1386,6 +1386,11 @@
           "nom": "Wait for LinkedIn acceptance",
           "description": "a LinkedIn message waits for the invitation to be accepted, then is skipped · in days",
           "suffixe": "days"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Maximum signal age for buying an email",
+          "description": "older signals are no longer enriched · from 1 day up to how long signals are kept",
+          "suffixe": "days"
         }
       },
       "ailleurs": {

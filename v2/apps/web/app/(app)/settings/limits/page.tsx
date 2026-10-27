@@ -22,7 +22,7 @@ import { TablePlafonds, type LignePlafond } from '../../../../components/reglage
 
 export const revalidate = 0;
 
-/** Les neuf lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
+/** Les dix lignes éditables de cet écran (spec lot 2 §7) — dans l'ordre de la maquette `reglages-plafonds.html`. `fuseau` (6ᵉ clé de `CLES_REGLAGES`) se règle dans Réglages › Compte (tâche 23), pas ici. */
 const ORDRE_LIGNES: readonly ClePlafond[] = [
   'scoring_par_jour',
   'enrichissements_par_jour',
@@ -33,12 +33,13 @@ const ORDRE_LIGNES: readonly ClePlafond[] = [
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
   'age_max_offres_jours',
+  'enrichissement_age_max_jours',
 ];
 
 /**
  * Les plafonds qui bornent un VOLUME produit : à zéro, ils arrêtent la machine, et l'écran doit
- * le montrer. Les quatre autres lignes sont des seuils ou des délais (score minimum, relecture, âge
- * des offres, jours d'attente de l'acceptation d'une invitation) : un zéro y est une valeur ordinaire,
+ * le montrer. Les autres lignes sont des seuils ou des délais (score minimum, relecture, âge
+ * des offres, âge d'achat d'une adresse, jours d'attente de l'acceptation d'une invitation) : un zéro y est une valeur ordinaire,
  * et `relecture_premiers_envois_defaut` vaut même zéro par défaut. Les confondre ferait crier l'écran
  * sur une organisation parfaitement saine.
  */
@@ -102,6 +103,11 @@ export default async function PlafondsPage() {
       nom: t('lignes.ageMaxOffresJours.nom'),
       description: t('lignes.ageMaxOffresJours.description'),
       suffixe: t('lignes.ageMaxOffresJours.suffixe'),
+    },
+    enrichissement_age_max_jours: {
+      nom: t('lignes.enrichissementAgeMaxJours.nom'),
+      description: t('lignes.enrichissementAgeMaxJours.description'),
+      suffixe: t('lignes.enrichissementAgeMaxJours.suffixe'),
     },
   };
 

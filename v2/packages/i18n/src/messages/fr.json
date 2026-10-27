@@ -1386,6 +1386,11 @@
           "nom": "Attente de l’acceptation LinkedIn",
           "description": "un message LinkedIn attend l’invitation acceptée, puis est passé · en jours",
           "suffixe": "jours"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Âge maximal d’un signal pour acheter l’adresse",
+          "description": "au-delà, la personne n’est plus enrichie · de 1 jour à la durée de conservation des signaux",
+          "suffixe": "jours"
         }
       },
       "ailleurs": {

@@ -1386,6 +1386,11 @@
           "nom": "Wachten op LinkedIn-acceptatie",
           "description": "een LinkedIn-bericht wacht tot de uitnodiging is geaccepteerd en wordt daarna overgeslagen · in dagen",
           "suffixe": "dagen"
+        },
+        "enrichissementAgeMaxJours": {
+          "nom": "Maximale leeftijd van een signaal om een e-mailadres te kopen",
+          "description": "oudere signalen worden niet meer verrijkt · van 1 dag tot de bewaartermijn van signalen",
+          "suffixe": "dagen"
         }
       },
       "ailleurs": {
