@@ -301,6 +301,11 @@ function enTeteTexte(headers: Record<string, unknown> | null, cle: string): stri
   return typeof valeur === 'string' && valeur !== '' ? valeur : null;
 }
 
+/** Vrai quand l'appelant a posé la marque `notifiee: false` à l'enregistrement : il tient un filet de notifications. */
+function demandeLaMarque(raw: unknown): boolean {
+  return typeof raw === 'object' && raw !== null && 'notifiee' in raw && raw.notifiee === false;
+}
+
 /**
  * Complète le corps d'un message connu dont le corps stocké était vide, et reclasse le fil si ce corps
  * change la classification. Rend la nouvelle classification, ou `null` si rien n'a changé (corps déjà
@@ -314,6 +319,7 @@ async function completerCorps(
   threadId: string,
   body: string,
   cls: ClassifyResult,
+  remarquerANotifier: boolean,
 ): Promise<string | null> {
   return dansUneTransaction(ex, async (tx) => {
     const lu = await tx.query<{ contact_id: string | null; classification: string; corps_vide: boolean; est_dernier: boolean }>(
@@ -340,6 +346,11 @@ async function completerCorps(
       { id: threadId, contactId: message.contact_id, classification: message.classification },
       cls,
     );
+    if (reclasse && remarquerANotifier) {
+      // L'appelant tient un filet de notifications (marque `notifiee`) : le message redevient « à notifier »,
+      // dans la MÊME transaction que le reclassement, pour qu'un échec de notification ne le perde pas.
+      await tx.query(`update thread_messages set raw = coalesce(raw, '{}'::jsonb) || '{"notifiee": false}'::jsonb where id = $1`, [messageId]);
+    }
     return reclasse ? cls.classification : null;
   });
 }
@@ -415,7 +426,7 @@ export async function recordInboundReply(ex: Executeur, org: string, reply: Inbo
         if (stocke.rows[0]?.vide === true) {
           // Un échec ici ne doit pas figer la relève (son curseur n'avance pas sur une erreur, et le
           // message revient à chaque passage) : le corps reste vide, le prochain passage réessaie.
-          reclasse = await completerCorps(ex, org, deja.rows[0].id, threadId, reply.body, cls).catch((err: unknown) => {
+          reclasse = await completerCorps(ex, org, deja.rows[0].id, threadId, reply.body, cls, demandeLaMarque(reply.raw)).catch((err: unknown) => {
             console.error(`[record-reply] corps tardif non traité (${err instanceof Error ? err.name : 'erreur'})`);
             return null;
           });

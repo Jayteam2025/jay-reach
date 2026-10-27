@@ -466,10 +466,15 @@ export async function traiterReleveLinkedIn(d: DependancesReleve, job: ReleveLin
         });
         if (!enregistre.isNew) {
           // Le corps est arrivé après coup et change la lecture (réponse humaine, départ) : l'opérateur
-          // avait été prévenu d'une simple absence, il doit apprendre la vraie nature du message. Ce chemin
-          // n'est pas couvert par le balayage (le message porte déjà `notifiee: true`) : voir l'inventaire
-          // du harnais.
-          if (enregistre.reclasse) await notifyReply(pool, org, TITRE_NOTIFICATION, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE);
+          // avait été prévenu d'une simple absence, il doit apprendre la vraie nature du message. Le reclassement
+          // a REMIS la marque `notifiee: false` dans sa transaction (l'appelant l'a demandée par `raw`) : un échec
+          // de notification n'est donc pas un échec du message, le balayage la reprend, comme pour un message neuf.
+          if (enregistre.reclasse) {
+            await notifierReponseEntrante(pool, org, m.messageUrn, extrait(m.texte) || CORPS_REPONSE_SANS_TEXTE).catch((err: unknown) => {
+              c.notificationsEnAttente += 1;
+              console.error(`[releve-linkedin] notification de reclassement différée au balayage (${nomDe(err)})`);
+            });
+          }
           c.dejaEnregistres += 1;
           continue;
         }

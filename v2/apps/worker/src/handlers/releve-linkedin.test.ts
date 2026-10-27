@@ -745,6 +745,24 @@ describe('un cas individuel ne bloque jamais les autres', () => {
     expect([...sortie.error, ...sortie.log, ...sortie.warn].join('\n')).not.toContain('mdp');
   });
 
+  it('une notification de RECLASSEMENT qui echoue ne fige pas le curseur et ne leve pas : le filet la reprend', async () => {
+    mocks.enregistrer.mockResolvedValue({ threadId: 't-1', classification: 'human_reply', isNew: false, reclasse: true } satisfies RecordedReply);
+    const w = monde({
+      compte: MOI_NU,
+      curseur: new Date(AVANT),
+      conversations: { statut: 200, corps: charge({ id: 'm1', de: 'ACoAAjeanne' }) },
+      contactsParUrn: { ACoAAjeanne: ['contact-1'] },
+    });
+    mocks.notifier.mockRejectedValueOnce(new Error('postgres://u:mdp@hote injoignable')).mockResolvedValue(undefined);
+    await traiterReleveLinkedIn(deps(w), JOB);
+    expect(etatEcrit(w)).toHaveLength(1);
+    // Un balayage en debut de passage, un second APRES l'echec.
+    expect(w.journal.filter((l) => l === 'balayage')).toHaveLength(2);
+    // Le message est rendu a notifier : l'appelant demande la marque `notifiee: false` a l'enregistrement.
+    expect(mocks.enregistrer.mock.calls[0]![2].raw).toEqual({ source: 'releve_serveur', notifiee: false });
+    expect([...sortie.error, ...sortie.log, ...sortie.warn].join('\n')).not.toContain('mdp');
+  });
+
   it('le balayage de fin de passage notifie ce qui est reste a notifier', async () => {
     const w = monde({
       compte: MOI_NU,
