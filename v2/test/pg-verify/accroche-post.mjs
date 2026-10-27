@@ -3420,8 +3420,13 @@ async function repriseFauteDeCoordonnee() {
   {
     // 60. Écarter sur une inscription déjà arrêtée `not_sendable` (l'écran n'offrait pas ce geste avant, la fonction l'accepte).
     const x = await arretee();
+    // La date d'arrêt d'origine (il y a trois jours) : Écarter ne la réécrit pas.
+    await q(`update enrollments set ended_at = now() - interval '3 days' where id = $1`, [x.inscription]);
+    const finAvant = (await etat(x.inscription)).ended_at;
     await ecarterDuneCampagne(x.m.ctx, { contactId: x.contactId, campagneId: x.m.campagne });
     const apresEcarter = await etat(x.inscription);
+    check('60d. Écarter sur une inscription déjà arrêtée garde sa date d\'arrêt d\'origine (`ended_at` n\'est pas écrasé)',
+      finAvant !== null && new Date(apresEcarter.ended_at).getTime() === new Date(finAvant).getTime(), JSON.stringify({ finAvant, apres: apresEcarter.ended_at }));
     check('60. Écarter sur une inscription arrêtée `not_sendable` : le motif devient `operator_skip` (la reprise ne la voit plus)',
       apresEcarter.status === 'stopped' && apresEcarter.stop_reason === 'operator_skip', JSON.stringify(apresEcarter));
     await redonnerLEmail(x);

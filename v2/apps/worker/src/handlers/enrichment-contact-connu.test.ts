@@ -556,8 +556,8 @@ describe('enqueueEnrichmentContactsConnus', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- faux boss réduit à `insert`
     await enqueueEnrichmentContactsConnus(boss as any, pool);
     const i = sql.findIndex((s2) => /from contacts/i.test(s2));
-    // `invalide` est absent : il retombe sur le repli ($4) dans le SQL ; `autre` est borné à la rétention.
-    expect(JSON.parse(String(params[i]?.[4]))).toEqual({ [ORG]: 3, [autre]: AGE_MAX_SIGNAL_JOURS });
+    // `invalide` retombe sur la rétention, `autre` y est borné.
+    expect(JSON.parse(String(params[i]?.[4]))).toEqual({ [ORG]: 3, [autre]: AGE_MAX_SIGNAL_JOURS, [invalide]: AGE_MAX_SIGNAL_JOURS });
   });
 
   it('le producteur n’enfile rien pour un contact qui a deja un email', async () => {

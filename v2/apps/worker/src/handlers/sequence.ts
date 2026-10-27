@@ -815,7 +815,7 @@ interface AbsenceEchueRow {
 
 /**
  * Vrai quand l'action de l'étape de rang `current_step - 1` d'une inscription n'est pas encore partie
- * (`scheduled`, `approved` ou `pending_approval`) : l'échéance de l'étape suivante se posera à son départ réel
+ * (`scheduled` ou `approved`) : l'échéance de l'étape suivante se posera à son départ réel
  * (ou à son saut), jamais avant (#180). Faux à l'étape 0 (pas d'étape précédente), sans action, ou quand l'action
  * est déjà partie ou terminée. Filtré par organisation : le worker tourne avec la clé de service.
  */
@@ -827,7 +827,7 @@ async function etapePrecedenteAttendSonDepart(
   const res = await pool.query(
     `select 1 from actions a /* jr:absence_etape_precedente */
       where a.organization_id = $1 and a.enrollment_id = $2
-        and a.status in ('scheduled', 'approved', 'pending_approval')
+        and a.status in ('scheduled', 'approved')
         and a.step_id = (select s.id from sequence_steps s
                           where s.campaign_id = $3
                           order by s.position asc

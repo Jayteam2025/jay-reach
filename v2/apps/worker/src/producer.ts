@@ -26,7 +26,7 @@ import {
   sqlSourceAlimenteLaCampagne,
   placesRestantes,
   plafondDuJour,
-  agesMaxEnrichissementParOrganisation,
+  resoudreAgeMaxEnrichissement,
   fuseauDeLOrganisation,
   jourCourantDansFuseau,
   lireFuseauLinkedIn,
@@ -141,6 +141,23 @@ function lireAgeMaxSignalJours(): number {
  * `new`/`qualified` sans jamais être scorée ni enrichie.
  */
 export const AGE_MAX_SIGNAL_JOURS = lireAgeMaxSignalJours();
+
+/**
+ * Les âges d'achat réglés par chaque organisation (`enrichissement_age_max_jours`), `{ organization_id: jours }`,
+ * pour les requêtes du producteur qui balaient TOUTES les organisations en une fois (le SQL applique
+ * `coalesce(($n::jsonb ->> organization_id)::int, retention)`). Réservée au moteur : elle lit les lignes de toutes
+ * les organisations avec la clé de service, donc elle ne vit pas dans `@jay-reach/core`, façade de l'écran et du
+ * futur serveur MCP. Une ligne illisible ou sous 1 retombe sur la rétention, comme une ligne absente.
+ */
+async function agesMaxEnrichissementParOrganisation(pool: Pool, retention: number): Promise<Record<string, number>> {
+  const res = await pool.query<{ organization_id: string; value: unknown }>(
+    `select organization_id, value from organization_settings /* jr:ages_max_enrichissement */
+      where key = 'enrichissement_age_max_jours'`,
+  );
+  const sortie: Record<string, number> = {};
+  for (const r of res.rows) sortie[r.organization_id] = resoudreAgeMaxEnrichissement(r.value, retention);
+  return sortie;
+}
 
 /**
  * Multiple du délai d'ancienneté pendant lequel un engageur qualifié est épargné

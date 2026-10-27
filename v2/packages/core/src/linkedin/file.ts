@@ -750,8 +750,14 @@ export interface AttenteAcceptation {
  * Les messages LinkedIn de séquence qui attendent l'acceptation d'une invitation, QUEL QUE SOIT leur
  * `scheduled_for` d'origine (celui de l'action peut dater de plusieurs jours : la File du jour, qui lit
  * le jour de l'action, ne les voit plus). Filtrés par organisation, et au choix par inscription
- * (fiche d'un contact) ou par campagne (File du jour). Une inscription arrêtée ou terminée n'attend
- * plus rien, même si une ligne traîne. Plus anciens d'abord.
+ * (fiche d'un contact) ou par campagne (File du jour). Plus anciens d'abord.
+ *
+ * Inscriptions retenues : `active` ET `completed`. Le tick passe l'inscription en `completed` dès qu'il crée l'action
+ * de la DERNIÈRE étape : dans une séquence invitation puis message, le message qui attend appartient donc à une
+ * inscription `completed`, et `completed` n'est pas une sortie (même lecture que la garde de séquence de la file).
+ * Exclues : `paused` et `paused_absence` (leur ligne n'est pas réclamée pendant la pause, la date limite peut être
+ * dépassée sans saut et l'écran afficherait une date fausse : la fiche montre déjà la pause), et `stopped` (la
+ * personne est sortie, une ligne qui traînerait n'attend plus rien).
  */
 export async function lireAttentesAcceptation(
   ex: Executeur,
@@ -797,7 +803,7 @@ export async function lireAttentesAcceptation(
       where q.organization_id = $1 and q.status = 'pending' and q.error_code = '${CODE_ATTENTE_ACCEPTATION}'
         and q.kind = 'message' and q.origine = 'sequence'
         and a.channel = 'linkedin_message' and a.status in ('scheduled', 'approved')
-        and e.status in ('active', 'paused', 'paused_absence')${filtres}
+        and e.status in ('active', 'completed')${filtres}
       order by q.created_at asc, q.id asc`,
     valeurs,
   );

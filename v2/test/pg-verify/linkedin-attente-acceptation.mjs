@@ -38,6 +38,9 @@
 //  19. file.ts, `lireAttentesAcceptation` : `SQL_INVITATION_ENVOYEE_LE` remplacé par `null` (compter depuis l'arrivée) : 13a, 13c, 13d, 13e, 13f.
 //  20. file.ts, `lireAttentesAcceptation` : retirer le filtre `q.organization_id = $1` : 13i, 13k (13j reste vert : la File du jour filtre aussi par campagne).
 //  21. file.ts, `lireAttentesAcceptation` : retirer `e.status in (...)` : 13k.
+//  23. file.ts, `lireAttentesAcceptation` : `e.status in ('active')` (sans `completed`) : 13x, 13x-bis (séquence invitation puis message).
+//  24. file.ts, `lireAttentesAcceptation` : `e.status in ('active', 'completed', 'paused', 'paused_absence')` : 13y, 13y-bis.
+//  25. file-du-jour.ts, `ecarterDuneCampagne` : `ended_at = now()` sans `coalesce` : accroche-post 60d.
 //  22. contacts.ts, `lireFiche` : `attenteAcceptation` forcé à `null` : 13a, 13c (et l'exception qui suit). campagnes.ts,
 //      `listerFileDuJour` : `enAttenteAcceptation` forcé à `[]` : 13c, 13j.
 import pg from 'pg';
@@ -717,7 +720,42 @@ async function attenteVisible() {
   check('13k. une inscription arrêtée n\'est plus listée', (await lireAttentesAcceptation(pool, m.org)).length === 0);
 }
 
-await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente, attenteVisible);
+async function attenteDeLaDerniereEtape() {
+  console.log('\n14. séquence invitation puis message : l\'inscription est `completed`, l\'attente reste visible ; une pause la masque (#183, revue)');
+  const m = await monde({ etapes: ['linkedin_invite', 'linkedin_message'] });
+  const admin = { ...m.ctx, role: 'admin' };
+  const p = await personne(m, { invitationIlYa: 2, prenom: 'Derniere' });
+  await essayerEtRefuser(m);
+  const insc = await inscriptionDe(p.inscription);
+  check('0. précondition : le tick a créé la dernière action, l\'inscription est `completed`, la ligne attend',
+    insc.status === 'completed' && (await file(p.queue)).error_code === 'attente_acceptation', JSON.stringify(insc));
+  const fiche = await lireFiche(admin, { contactId: p.contact, campagneId: m.campagne });
+  check('13x. la fiche porte l\'attente d\'une inscription `completed` (séquence d\'Alexandre : invitation puis message)',
+    fiche.sequence?.attenteAcceptation?.inscriptionId === p.inscription, JSON.stringify(fiche.sequence?.attenteAcceptation ?? null));
+  const jour = await listerFileDuJour(admin, { campagneId: m.campagne });
+  check('13x-bis. la File du jour la liste aussi', jour.enAttenteAcceptation.some((x) => x.inscriptionId === p.inscription), String(jour.enAttenteAcceptation.length));
+
+  // Une pause masque l'attente : sa ligne n'est pas réclamée, la date limite pourrait être dépassée sans saut.
+  // (Séquence à trois étapes : une absence ne met pas en pause une inscription déjà `completed`.)
+  const m3 = await monde();
+  const admin3 = { ...m3.ctx, role: 'admin' };
+  const p3 = await personne(m3, { invitationIlYa: 2, prenom: 'EnPause' });
+  await essayerEtRefuser(m3);
+  check('0b. précondition : sans pause, l\'attente est listée', (await lireAttentesAcceptation(pool, m3.org)).length === 1);
+  const ra = await recordInboundReply(pool, m3.org, { contactId: p3.contact, channel: 'email', body: 'Je suis absent du bureau, de retour la semaine prochaine.', receivedAt: new Date() });
+  const pause = await inscriptionDe(p3.inscription);
+  check('0c. précondition : réponse d\'absence, inscription en pause d\'absence', ra.classification === 'auto_absence' && pause.status === 'paused_absence', JSON.stringify(pause));
+  check('13y. une inscription `paused_absence` n\'est PAS listée (fiche et File du jour) : pas de date limite fausse',
+    (await lireAttentesAcceptation(pool, m3.org)).length === 0
+      && (await lireFiche(admin3, { contactId: p3.contact, campagneId: m3.campagne })).sequence?.attenteAcceptation === null
+      && (await listerFileDuJour(admin3, { campagneId: m3.campagne })).enAttenteAcceptation.length === 0);
+  await q(`update enrollments set status = 'paused' where id = $1`, [p3.inscription]);
+  check('13y-bis. une inscription `paused` non plus', (await lireAttentesAcceptation(pool, m3.org)).length === 0);
+  await q(`update enrollments set status = 'active' where id = $1`, [p3.inscription]);
+  check('13y-ter. témoin : la même inscription redevenue `active` est listée à nouveau', (await lireAttentesAcceptation(pool, m3.org)).length === 1);
+}
+
+await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente, attenteVisible, attenteDeLaDerniereEtape);
 
 await pool.end();
 console.log(failures === 0 ? '\nTOUS LES CONTRÔLES PASSENT' : `\n${failures} CONTRÔLE(S) EN ÉCHEC`);

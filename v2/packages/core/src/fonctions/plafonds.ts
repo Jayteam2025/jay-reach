@@ -307,24 +307,6 @@ export async function ageMaxEnrichissementJours(ex: Executeur, organisationId: s
   return resoudreAgeMaxEnrichissement(res.rows[0]?.value, retention);
 }
 
-/**
- * Les âges d'achat de TOUTES les organisations qui ont réglé la ligne, `{ organization_id: jours }`,
- * pour les requêtes du producteur qui balaient plusieurs organisations en une fois (le SQL applique
- * `coalesce(($n::jsonb ->> organization_id)::int, retention)`, la validation reste ici).
- */
-export async function agesMaxEnrichissementParOrganisation(ex: Executeur, retention: number): Promise<Record<string, number>> {
-  const res = await ex.query<{ organization_id: string; value: unknown }>(
-    `select organization_id, value from organization_settings /* jr:ages_max_enrichissement */
-      where key = 'enrichissement_age_max_jours'`,
-  );
-  const sortie: Record<string, number> = {};
-  for (const r of res.rows) {
-    if (valeurNumeriqueValide(r.value) === null) continue;
-    sortie[r.organization_id] = resoudreAgeMaxEnrichissement(r.value, retention);
-  }
-  return sortie;
-}
-
 /** Repli de `SIGNAL_MAX_AGE_DAYS`, le même que celui du moteur (`lireAgeMaxSignalJours`). */
 const AGE_MAX_SIGNAL_JOURS_PAR_DEFAUT = 14;
 

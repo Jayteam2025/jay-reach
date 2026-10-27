@@ -8,7 +8,6 @@ import { SEUIL_MINUTES_PAR_ACTION } from './aujourdhui.js';
 import {
   CLES_REGLAGES,
   ageMaxEnrichissementJours,
-  agesMaxEnrichissementParOrganisation,
   resoudreAgeMaxEnrichissement,
   RYTHMES,
   ecrireReglage,
@@ -647,18 +646,6 @@ describe('enrichissement_age_max_jours : âge du signal pour acheter une adresse
     expect(await ageMaxEnrichissementJours(ctx.ex, 'org-1', 14)).toBe(4);
     expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/organization_id = \$1/), ['org-1']);
     expect(await ageMaxEnrichissementJours(faux({}).ex, 'org-1', 14)).toBe(14);
-  });
-
-  it('agesMaxEnrichissementParOrganisation écarte les lignes illisibles et borne les autres', async () => {
-    const ctx = faux({
-      'jr:ages_max_enrichissement': [
-        { organization_id: 'a', value: 3 },
-        { organization_id: 'b', value: 99 },
-        { organization_id: 'c', value: 'abc' },
-        { organization_id: 'd', value: 0 },
-      ],
-    });
-    expect(await agesMaxEnrichissementParOrganisation(ctx.ex, 14)).toEqual({ a: 3, b: 14, d: 14 });
   });
 });
 

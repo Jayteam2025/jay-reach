@@ -95,7 +95,7 @@ export type ActionJournal =
 
 /**
  * Événements dont le texte n'est PAS stocké : `diff` porte un `code` et ses `parametres`, l'écran les traduit
- * (`campagne.fiche.historique.codes.<code>` dans `packages/i18n`, fr/en/nl). Les événements plus anciens gardent
+ * (`campagne.fiche.history.codes.<code>` dans `packages/i18n`, fr/en/nl). Les événements plus anciens gardent
  * leur `diff.libelle` français, affiché tel quel en repli (#181). Un code absent de cette liste est ignoré à la lecture.
  */
 export const CODES_EVENEMENT = ['linkedin_message_saute'] as const;

@@ -974,7 +974,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
         return { rows: [], rowCount: 1 };
       }
       if (/jr:absence_etape_precedente/.test(sql)) {
-        const attend = ['scheduled', 'approved', 'pending_approval'].includes(reponses.precedente?.status ?? '');
+        const attend = ['scheduled', 'approved'].includes(reponses.precedente?.status ?? '');
         return { rows: attend ? [{ '?column?': 1 }] : [], rowCount: attend ? 1 : 0 };
       }
       if (ETAPE.test(sql)) {
@@ -1044,7 +1044,7 @@ describe('reprendreAbsencesEchues (F10)', () => {
       current_step: 2,
       resume_at: resumeAt,
     };
-    for (const status of ['scheduled', 'approved', 'pending_approval']) {
+    for (const status of ['scheduled', 'approved']) {
       const { pool, appels, etat } = creerPoolAbsence(
         [candidat],
         { status: 'paused_absence', next_action_at: resumeAt, current_step: 2 },

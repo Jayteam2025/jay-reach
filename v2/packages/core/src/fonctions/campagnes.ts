@@ -567,7 +567,7 @@ export interface Evenement {
   readonly detail: string | null;
   /**
    * Événement en CODE (#181) : le texte n'est pas stocké, `libelle` est alors vide et l'écran traduit `code`
-   * avec `parametres` (`campagne.fiche.historique.codes.<code>`). Absent pour un événement ancien en texte libre,
+   * avec `parametres` (`campagne.fiche.history.codes.<code>`). Absent pour un événement ancien en texte libre,
    * qui garde son `libelle` français en repli.
    */
   readonly code?: CodeEvenement;
