@@ -139,13 +139,21 @@
       "sequenceArretee": "sequentie gestopt bij de reactie",
       "repondDepuis": "gereageerd vanaf {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat alleen voor e-mailgesprekken.",
+        "canalNonEmail": "Antwoorden vanuit Jay Reach bestaat nog niet voor dit kanaal.",
         "messageOrigineInconnu": "Onbekend oorspronkelijk bericht: antwoorden vanuit de app is niet mogelijk."
+      },
+      "etatEnvoi": {
+        "enCours": "Wordt verzonden",
+        "echec": "Niet verzonden",
+        "aVerifier": "Verzending onbevestigd",
+        "echecDetail": "Dit bericht is niet verzonden. Schrijf op LinkedIn, of verstuur het hier opnieuw.",
+        "aVerifierDetail": "LinkedIn heeft de verzending niet bevestigd. Open het gesprek op LinkedIn voordat u opnieuw verstuurt: het bericht is er mogelijk al."
       }
     },
     "reponse": {
       "depuis": "Antwoorden vanaf {boite}",
       "depuisSansBoite": "Antwoorden",
+      "depuisLinkedin": "Antwoorden op LinkedIn",
       "via": "via {transport}, in hetzelfde gesprek",
       "placeholder": "Je antwoord…",
       "note": "Opgeslagen in het gesprek van het contact en in de Inbox",
@@ -1664,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "Een LinkedIn-verzameling stopt",
               "detail": "wanneer een bericht niets oplevert, terwijl de sessie geldig blijft"
+            },
+            "reponse_echouee": {
+              "titre": "Een LinkedIn-antwoord is niet verstuurd",
+              "detail": "wanneer een vanuit Jay Reach geschreven antwoord niet kon worden verstuurd of nagekeken moet worden"
             }
           }
         }
@@ -1835,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Profielweergaven per week",
-          "usage": "{n} in de afgelopen zeven dagen; daarboven stopt het verzamelen dat profielen opent"
+          "usage": "{n} in de afgelopen zeven dagen, inclusief verzamelen en het lezen van reacties; daarboven stoppen het verzamelen dat profielen opent en het opzoeken van profiel-ID’s bij het lezen van reacties"
         },
         "fichesPostParJour": {
           "nom": "Postfiches per dag",
@@ -1848,7 +1860,11 @@
         "enregistrer": "Opslaan",
         "erreurNombre": "Voer een geheel getal in.",
         "avances": "Geavanceerde instellingen",
-        "avancesLead": "De limieten van de verzameling en de beoordelingstermijn van posts, stuk voor stuk aanpasbaar."
+        "avancesLead": "De limieten van de verzameling en de beoordelingstermijn van posts, stuk voor stuk aanpasbaar.",
+        "releveIntervalle": {
+          "nom": "Controle op LinkedIn-reacties",
+          "usage": "Aantal minuten tussen twee controles op nieuwe reacties."
+        }
       },
       "avertissement": {
         "titre": "Verzamelen vanaf LinkedIn is in strijd met de gebruiksvoorwaarden van LinkedIn.",
@@ -2035,7 +2051,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "Wachtrij voor de bewaartermijnopruiming: wist verzamelde personen die nooit zijn gecontacteerd na afloop van de bewaartermijn.",
-      "linkedinFichePost": "Wachtrij voor het aanvullen van postfiches: opent een post opnieuw waarvan de fiche (auteur, tekst, datum) onvolledig bleef."
+      "linkedinFichePost": "Wachtrij voor het aanvullen van postfiches: opent een post opnieuw waarvan de fiche (auteur, tekst, datum) onvolledig bleef.",
+      "linkedinReleve": "Wachtrij voor het ophalen van LinkedIn-antwoorden: leest de inbox van het gekoppelde account en registreert de antwoorden van contacten."
     }
   },
   "motifsPause": {

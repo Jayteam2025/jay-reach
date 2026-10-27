@@ -1,6 +1,6 @@
 /**
  * Commandes de la session LinkedIn du serveur (lot 4a), lancées par l'opérateur
- * dans un terminal : `jay-reach linkedin <connecter|statut|deconnecter|ip>`.
+ * dans un terminal : `jay-reach linkedin <connecter|statut|deconnecter|ip|reclasser>`.
  *
  * Rien ici n'accepte un secret en argument : l'identifiant et le mot de passe se
  * saisissent à l'invite (mot de passe et code masqués), donc ni historique du
@@ -24,6 +24,7 @@ import {
   solderDeconnexionLinkedIn,
   lireSessionLinkedIn,
   prendreVerrouLinkedIn,
+  rejouerClassement,
   type Contexte,
   type Sortie,
   type Titulaire,
@@ -73,6 +74,8 @@ const USAGE = [
   '  statut           affiche l’état de la session',
   '  deconnecter      révoque la session',
   '  ip [--confirmer] relève l’IP de sortie du navigateur ; --confirmer la pose comme IP attendue',
+  '  reclasser [--appliquer]  rejoue le classement des réponses dont le corps est arrivé après coup ;',
+  '                   sans option, à blanc : compte sans rien écrire ; --appliquer exclut et annule pour de bon',
 ];
 
 const URL_CONNEXION = 'https://www.linkedin.com/login';
@@ -439,19 +442,39 @@ async function ip(ctx: Contexte, d: Dependances, confirmer: boolean): Promise<nu
   }
 }
 
+/**
+ * Rejoue le classement des réponses dont le corps est arrivé après coup. À blanc par défaut : une
+ * exclusion est définitive et aucun écran ne la défait. Le compte-rendu a la même forme dans les deux
+ * modes, pour qu'on puisse comparer ce qui a été annoncé et ce qui a été fait.
+ */
+async function reclasser(ctx: Contexte, d: Dependances, appliquer: boolean): Promise<number> {
+  const r = await rejouerClassement(ctx.ex, ctx.organisationId, { appliquer });
+  d.ecrire(appliquer ? 'Rejeu du classement : APPLIQUÉ.' : 'Rejeu du classement : à blanc, rien n’est écrit.');
+  d.ecrire(`  relus : ${r.relus}`);
+  d.ecrire(`  reclassés : ${r.reclasses}`);
+  d.ecrire(`  exclus : ${r.exclus}`);
+  d.ecrire(`  envois LinkedIn en file annulés : ${r.envoisAnnules}`);
+  d.ecrire(`  séquences arrêtées : ${r.sequencesArretees}`);
+  d.ecrire(`  notifications : ${r.notifications}`);
+  d.ecrire(`  échecs : ${r.echecs}`);
+  if (!appliquer && r.reclasses > 0) d.ecrire('Pour appliquer : « jay-reach linkedin reclasser --appliquer ».');
+  return r.echecs > 0 ? 1 : 0;
+}
+
 export async function executerCommande(argv: string[], d: Dependances): Promise<number> {
   const [commande, ...reste] = argv;
-  const autorises = commande === 'ip' ? ['--confirmer'] : [];
+  const autorises = commande === 'ip' ? ['--confirmer'] : commande === 'reclasser' ? ['--appliquer'] : [];
   if (
     !commande ||
-    !['connecter', 'statut', 'deconnecter', 'ip'].includes(commande) ||
+    !['connecter', 'statut', 'deconnecter', 'ip', 'reclasser'].includes(commande) ||
     reste.some((a) => !autorises.includes(a))
   ) {
     USAGE.forEach((l) => d.ecrire(l));
     return 2;
   }
-  // Les commandes qui touchent LinkedIn exigent le drapeau posé exprès ; `statut` n'ouvre rien.
-  if (commande !== 'statut' && d.env.JAY_REACH_LINKEDIN !== '1') {
+  // Les commandes qui touchent LinkedIn exigent le drapeau posé exprès ; `statut` et `reclasser`
+  // n'ouvrent rien (`reclasser` ne lit que la base).
+  if (commande !== 'statut' && commande !== 'reclasser' && d.env.JAY_REACH_LINKEDIN !== '1') {
     d.ecrire(
       'Le canal LinkedIn serveur est désactivé : poser JAY_REACH_LINKEDIN=1 dans worker.env, puis relancer.',
     );
@@ -466,6 +489,8 @@ export async function executerCommande(argv: string[], d: Dependances): Promise<
         return await connecter(ctx, d);
       case 'deconnecter':
         return await deconnecter(ctx, d);
+      case 'reclasser':
+        return await reclasser(ctx, d, reste.includes('--appliquer'));
       default:
         return await ip(ctx, d, reste.includes('--confirmer'));
     }

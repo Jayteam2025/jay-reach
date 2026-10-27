@@ -139,13 +139,21 @@
       "sequenceArretee": "sequence stopped at the reply",
       "repondDepuis": "replied from {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Replying from Jay Reach only exists for email threads.",
+        "canalNonEmail": "Replying from Jay Reach does not exist for this channel yet.",
         "messageOrigineInconnu": "Unknown source message: cannot reply from the app."
+      },
+      "etatEnvoi": {
+        "enCours": "Sending",
+        "echec": "Not sent",
+        "aVerifier": "Delivery unconfirmed",
+        "echecDetail": "This message did not go out. Write to them on LinkedIn, or send it again here.",
+        "aVerifierDetail": "LinkedIn did not confirm the send. Open the conversation on LinkedIn before sending again: the message may already be there."
       }
     },
     "reponse": {
       "depuis": "Reply from {boite}",
       "depuisSansBoite": "Reply",
+      "depuisLinkedin": "Reply on LinkedIn",
       "via": "via {transport}, in the same thread",
       "placeholder": "Your reply…",
       "note": "Saved in the contact's thread and in the Inbox",
@@ -1664,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "A LinkedIn collection stops",
               "detail": "when a post returns nothing, with the session still valid"
+            },
+            "reponse_echouee": {
+              "titre": "A LinkedIn reply did not go out",
+              "detail": "when a reply written from Jay Reach could not be sent, or needs checking"
             }
           }
         }
@@ -1835,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Profile views per week",
-          "usage": "{n} over the last seven days; beyond that, collection that opens profiles stops"
+          "usage": "{n} over the last seven days, collection and reply reading included; beyond that, collection that opens profiles and the profile ID lookups of reply reading stop"
         },
         "fichesPostParJour": {
           "nom": "Post sheets per day",
@@ -1848,7 +1860,11 @@
         "enregistrer": "Save",
         "erreurNombre": "Enter a whole number.",
         "avances": "Advanced settings",
-        "avancesLead": "Collection limits and the post review window, each editable on its own."
+        "avancesLead": "Collection limits and the post review window, each editable on its own.",
+        "releveIntervalle": {
+          "nom": "LinkedIn reply check",
+          "usage": "Minutes between two checks for new replies."
+        }
       },
       "avertissement": {
         "titre": "Collecting from LinkedIn is against its terms of use.",
@@ -2035,7 +2051,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "Retention purge queue: deletes collected people who were never contacted once the retention period has elapsed.",
-      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete."
+      "linkedinFichePost": "Post sheet catch-up queue: reopens a post whose sheet (author, text, date) was left incomplete.",
+      "linkedinReleve": "LinkedIn replies polling queue: reads the connected account's inbox and records contacts' replies."
     }
   },
   "motifsPause": {

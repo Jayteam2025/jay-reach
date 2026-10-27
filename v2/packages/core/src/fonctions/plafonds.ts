@@ -42,6 +42,7 @@ export type ClePlafond =
   | 'linkedin_visites_profil_par_semaine'
   | 'linkedin_fiches_post_par_jour'
   | 'linkedin_fenetre_validation_post_jours'
+  | 'linkedin_releve_intervalle_min'
   | 'age_max_offres_jours'
   | 'score_min_defaut'
   | 'relecture_premiers_envois_defaut'
@@ -58,6 +59,7 @@ const CLE_PLAFOND_VALUES = [
   'linkedin_visites_profil_par_semaine',
   'linkedin_fiches_post_par_jour',
   'linkedin_fenetre_validation_post_jours',
+  'linkedin_releve_intervalle_min',
   'age_max_offres_jours',
   'score_min_defaut',
   'relecture_premiers_envois_defaut',
@@ -83,7 +85,9 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // Premium ni Sales Navigator, ordre de grandeur connu). Elles ne figurent ni dans les envois ni
   // dans le plafond horaire de requêtes, qui ne distingue pas une vue d'une lecture de réactions :
   // la source « changement de poste » relit des profils par roulement et pouvait en consommer
-  // sans que rien l'arrête. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
+  // sans que rien l'arrête. Ce plafond compte aussi les profils que la RELÈVE des messages ouvre pour
+  // résoudre l'URN d'un contact (`kind = 'resolution_profil'`) : c'est la même page vue par LinkedIn.
+  // Il ne compte PAS la résolution faite par l'envoi, qui part sous le plafond d'envoi de l'action. 100 par semaine, comme le siège de Gojiberry, soit bien en deçà du
   // seuil quotidien ; pas de `HARD_CAP_7_DAYS` ici, qui ne borne que les envois.
   { cle: 'linkedin_visites_profil_par_semaine', defaut: 100, env: 'LINKEDIN_PROFILE_VIEWS_WEEKLY_CAP' },
   // Le RATTRAPAGE des fiches de post : la collecte capture déjà chaque fiche gratuitement, ce travail
@@ -98,6 +102,10 @@ export const CLES_REGLAGES: readonly { cle: ClePlafond; defaut: number | string;
   // d'épargne n'épargnerait jamais rien et l'écran afficherait une échéance sans effet.
   // `schemaEcrireReglage` refuse une valeur sous ce seuil, en le disant.
   { cle: 'linkedin_fenetre_validation_post_jours', defaut: 28, env: 'LINKEDIN_POST_REVIEW_WINDOW_DAYS' },
+  // Intervalle entre deux relèves de la messagerie LinkedIn, en minutes. Chaque relève est une
+  // requête de plus vers LinkedIn : 30 laisse une réponse visible en moins d'une heure sans
+  // fréquenter la messagerie en continu. Bornes [5, 1440] posées par `schemaEcrireReglage`.
+  { cle: 'linkedin_releve_intervalle_min', defaut: 30, env: 'LINKEDIN_RELEVE_INTERVAL_MIN' },
   { cle: 'age_max_offres_jours', defaut: 14 },
   { cle: 'score_min_defaut', defaut: 70 },
   { cle: 'relecture_premiers_envois_defaut', defaut: 0 },
@@ -358,6 +366,15 @@ export const schemaEcrireReglage = z
           code: z.ZodIssueCode.custom,
           path: ['valeur'],
           message: `La fenêtre de validation doit dépasser le délai d'ancienneté des signaux (${anciennete} jours) : en deçà, les personnes qui ont réagi au post sont effacées avant d'avoir pu être validées.`,
+        });
+      }
+    }
+    if (entree.cle === 'linkedin_releve_intervalle_min' && typeof entree.valeur === 'number') {
+      if (entree.valeur < 5 || entree.valeur > 1440) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['valeur'],
+          message: "L'intervalle de relève doit être compris entre 5 et 1440 minutes.",
         });
       }
     }
@@ -700,7 +717,8 @@ export type ClePlafondLinkedIn =
   | 'linkedin_messages_par_semaine'
   | 'linkedin_visites_profil_par_semaine'
   | 'linkedin_fiches_post_par_jour'
-  | 'linkedin_fenetre_validation_post_jours';
+  | 'linkedin_fenetre_validation_post_jours'
+  | 'linkedin_releve_intervalle_min';
 
 /** Plafond LinkedIn d'une clé : même chaîne de repli que les autres (`plafondDuJour`), valeur en base d'abord. */
 export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn): Promise<number> {
@@ -709,10 +727,11 @@ export async function lirePlafondLinkedIn(ctx: Contexte, cle: ClePlafondLinkedIn
 
 /**
  * Nature d'une requête tracée. `null` (absent) = non qualifiée : toutes les requêtes d'avant la
- * colonne, et celles qui ne relèvent d'aucun plafond propre. Seule 'profil' est lue aujourd'hui,
- * par `compterVisitesProfilLinkedIn`.
+ * colonne, et celles qui ne relèvent d'aucun plafond propre. `compterVisitesProfilLinkedIn` lit
+ * 'profil' (la collecte ouvre un profil) ET 'resolution_profil' (la relève résout l'URN d'un contact :
+ * même requête vers LinkedIn, donc même visite).
  */
-export type KindRequeteLinkedIn = 'profil' | 'fiche';
+export type KindRequeteLinkedIn = 'profil' | 'fiche' | 'messagerie' | 'resolution_profil';
 
 /**
  * Consigne UNE requête émise vers LinkedIn, au moment où elle part. Le passage
@@ -730,6 +749,39 @@ export async function tracerRequeteLinkedIn(ctx: Contexte, sourceRunId: string, 
     [ctx.organisationId, sourceRunId, kind ?? null],
   );
   if (res.rowCount === 0) throw new Error("Passage de collecte introuvable pour cette organisation.");
+}
+
+const KIND_MESSAGERIE: KindRequeteLinkedIn = 'messagerie';
+
+/**
+ * Consigne UNE requête de la relève de messagerie, au moment où elle part : même table, même fenêtre
+ * horaire que la collecte, donc le même budget. Elle ne se rattache à aucun passage, action ni
+ * fiche (`kind = 'messagerie'` est le seul cas sans origine que la contrainte accepte).
+ */
+export async function tracerRequeteMessagerie(ctx: Pick<Contexte, 'ex' | 'organisationId'>): Promise<void> {
+  await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_messagerie_tracer */
+     values ($1, $2)`,
+    [ctx.organisationId, KIND_MESSAGERIE],
+  );
+}
+
+const KIND_RESOLUTION_PROFIL: KindRequeteLinkedIn = 'resolution_profil';
+
+/**
+ * Consigne UNE résolution d'URN de la relève (une page de profil ouverte pour lire l'identifiant d'un
+ * contact), au moment où elle part. Même table et même fenêtre horaire que la collecte, donc le même
+ * budget ; et elle compte comme une VISITE DE PROFIL dans le plafond hebdomadaire
+ * (`compterVisitesProfilLinkedIn`). Comme la messagerie, elle ne se rattache à aucun passage, action ni
+ * fiche : `kind = 'resolution_profil'` est le second cas sans origine que la contrainte accepte.
+ * L'envoi, qui résout aussi un profil, trace sa requête sous l'action (`tracerEnvoiLinkedIn`), pas ici.
+ */
+export async function tracerResolutionProfil(ctx: Pick<Contexte, 'ex' | 'organisationId'>): Promise<void> {
+  await ctx.ex.query(
+    `insert into linkedin_requetes (organization_id, kind) /* jr:linkedin_resolution_tracer */
+     values ($1, $2)`,
+    [ctx.organisationId, KIND_RESOLUTION_PROFIL],
+  );
 }
 
 /**
@@ -801,7 +853,8 @@ export async function compterRequetesLinkedIn(ctx: Pick<Contexte, 'ex' | 'organi
 }
 
 /**
- * Visites de profil depuis `depuis` (inclus) : les requêtes tracées en `kind = 'profil'`. Même
+ * Visites de profil depuis `depuis` (inclus) : les requêtes tracées en `kind = 'profil'` (la collecte)
+ * et en `kind = 'resolution_profil'` (la résolution d'URN de la relève). Même
  * principe que `compterRequetesLinkedIn` (l'horodatage de chaque requête, jamais le démarrage du
  * passage), sur une fenêtre que l'appelant fixe à sept jours glissants. Les requêtes d'avant la
  * colonne ne sont pas requalifiables et ne comptent pas.
@@ -811,7 +864,7 @@ export async function compterVisitesProfilLinkedIn(ctx: Pick<Contexte, 'ex' | 'o
     `select count(*)::int as n /* jr:linkedin_visites_profil_compter */
        from linkedin_requetes
       where organization_id = $1
-        and kind = 'profil'
+        and kind in ('profil', 'resolution_profil')
         and requested_at >= $2`,
     [ctx.organisationId, depuis],
   );

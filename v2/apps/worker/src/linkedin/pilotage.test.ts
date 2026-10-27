@@ -816,3 +816,47 @@ describe('le titulaire de l’IP', () => {
     });
   }
 });
+
+describe('la commande reclasser', () => {
+  function sansFil() {
+    const r = dependances({});
+    const requetes: string[] = [];
+    r.d.contexte = async () => ({
+      ex: {
+        query: async (sql: string) => {
+          requetes.push(sql);
+          return { rows: [], rowCount: 0 };
+        },
+      } as unknown as Contexte['ex'],
+      organisationId: 'org-1',
+      utilisateurId: null,
+      role: null,
+    });
+    return { ...r, requetes };
+  }
+
+  it('sans option, elle tourne a blanc, sans le drapeau LinkedIn ni navigateur', async () => {
+    const { d, sortie, ouvrir } = sansFil();
+    expect(await executerCommande(['reclasser'], d)).toBe(0);
+    expect(ouvrir).not.toHaveBeenCalled();
+    const texte = sortie.join('\n');
+    expect(texte).toMatch(/à blanc/);
+    expect(texte).toMatch(/relus : 0/);
+    expect(texte).toMatch(/exclus : 0/);
+    expect(texte).toMatch(/envois LinkedIn en file annulés : 0/);
+  });
+
+  it("--appliquer l'annonce, avec le meme compte-rendu", async () => {
+    const { d, sortie } = sansFil();
+    expect(await executerCommande(['reclasser', '--appliquer'], d)).toBe(0);
+    const texte = sortie.join('\n');
+    expect(texte).toMatch(/APPLIQUÉ/);
+    expect(texte).toMatch(/reclassés : 0/);
+  });
+
+  it('une option inconnue affiche le mode d’emploi, sans rien lire', async () => {
+    const { d, requetes } = sansFil();
+    expect(await executerCommande(['reclasser', '--force'], d)).toBe(2);
+    expect(requetes).toHaveLength(0);
+  });
+});

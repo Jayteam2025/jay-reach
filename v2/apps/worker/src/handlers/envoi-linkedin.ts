@@ -35,12 +35,16 @@ import type { Pool } from 'pg';
 import {
   bloquerSessionLinkedIn,
   compterRequetesLinkedIn,
+  enregistrerMessageSortant,
+  marquerReponseEnvoyee,
+  signalerEchecReponse,
   enregistrerResultat,
   jourCourantDansFuseau,
   enregistrerCompteLinkedIn,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   lireSessionLinkedIn,
+  memoriserUrnDuContact,
   mettreEnPauseEnvoiLinkedIn,
   prendreVerrouLinkedIn,
   prochainEnvoiLinkedIn,
@@ -207,6 +211,7 @@ function piloteTrace(pilote: Pilote, tracer: () => Promise<void>, avantPost: () 
 /** Lit l'action jusqu'à son enregistrement. `phase` dit si un POST a pu partir. */
 async function executer(
   d: DependancesEnvoi,
+  organisationId: string,
   action: ActionReclamee,
   p: Pilote,
 ): Promise<Issue> {
@@ -225,6 +230,17 @@ async function executer(
     throw err;
   }
 
+  // L'URN est payé : on le garde. Sans lui, un message entrant (qui ne porte que l'URN de son
+  // expéditeur) n'est rattachable à personne. Un échec d'écriture ne doit ni empêcher ni retarder
+  // l'envoi : au pire l'URN sera mémorisé à l'envoi suivant.
+  if (action.contactId) {
+    try {
+      await memoriserUrnDuContact(d.pool, organisationId, action.contactId, urn);
+    } catch (err) {
+      console.warn(`[envoi-linkedin] urn non memorise (${nomDe(err)})`);
+    }
+  }
+
   // Allure humaine entre la lecture du profil et l'envoi. La phase ne bascule pas ici :
   // `envoyerMessage` commence par un GET `/me`, la bascule est posée par le pilote tracé.
   await d.pause(3_000 + Math.floor(Math.random() * 4_000));
@@ -233,6 +249,33 @@ async function executer(
     action.kind === 'invite'
       ? await envoyerInvitation(p, urn, null)
       : await envoyerMessage(p, urn, texte);
+  if (resultat.ok && action.kind === 'message' && action.contactId) {
+    // Le message est parti : le fil en garde la trace, pour que la réponse y arrive avec sa moitié
+    // sortante. Un échec d'écriture ne doit pas faire échouer l'envoi (et surtout pas le classer
+    // « indéterminé » en remontant dans `executer`) : perdre la trace du fil est désagréable,
+    // perdre l'envoi est irréversible.
+    try {
+      // Une réponse de l'opérateur est DÉJÀ dans le fil (`en_cours`, écrite à la saisie) : on la date
+      // sur place, on n'en insère pas une seconde. Si elle manque (fil purgé), on écrit comme pour
+      // une action de séquence plutôt que de perdre la trace. Si la base est indisponible À CET
+      // INSTANT, l'exception est avalée plus bas et le message reste `en_cours` : la ligne passera
+      // `sent`, et le balayage (`balayerReponsesSansSort`) le datera au tick suivant.
+      const datee =
+        action.origine === 'reponse' && (await marquerReponseEnvoyee(d.pool, organisationId, action.id));
+      if (!datee) {
+        await enregistrerMessageSortant(d.pool, {
+          organizationId: organisationId,
+          contactId: action.contactId,
+          channel: 'linkedin_message',
+          body: texte,
+          etat: 'envoye',
+          raw: { queue_id: action.id },
+        });
+      }
+    } catch (err) {
+      console.warn(`[envoi-linkedin] message absent du fil (${nomDe(err)})`);
+    }
+  }
   return resultat.ok ? { type: 'envoye' } : { type: 'refus', code: resultat.code };
 }
 
@@ -350,7 +393,7 @@ export async function traiterEnvoiLinkedIn(d: DependancesEnvoi, job: EnvoiLinked
     );
     let issue: Issue;
     try {
-      issue = await executer(d, action, p);
+      issue = await executer(d, job.organizationId, action, p);
     } catch (err) {
       console.error(`[envoi-linkedin] appel interrompu (${nomDe(err)})`);
       issue = classer(phase.courante);
@@ -485,6 +528,15 @@ async function arreterSequence(
   code: string,
   message: string,
 ): Promise<void> {
+  // Une réponse de l'opérateur n'a ni action ni inscription à arrêter : sans ceci son échec ne
+  // préviendrait personne. Idempotent, et sans effet sur une ligne de séquence. Un échec ici ne doit
+  // pas empêcher l'arrêt de la séquence qui suit ; le message resté `en_cours` est réglé par le balayage
+  // (`reparerLignesCoincees`, rejoué à chaque tick) puisque sa ligne de file est désormais `failed`.
+  try {
+    await signalerEchecReponse(d.pool, ctx.organisationId, queueId, code, message);
+  } catch (err) {
+    console.error(`[envoi-linkedin] échec de réponse non signalé (${nomDe(err)})`);
+  }
   for (let essai = 1; ; essai += 1) {
     try {
       await arreterSequenceDeLaLigne(d.pool, ctx.organisationId, queueId, code, message);

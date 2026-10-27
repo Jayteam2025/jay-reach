@@ -22,14 +22,14 @@ describe('verifierPolitiquesDeFiles : la garantie « un envoi en vol par organis
   it('ne rend rien quand la file declaree en stately l est reellement', async () => {
     expect(
       await verifierPolitiquesDeFiles(
-        bossAvec({ 'linkedin.envoi': { policy: 'stately' }, 'linkedin.fiche-post': { policy: 'stately' } }),
+        bossAvec({ 'linkedin.envoi': { policy: 'stately' }, 'linkedin.fiche-post': { policy: 'stately' }, 'linkedin.releve': { policy: 'stately' } }),
       ),
     ).toEqual([]);
   });
 
   it('designe la file en politique standard et dit quoi faire, sans lever', async () => {
     // `createQueue` est un ON CONFLICT DO NOTHING : une file nee d'une image anterieure y reste.
-    const r = await verifierPolitiquesDeFiles(bossAvec({ 'linkedin.envoi': { policy: 'standard' }, 'linkedin.fiche-post': { policy: 'stately' } }));
+    const r = await verifierPolitiquesDeFiles(bossAvec({ 'linkedin.envoi': { policy: 'standard' }, 'linkedin.fiche-post': { policy: 'stately' }, 'linkedin.releve': { policy: 'stately' } }));
     expect(r.map((x) => x.file)).toEqual(['linkedin.envoi']);
     expect(r[0]?.message).toMatch(/stately.*standard/s);
     expect(r[0]?.message).toMatch(/PAS consommée/);
@@ -38,7 +38,7 @@ describe('verifierPolitiquesDeFiles : la garantie « un envoi en vol par organis
 
   it('designe aussi une file introuvable', async () => {
     const r = await verifierPolitiquesDeFiles(bossAvec({}));
-    expect(r.map((x) => x.file)).toEqual(['linkedin.envoi', 'linkedin.fiche-post']);
+    expect(r.map((x) => x.file)).toEqual(['linkedin.envoi', 'linkedin.fiche-post', 'linkedin.releve']);
     expect(r[0]?.message).toMatch(/introuvable/);
   });
 });

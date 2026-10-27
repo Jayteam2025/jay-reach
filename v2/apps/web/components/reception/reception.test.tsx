@@ -80,6 +80,7 @@ const MESSAGES: MessageFilAffiche[] = [
     destinataire: 'Karim Benali',
     objet: 'Karim, une question sur ton équipe',
     repondDepuis: null,
+    etatEnvoi: null,
   },
   {
     id: 'm2',
@@ -91,8 +92,28 @@ const MESSAGES: MessageFilAffiche[] = [
     destinataire: null,
     objet: null,
     repondDepuis: null,
+    etatEnvoi: null,
   },
 ];
+
+/** Un sortant dans l'etat demande, pose apres les deux messages ordinaires du fil. */
+function filAvecEtat(etatEnvoi: MessageFilAffiche['etatEnvoi']): MessageFilAffiche[] {
+  return [
+    ...MESSAGES,
+    {
+      id: 'm3',
+      direction: 'out',
+      corps: 'Je reviens vers vous sur LinkedIn.',
+      quand: null,
+      quandAffiche: '',
+      expediteur: 'camille.martin@exemple.fr',
+      destinataire: 'Karim Benali',
+      objet: null,
+      repondDepuis: null,
+      etatEnvoi,
+    },
+  ];
+}
 
 describe('Réception — rendu des trois volets', () => {
   it('ListeFils : puces de filtre, campagne, liste des fils avec canal/puces', () => {
@@ -205,7 +226,9 @@ describe('Réception — rendu des trois volets', () => {
     // Apostrophe échappée en HTML (`&#x27;`) par renderToStaticMarkup : on
     // vérifie de part et d'autre plutôt que la ponctuation exacte.
     expect(html).toContain('Répondre depuis Jay Reach');
-    expect(html).toContain('pour les fils email.');
+    // « pas encore pour ce canal », et non plus « seulement pour les fils email » : depuis ce lot
+    // LinkedIn répond aussi, et la raison ne reste vraie que pour un canal pas encore ouvert.
+    expect(html).toContain('pour ce canal.');
   });
 
   it('Fil : boîte nulle mais transport connu -> le transport reste affiché (tour de correction 1)', () => {
@@ -226,6 +249,110 @@ describe('Réception — rendu des trois volets', () => {
       />,
     );
     expect(html).toContain('Microsoft');
+  });
+
+  it("Fil : un message en cours d'envoi porte son etat a la place de la date, et aucun bandeau", () => {
+    const html = renderToStaticMarkup(
+      <Fil
+        t={t}
+        filId="fil-1"
+        contact={CONTACT}
+        canal="linkedin"
+        campagne={CAMPAGNE}
+        boite={null}
+        messages={filAvecEtat('en_cours')}
+        interet={null}
+        traite={false}
+        reponsePossible={true}
+        raisonReponseImpossible={null}
+        transportReponse={null}
+      />,
+    );
+    // La zone de réponse dit par où ça part : sans ce libellé, un fil LinkedIn n'affichait que
+    // « Répondre », là où l'email annonce l'adresse et le transport.
+    expect(html).toContain('Répondre sur LinkedIn');
+    expect(html).toContain('Envoi en cours');
+    // Le pouls du point : c'est ce qui distingue « ca va changer tout seul » de « c'est fige ».
+    expect(html).toContain('jr-envoi-en-cours');
+    expect(html).toContain('jr-puce gris');
+    // Transitoire : rien a faire, donc aucun bandeau a lire.
+    expect(html).not.toContain('jr-bandeau');
+  });
+
+  it("Fil : un echec affiche sa marque ET son bandeau AVANT le corps du message", () => {
+    const html = renderToStaticMarkup(
+      <Fil
+        t={t}
+        filId="fil-1"
+        contact={CONTACT}
+        canal="linkedin"
+        campagne={CAMPAGNE}
+        boite={null}
+        messages={filAvecEtat('echec')}
+        interet={null}
+        traite={false}
+        reponsePossible={true}
+        raisonReponseImpossible={null}
+        transportReponse={null}
+      />,
+    );
+    expect(html).toContain('Non envoyé');
+    expect(html).toContain('jr-puce erreur');
+    expect(html).toContain('jr-bandeau erreur');
+    expect(html).toContain("Écrivez-lui sur LinkedIn");
+    // L'ordre compte : lu APRES le corps, l'operateur relit son message, le croit parti, et ne
+    // voit l'avertissement qu'une fois la page quittee.
+    expect(html.indexOf('jr-bandeau erreur')).toBeLessThan(html.indexOf('Je reviens vers vous sur LinkedIn.'));
+  });
+
+  it("Fil : un envoi incertain ne ressemble pas a un echec et dit d'aller voir avant de renvoyer", () => {
+    const html = renderToStaticMarkup(
+      <Fil
+        t={t}
+        filId="fil-1"
+        contact={CONTACT}
+        canal="linkedin"
+        campagne={CAMPAGNE}
+        boite={null}
+        messages={filAvecEtat('a_verifier')}
+        interet={null}
+        traite={false}
+        reponsePossible={true}
+        raisonReponseImpossible={null}
+        transportReponse={null}
+      />,
+    );
+    expect(html).toContain('Envoi incertain');
+    expect(html).toContain('jr-puce attention');
+    expect(html).toContain('jr-bandeau attention');
+    // Le mot qui evite le doublon chez un humain.
+    expect(html).toContain('avant de renvoyer');
+    // Jamais le vocabulaire de l'echec : le message est peut-etre parti.
+    expect(html).not.toContain('jr-puce erreur');
+    expect(html).not.toContain('Non envoyé');
+  });
+
+  it('Fil : un message envoye ne porte aucune marque, seulement sa date', () => {
+    const html = renderToStaticMarkup(
+      <Fil
+        t={t}
+        filId="fil-1"
+        contact={CONTACT}
+        canal="email"
+        campagne={CAMPAGNE}
+        boite={null}
+        messages={MESSAGES}
+        interet={null}
+        traite={false}
+        reponsePossible={true}
+        raisonReponseImpossible={null}
+        transportReponse="salesblink"
+      />,
+    );
+    expect(html).toContain('11 sept., 09:12');
+    expect(html).not.toContain('jr-envoi-en-cours');
+    expect(html).not.toContain('jr-bandeau');
+    expect(html).not.toContain('Envoi en cours');
   });
 
   it('ColonneContact : pourquoi lui, où en est-on, coordonnées, notes, lien vers la fiche (alimenté par lireFiche, R75)', () => {

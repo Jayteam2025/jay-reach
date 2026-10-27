@@ -813,6 +813,10 @@ function sqlPairesEligibles(): string {
        -- que fuseauDeLOrganisation.
        left join organization_settings ofz on ofz.organization_id = c.organization_id and ofz.key = 'fuseau'
       where ct.source_signal_id is not null
+       -- Un contact exclu (réponse humaine reçue, « ne plus contacter ») n'est plus jamais proposé :
+       -- enrollContact le refuserait de toute façon, mais le re-proposer à chaque passage fabriquerait
+       -- un refus et un message à chaque tour. Le statut est celui du CONTACT (ct), pas de la campagne (c).
+        and ct.status <> 'do_not_contact'
        -- Pré-filtre : une campagne dont le plafond du jour est déjà atteint
        -- n'a rien à proposer ici (contrôle autoritaire refait dans enrollContact).
        -- Jour de l'organisation, pas celui du serveur (revue F5, point 1, tour 2) :

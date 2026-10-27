@@ -150,7 +150,7 @@ describe('recordInboundReply', () => {
       providerMessageId: 'ext-123',
     });
 
-    expect(resultat).toEqual({ threadId: 'thread-existant', classification: 'human_reply', isNew: false });
+    expect(resultat).toEqual({ threadId: 'thread-existant', classification: 'human_reply', isNew: false, reclasse: false });
     expect(appels.some((a) => a.text.includes('insert into thread_messages'))).toBe(false);
   });
 });

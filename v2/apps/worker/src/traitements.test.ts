@@ -601,6 +601,40 @@ describe('file linkedin.envoi (tache 6)', () => {
   });
 });
 
+describe('file linkedin.releve (lot reponses LinkedIn, tache 4)', () => {
+  it('est branchee, et n est jamais prise sans navigateur', async () => {
+    expect(FILES_BRANCHEES).toContain('linkedin.releve');
+    expect(FILES_AVEC_NAVIGATEUR).toContain('linkedin.releve');
+    const fetch = vi.fn(async () => []);
+    const ctx = { pool: creerPoolFactice([]), boss: { fetch, complete: vi.fn(), fail: vi.fn() } as unknown as PgBoss } as Contexte;
+    await consommerLesFiles(ctx);
+    expect((fetch.mock.calls as unknown as [string][]).map((c) => c[0])).not.toContain('linkedin.releve');
+  });
+
+  it('sans JAY_REACH_LINKEDIN, le job n atteint ni la base ni le navigateur', async () => {
+    vi.stubEnv('JAY_REACH_LINKEDIN', '');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.releve', { organizationId: ORG_ID });
+      expect(ctx.pool.query).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('avec JAY_REACH_LINKEDIN, le job atteint le handler de releve', async () => {
+    vi.stubEnv('JAY_REACH_LINKEDIN', '1');
+    try {
+      const { ctx } = creerContexteFactice([]);
+      await traiterJob(ctx, 'linkedin.releve', { organizationId: ORG_ID });
+      const sql = (ctx.pool.query as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0])).join('\n');
+      expect(sql).toContain('linkedin_server_sessions');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe('consommerLesFiles (route cron de Vercel, sans navigateur)', () => {
   it('ne prend jamais un job des files qui exigent un navigateur', async () => {
     // Le handler sortirait sans rien faire, mais `fetch` puis `complete` marquerait le job termine :

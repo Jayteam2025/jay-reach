@@ -123,6 +123,8 @@ function creerExecuteur(depart: Partial<Etat> = {}) {
         const ok = !filtre || etat.campagneStatut === null || etat.campagneStatut === 'active';
         return rep(ok ? [{ id: 'file-1', kind: etat.kindDeLaLigne }] : []) as never;
       }
+      // La garde d'exclusion ne trouve personne d'exclu ; son SQL est prouve sur Postgres (releve-linkedin.mjs, 119 a 122).
+      if (/jr:linkedin_garde_contact_exclu/.test(sql)) return rep([]) as never;
       if (/set status = 'processing'/i.test(sql)) {
         return rep([{ id: 'file-1', kind: 'invite', linkedinUrl: 'https://linkedin.com/in/x', messageBody: null }]) as never;
       }

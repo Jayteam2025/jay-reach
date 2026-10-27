@@ -16,10 +16,13 @@ import {
   jourCourantDansFuseau,
   compterPostsLinkedInDuJour,
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
   lireConsommationDuJour,
   lireFuseauLinkedIn,
   lirePlafondLinkedIn,
   tracerRequeteLinkedIn,
+  tracerRequeteMessagerie,
+  tracerResolutionProfil,
   lireReglages,
   lireReglagesDetail,
   plafondDuJour,
@@ -451,6 +454,33 @@ describe('plafonds LinkedIn', () => {
     const ctx = faux({});
     await expect(tracerRequeteLinkedIn(ctx, 'run-etranger')).rejects.toThrow(/introuvable/);
   });
+
+  it('tracerRequeteMessagerie trace une requete de nature messagerie, sans origine, pour cette organisation', async () => {
+    const ctx = faux({});
+    await tracerRequeteMessagerie(ctx);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/insert into linkedin_requetes/);
+    expect(sql).not.toMatch(/source_run_id|action_queue_id|post_id/);
+    expect(params).toEqual(['org-1', 'messagerie']);
+  });
+
+  it('tracerResolutionProfil trace une visite de profil de la releve : nature propre, sans origine, pour cette organisation', async () => {
+    const ctx = faux({});
+    await tracerResolutionProfil(ctx);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/insert into linkedin_requetes/);
+    expect(sql).not.toMatch(/source_run_id|action_queue_id|post_id/);
+    expect(params).toEqual(['org-1', 'resolution_profil']);
+  });
+
+  it('compterVisitesProfilLinkedIn compte les visites de la collecte ET les resolutions de la releve', async () => {
+    const ctx = faux({ 'jr:linkedin_visites_profil_compter': [{ n: 7 }] });
+    const depuis = new Date('2026-10-20T00:00:00Z');
+    expect(await compterVisitesProfilLinkedIn(ctx, depuis)).toBe(7);
+    const [sql, params] = (ctx.ex.query as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/kind in \('profil', 'resolution_profil'\)/);
+    expect(params).toEqual(['org-1', depuis]);
+  });
 });
 
 describe('fuseau du jour LinkedIn', () => {
@@ -518,6 +548,26 @@ describe('schemaEcrireReglage — la fenetre de validation des posts doit depass
     expect(defaut?.defaut).toBe(28);
     expect(Number(defaut?.defaut)).toBeGreaterThan(ANCIENNETE);
     expect(defaut?.env).toBe('LINKEDIN_POST_REVIEW_WINDOW_DAYS');
+  });
+});
+
+describe('linkedin_releve_intervalle_min — intervalle de relève', () => {
+  const CLE = 'linkedin_releve_intervalle_min';
+
+  it('écrit et relit l’intervalle de relève, refuse 4 et 1441', async () => {
+    const ctx = faux({ 'from organization_settings': [{ key: CLE, value: 15 }] });
+    await ecrireReglage(ctx, { cle: CLE, valeur: 15 });
+    expect(ctx.ex.query).toHaveBeenCalledWith(expect.stringMatching(/insert into organization_settings/i), expect.any(Array));
+    expect((await lireReglages(ctx))[CLE]).toBe(15);
+
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 4 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 1441 }).success).toBe(false);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 5 }).success).toBe(true);
+    expect(schemaEcrireReglage.safeParse({ cle: CLE, valeur: 1440 }).success).toBe(true);
+  });
+
+  it('le défaut est de 30 minutes', async () => {
+    expect((await lireReglages(faux({ 'from organization_settings': [] })))[CLE]).toBe(30);
   });
 });
 

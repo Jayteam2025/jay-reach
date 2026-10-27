@@ -74,6 +74,7 @@ export default async function ReglagesLinkedinPage() {
     plafondVisites,
     plafondFiches,
     fenetreValidation,
+    intervalleReleve,
     postsEnAttente,
     postsDuJour,
     requetesDeLHeure,
@@ -92,6 +93,7 @@ export default async function ReglagesLinkedinPage() {
     lirePlafondLinkedIn(ctx, 'linkedin_visites_profil_par_semaine'),
     lirePlafondLinkedIn(ctx, 'linkedin_fiches_post_par_jour'),
     lirePlafondLinkedIn(ctx, 'linkedin_fenetre_validation_post_jours'),
+    lirePlafondLinkedIn(ctx, 'linkedin_releve_intervalle_min'),
     // Le chiffre qui donne son sens au réglage : sans lui, l'opérateur lirait « 28 jours » sans
     // savoir s'il a quoi que ce soit à relire. Mesuré, jamais estimé.
     compterPostsEnAttenteDeValidation(ctx.ex, ctx.organisationId),
@@ -411,6 +413,16 @@ export default async function ReglagesLinkedinPage() {
                   nom: t('plafonds.fenetreValidationPost.nom'),
                   usage: t('plafonds.fenetreValidationPost.usage', { n: postsEnAttente }),
                   valeur: fenetreValidation,
+                },
+                // Une DURÉE elle aussi, et le seul réglage de cette liste qui ne concerne pas la
+                // collecte mais la RELÈVE : tous les combien on va voir si quelqu'un a répondu sur
+                // LinkedIn. Il vit ici parce qu'il s'édite comme les autres, par la même action,
+                // et qu'un second mécanisme pour la même chose se désynchroniserait.
+                {
+                  cle: 'linkedin_releve_intervalle_min',
+                  nom: t('plafonds.releveIntervalle.nom'),
+                  usage: t('plafonds.releveIntervalle.usage'),
+                  valeur: intervalleReleve,
                 },
               ]}
               libelles={{ enregistrer: t('plafonds.enregistrer'), erreurNombre: t('plafonds.erreurNombre') }}

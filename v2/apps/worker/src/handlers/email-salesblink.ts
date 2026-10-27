@@ -21,7 +21,7 @@ import {
   sortDErreur,
   corpsPourSalesBlink,
   objetPourSalesBlink,
-  assurerFil,
+  enregistrerMessageSortant,
   ecrireEvenement,
   cloreDepartReel,
   type ModeEnvoi,
@@ -654,17 +654,14 @@ export async function envoyerEmailSalesBlink(
     // HTML transmis à SalesBlink) — sans lui, une réponse relevée plus tard
     // arrive dans un fil qui ne montre que sa moitié. `provider_message_id`
     // reste nul ici ; la relève le pose quand SalesBlink le donne.
-    const filId = await assurerFil(pool, job.organizationId, email.contactId, 'email');
-    await pool.query(
-      `insert into thread_messages (thread_id, direction, body, provider_message_id, raw, sent_at)
-         values ($1, 'out', $2, null, $3::jsonb, now())`,
-      [filId, texteRendu, JSON.stringify({ action_id: actionId, mode: mode.mode, subject: payloadSucces.subject })],
-    );
-    // Un fil déjà existant (relance dans un fil ouvert par un envoi
-    // précédent) n'est pas touché par `assurerFil` : sans cette mise à jour,
-    // son `last_message_at` resterait figé à la date du dernier message
-    // entrant plutôt que de refléter cette relance sortante.
-    await pool.query(`update threads set last_message_at = now() where id = $1`, [filId]);
+    await enregistrerMessageSortant(pool, {
+      organizationId: job.organizationId,
+      contactId: email.contactId,
+      channel: 'email',
+      body: texteRendu,
+      etat: 'envoye',
+      raw: { action_id: actionId, mode: mode.mode, subject: payloadSucces.subject },
+    });
     console.log(`[email-salesblink] action ${actionId} envoyée (${mode.mode})`);
 
     // Journal d'activité (tâche 6) : jamais d'échec du handler pour ça, l'envoi

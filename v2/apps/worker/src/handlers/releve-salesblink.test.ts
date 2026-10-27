@@ -103,6 +103,9 @@ function gestionnairesBase(): Gestionnaire[] {
     { motif: AUDIT_INSERT, repondre: () => ligne([]) },
     { motif: CAMPAGNE_PAR_ACTION, repondre: () => ligne([]) },
     { motif: CAMPAGNE_PAR_CONTACT, repondre: () => ligne([]) },
+    // Tâche 7 : une réponse humaine relit le contact pour l'exclure. Neutre ici (contact absent,
+    // donc rien n'est écrit) : l'exclusion est prouvée sur un vrai Postgres, harnais releve-linkedin.
+    { motif: /jr:exclusion_reponse_contact/i, repondre: () => ligne([]) },
   ];
 }
 

@@ -3,7 +3,13 @@ import type { ReactNode } from 'react';
 export type MessageProps = {
   direction: 'entrant' | 'sortant';
   auteur: ReactNode;
-  date: string;
+  /**
+   * La date du message — ou ce qui répond à sa place quand il n'y en a pas encore. Un message
+   * écrit mais pas encore expédié n'a pas de date, et « où en est-il » est exactement la question
+   * à laquelle la date répond d'habitude : l'appelant met son état ici plutôt que d'ajouter une
+   * marque ailleurs, et le coin reste occupé au lieu d'être vide.
+   */
+  date: ReactNode;
   /** Destinataire complet (« à jean@exemple.fr ») — sa propre ligne, jamais glissé dans `date` (R38, tour de correction 1 : un écran de relecture ne masque jamais l'adresse). */
   destinataire?: string;
   /** Rendu entre la ligne du destinataire et le corps (tiroir « Relire avant envoi » : avertissement des variables manquantes, C5). */

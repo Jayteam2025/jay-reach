@@ -43,7 +43,7 @@ import {
   enrichirContactConnu,
   dependancesEnrichissementReelles,
 } from './handlers/enrichment-contact-connu.js';
-import { enrollContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
+import { inscrireContact, tickDueEnrollments, type EnrollJob } from './handlers/sequence.js';
 import { rejeterFichesPostExpirees } from './linkedin/posts-fiches.js';
 import { arreterSequenceDeLaLigne } from './handlers/envoi-linkedin.js';
 import { chargerLigneInscription, loadSnippets, rendreCorpsDeLEtape } from './handlers/message-values.js';
@@ -79,6 +79,7 @@ import {
 } from './handlers/collecte-linkedin.js';
 import { dependancesEnvoiReelles, traiterEnvoiLinkedIn, type EnvoiLinkedInJob } from './handlers/envoi-linkedin.js';
 import { dependancesFichePostReelles, traiterFichePost, type FichePostJob } from './handlers/fiche-post.js';
+import { dependancesReleveReelles, traiterReleveLinkedIn, type ReleveLinkedInJob } from './handlers/releve-linkedin.js';
 import { traiterRetentionPurge } from './handlers/retention-purge.js';
 import { traiterImportsAnnuaire } from './handlers/annuaire-masse.js';
 import { purgeExpiredCache } from './provider-cache.js';
@@ -118,6 +119,8 @@ export const FILES_BRANCHEES = [
   'linkedin.envoi',
   // Ouvre une page LinkedIn : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
   'linkedin.fiche-post',
+  // Ouvre le navigateur du serveur : exclue de `consommerLesFiles` (voir `FILES_AVEC_NAVIGATEUR`).
+  'linkedin.releve',
   'retention.purge',
 ] as const;
 
@@ -128,7 +131,7 @@ export const FILES_BRANCHEES = [
  * (ou la collecte) serait détruite sans un message d'erreur. Elles restent à qui a un navigateur :
  * le worker permanent.
  */
-export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post'];
+export const FILES_AVEC_NAVIGATEUR: readonly string[] = ['linkedin.collecte', 'linkedin.envoi', 'linkedin.fiche-post', 'linkedin.releve'];
 
 const FULLENRICH_PROVIDER = 'fullenrich';
 const REOON_PROVIDER = 'reoon';
@@ -465,11 +468,19 @@ export async function traiterDispatch(ctx: Contexte, data: DispatchJob): Promise
 
 export async function traiterEnroll(ctx: Contexte, data: EnrollJob): Promise<void> {
   const { pool, boss } = ctx;
-  const id = await enrollContact(pool, data);
-  if (!id) {
-    console.log(`[enroll] contact ${data.contactId} déjà inscrit — ignoré`);
+  const resultat = await inscrireContact(pool, data);
+  if (!('id' in resultat)) {
+    const dit: Record<typeof resultat.refus, string> = {
+      contact_exclu: 'contact exclu (réponse reçue ou « ne plus contacter ») — ignoré',
+      deja_inscrit: 'déjà inscrit — ignoré',
+      plafond_du_jour: 'plafond du jour atteint — reporté (déjà journalisé)',
+      post_non_valide: 'post non validé — retenu (déjà journalisé)',
+      non_inscrit: 'aucune inscription créée — ignoré',
+    };
+    console.log(`[enroll] contact ${data.contactId} ${dit[resultat.refus]}`);
     return;
   }
+  const id = resultat.id;
   await boss.insert([
     { name: 'sequence.tick', id: deterministicUuid('tick', id, currentBucket(TICK_INTERVAL_MS)), data: {} },
   ]);
@@ -1248,6 +1259,8 @@ export async function traiterJob(ctx: Contexte, file: string, donnees: unknown):
       return traiterEnvoiLinkedIn(dependancesEnvoiReelles(ctx.pool), donnees as EnvoiLinkedInJob);
     case 'linkedin.fiche-post':
       return traiterFichePost(dependancesFichePostReelles(ctx.pool, ctx.encryptionKey), donnees as FichePostJob);
+    case 'linkedin.releve':
+      return traiterReleveLinkedIn(dependancesReleveReelles(ctx.pool), donnees as ReleveLinkedInJob);
     case 'retention.purge':
       await traiterRetentionPurge(ctx.pool);
       return;

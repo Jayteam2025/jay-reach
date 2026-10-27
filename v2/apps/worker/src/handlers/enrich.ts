@@ -184,7 +184,10 @@ export async function runFindContacts(apiKey: string, job: EnrichContactsJob): P
       email: picked.email,
       emailStatusRaw: result ? rawStatusOf(result, picked.email) : null,
       linkedinUrl: p.social_profiles?.professional_network?.url ?? null,
-      linkedinProviderId: p.id ?? null,
+      // `p.id` est l'identifiant du profil CHEZ FullEnrich (un UUID), pas un identifiant de membre
+      // LinkedIn : l'écrire dans `linkedin_provider_id` polluait la colonne (353 contacts sur 590) et
+      // masquait les contacts sans URN. L'URN se résout à l'envoi, depuis l'adresse de profil.
+      linkedinProviderId: null,
       ...(job.personaId ? { personaId: job.personaId } : {}),
       ...(job.sourceSignalId ? { sourceSignalId: job.sourceSignalId } : {}),
     });

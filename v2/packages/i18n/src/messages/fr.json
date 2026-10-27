@@ -139,13 +139,21 @@
       "sequenceArretee": "séquence arrêtée à la réponse",
       "repondDepuis": "répondu depuis {adresse}",
       "raisonReponseImpossible": {
-        "canalNonEmail": "Répondre depuis Jay Reach n'existe que pour les fils email.",
+        "canalNonEmail": "Répondre depuis Jay Reach n'existe pas encore pour ce canal.",
         "messageOrigineInconnu": "Message d'origine inconnu : impossible de répondre depuis l'application."
+      },
+      "etatEnvoi": {
+        "enCours": "Envoi en cours",
+        "echec": "Non envoyé",
+        "aVerifier": "Envoi incertain",
+        "echecDetail": "Ce message n'est pas parti. Écrivez-lui sur LinkedIn, ou renvoyez-le ici.",
+        "aVerifierDetail": "LinkedIn n'a pas confirmé l'envoi. Ouvrez la conversation sur LinkedIn avant de renvoyer : le message est peut-être déjà parti."
       }
     },
     "reponse": {
       "depuis": "Répondre depuis {boite}",
       "depuisSansBoite": "Répondre",
+      "depuisLinkedin": "Répondre sur LinkedIn",
       "via": "via {transport}, dans le même fil",
       "placeholder": "Votre réponse…",
       "note": "Enregistrée dans le fil du contact et dans la Réception",
@@ -1664,6 +1672,10 @@
             "collecte_arretee": {
               "titre": "Une collecte LinkedIn s’arrête",
               "detail": "quand un post ne livre rien, sans que la session soit en cause"
+            },
+            "reponse_echouee": {
+              "titre": "Une réponse LinkedIn n’est pas partie",
+              "detail": "quand une réponse écrite depuis Jay Reach n’a pas pu être envoyée, ou doit être vérifiée"
             }
           }
         }
@@ -1835,7 +1847,7 @@
         },
         "visitesProfilParSemaine": {
           "nom": "Visites de profil par semaine",
-          "usage": "{n} sur les sept derniers jours ; au-delà, la collecte qui ouvre des profils s’arrête"
+          "usage": "{n} sur les sept derniers jours, collecte et lecture des réponses comprises ; au-delà, la collecte qui ouvre des profils et la résolution des identifiants de la lecture des réponses s’arrêtent"
         },
         "fichesPostParJour": {
           "nom": "Fiches de post par jour",
@@ -1848,7 +1860,11 @@
         "enregistrer": "Enregistrer",
         "erreurNombre": "Saisissez un nombre entier.",
         "avances": "Réglages avancés",
-        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un."
+        "avancesLead": "Les plafonds de la collecte et la fenêtre de validation des posts, modifiables un par un.",
+        "releveIntervalle": {
+          "nom": "Relève des réponses LinkedIn",
+          "usage": "Intervalle, en minutes, entre deux passages qui vont voir si quelqu'un a répondu."
+        }
       },
       "avertissement": {
         "titre": "Collecter depuis LinkedIn est contraire à ses conditions d'utilisation.",
@@ -2035,7 +2051,8 @@
   "jobs": {
     "q": {
       "retentionPurge": "File de la purge de rétention : efface les personnes collectées jamais contactées au terme de la durée de conservation.",
-      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète."
+      "linkedinFichePost": "File du rattrapage des fiches de post : rouvre un post dont la fiche (auteur, texte, date) est restée incomplète.",
+      "linkedinReleve": "File de la relève des réponses LinkedIn : lit la messagerie du compte connecté et enregistre les réponses des contacts."
     }
   },
   "motifsPause": {

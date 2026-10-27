@@ -19,7 +19,7 @@
 import { refusCanalGele } from '../../../../../lib/linkedin/canal-extension-gele';
 import { getPool } from '../../../../../lib/db';
 import { validateToken } from '../../../../../lib/linkedin/queue';
-import { notifyReply, recordInboundReply } from '@jay-reach/core';
+import { normaliserUrnLinkedIn, notifyReply, recordInboundReply } from '@jay-reach/core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -75,13 +75,14 @@ export async function POST(req: Request): Promise<Response> {
   if (Array.isArray(body.resolvedProfiles)) {
     for (const p of body.resolvedProfiles.slice(0, MAX_PAR_APPEL) as { vanity?: unknown; urn?: unknown }[]) {
       if (typeof p.vanity !== 'string' || typeof p.urn !== 'string') continue;
-      if (!p.urn.startsWith('urn:li:fsd_profile:')) continue;
+      const urnNu = normaliserUrnLinkedIn(p.urn);
+      if (urnNu === null) continue;
       const maj = await pool.query(
         `update contacts set linkedin_provider_id = $3
           where organization_id = $1
             and lower(linkedin_url) like '%/in/' || $2 || '%'
             and linkedin_provider_id is null`,
-        [orgId, p.vanity.toLowerCase(), p.urn],
+        [orgId, p.vanity.toLowerCase(), urnNu],
       );
       profilsResolus += maj.rowCount ?? 0;
     }
@@ -95,7 +96,7 @@ export async function POST(req: Request): Promise<Response> {
     const texte = typeof brut.text === 'string' ? brut.text.trim() : '';
     if (texte.length === 0) continue;
 
-    const urn = typeof brut.profileUrn === 'string' ? brut.profileUrn : null;
+    const urn = typeof brut.profileUrn === 'string' ? normaliserUrnLinkedIn(brut.profileUrn) : null;
     const url = typeof brut.linkedinUrl === 'string' ? brut.linkedinUrl : null;
     const vanity = url ? vanityDe(url) : null;
     if (!urn && !vanity) continue;
@@ -139,6 +140,8 @@ export async function POST(req: Request): Promise<Response> {
       enregistrees += 1;
       await notifyReply(pool, orgId, 'Nouvelle réponse LinkedIn', texte.slice(0, 140));
     } else {
+      // Corps arrivé après coup qui change la lecture : voir `RecordedReply.reclasse`.
+      if (resultat.reclasse) await notifyReply(pool, orgId, 'Nouvelle réponse LinkedIn', texte.slice(0, 140));
       deja += 1;
     }
   }

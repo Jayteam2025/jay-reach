@@ -1219,16 +1219,20 @@ async function etapeAvecCorps(m, corps, { canal = 'linkedin_message', position =
  * l'état demandé. Une fiche par post : deux états à éprouver dans la même organisation
  * demandent deux posts.
  */
-async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement des commerciaux', nomAffiche = 'Ana' } = {}) {
-  const source = await sourceDePost(m, urlN(n), `Engageurs ${n}`);
+async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement des commerciaux', nomAffiche = 'Ana', memePost = null } = {}) {
+  // `memePost` : le retour d'un appel precedent. Un post a plusieurs engageurs : meme fiche, meme source,
+  // seul l'engageur change.
+  const source = memePost ? memePost.source : await sourceDePost(m, urlN(n), `Engageurs ${n}`);
   const runId = await startSourceRun(pool, source);
-  const f = await enregistrerFichePost(pool, m.org, ficheN(n), { fenetreJours: FENETRE });
-  await q(`update linkedin_posts set review_status = $2, subject = $3, author_display_name = $4 where id = $1`, [
-    f.id,
-    etat,
-    sujet,
-    nomAffiche,
-  ]);
+  const f = memePost ? { id: memePost.fiche } : await enregistrerFichePost(pool, m.org, ficheN(n), { fenetreJours: FENETRE });
+  if (!memePost) {
+    await q(`update linkedin_posts set review_status = $2, subject = $3, author_display_name = $4 where id = $1`, [
+      f.id,
+      etat,
+      sujet,
+      nomAffiche,
+    ]);
+  }
   const ctx = { pool, organizationId: m.org, sourceId: source, sourceRunId: runId, exclusions: {} };
   await enregistrerEngageur(
     ctx,
@@ -1241,17 +1245,17 @@ async function engageurDUnPost(m, n, { etat = 'pending', sujet = 'le recrutement
       urlProfil: `https://www.linkedin.com/in/bob-${n}-${seq}/`,
     },
     { id: m.campagne, personaId: m.persona },
-    urlN(n),
+    memePost ? urlN(memePost.n) : urlN(n),
     f.id,
   );
   const ligne = (
     await q(
       `select c.id as contact_id, s.id as signal_id from contacts c join signals s on s.id = c.source_signal_id
-        where c.organization_id = $1 and s.linkedin_post_id = $2`,
-      [m.org, f.id],
+        where c.organization_id = $1 and s.linkedin_post_id = $2 and c.linkedin_url like $3`,
+      [m.org, f.id, `%/in/bob-${n}-${seq}%`],
     )
   ).rows[0];
-  return { fiche: f.id, source, ...ligne };
+  return { fiche: f.id, source, n, ...ligne };
 }
 
 /** Les inscriptions réellement créées pour une organisation, par la production seule. */
@@ -1410,6 +1414,21 @@ async function gardeDEntree() {
   check('17l. une campagne qui cite {{post_date}} est retenue tant que la fiche n\'a pas de date', (await enrollContact(pool, jobZ)) === null);
   await q(`update linkedin_posts set posted_at = now() - interval '2 days' where id = $1`, [parLaDate.fiche]);
   check('17m. et elle entre dès que la date est là, sans exiger ni auteur ni sujet', typeof (await enrollContact(pool, jobZ)) === 'string');
+}
+
+async function contactExcluNeRevientPas() {
+  console.log('\n# un contact exclu (reponse humaine, ne plus contacter) n\'est plus jamais propose a l\'inscription');
+  const m = await monde();
+  await etapeAvecCorps(m, ACCROCHE);
+  const exclu = await engageurDUnPost(m, 31, { etat: 'approved' });
+  // MEME post pour les deux : un seul terme change, le statut du contact.
+  const jumeau = await engageurDUnPost(m, 32, { memePost: exclu });
+  await q(`update contacts set status = 'do_not_contact' where id = $1`, [exclu.contact_id]);
+  const deposes = await tourDInscription(m.org);
+  // La paire : meme campagne, meme etat de fiche, seul le statut du contact differe.
+  check('T7-a. le jumeau non exclu est propose et inscrit', deposes.some((j) => j.contactId === jumeau.contact_id) && (await inscritsDe(m.org)).includes(jumeau.contact_id));
+  check('T7-b. le contact exclu n\'est PAS propose : aucun job d\'inscription, aucune inscription',
+    !deposes.some((j) => j.contactId === exclu.contact_id) && !(await inscritsDe(m.org)).includes(exclu.contact_id), JSON.stringify(deposes));
 }
 
 async function campagneSansAccrocheNonGelee() {
@@ -3181,7 +3200,7 @@ async function lienHistoriqueSourceCampagne() {
 }
 
 async function main() {
-  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
+  await jouer(ficheCreeeDeuxFois, deuxSourcesMemePost, rattachementDuSignal, sujetOperateurSurvit, collecteEnModePost, collecteEnModePages, captureEnPanne, rattrapageSelection, rattrapageCritere, rattrapageCibleCeQuiSert, rattrapageLot, rattrapageTraitement, sujetSansRelecture, sujetCredit, deuxCheminsDeRendu, gardeDEntree, contactExcluNeRevientPas, campagneSansAccrocheNonGelee, retraitDeLaVariable, epargneReelle, gelDeLaDepense, fenetreReglable, decompteLisible, indexDeJointureDesGabarits, repriseDeLExistant, scoringNourri, ecranDesPosts, validationExigeCeQuiPartira, repliNeDispensePasDeRelire, repliNExigeRienDeLaFiche, gabaritMixte, accrocheDansLeNomDuGabarit, gardeALEnvoi, rienARelireNeRetientPas, gardeAuxRejeuxLinkedIn, validerRelanceLesRetenues, repriseRestitueLaFile, approuveePart, approuveVisibleParLesEcrans, lienHistoriqueSourceCampagne);
   console.log(`\n[accroche-post] ${failures === 0 ? 'TOUT VERT' : `${failures} ÉCHEC(S)`}`);
   await boss.stop({ graceful: false, wait: false }).catch(() => undefined);
   await pool.end();

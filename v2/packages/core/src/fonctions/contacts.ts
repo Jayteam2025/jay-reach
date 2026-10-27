@@ -15,9 +15,10 @@ import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js'
 import { ecrireEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
+import { normaliserUrlProfil } from './sources.js';
+import { adressesLinkedinAOpposer, annulerEnvoisEnFile, poserExclusion } from '../inbox/exclusion-sur-reponse.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
-import { lienProfilDeduit } from './sources.js';
 import {
   CASE_STATUT_DERIVE,
   etapeAffichee,
@@ -544,49 +545,29 @@ export async function nePlusContacter(ctx: Contexte, entree: unknown): Promise<v
     const contact = contactRes.rows[0];
     if (!contact) throw new ErreurIntrouvable('Contact');
 
-    await tx.query(
-      `update contacts set status = 'do_not_contact' /* jr:dnc_statut */ where id = $1 and organization_id = $2`,
-      [contactId, ctx.organisationId],
-    );
-
-    if (contact.email) {
-      await tx.query(
-        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression */
-         select $1, 'email', $2, 'operator_do_not_contact', 'manual'
-         where not exists (
-           select 1 from suppressions where organization_id = $1 and scope = 'email' and value = $2
-         )`,
-        [ctx.organisationId, contact.email],
-      );
-    }
-
-    // L'opposition porte sur le TRAITEMENT, pas seulement sur l'envoi : sans cette
-    // ligne, la personne serait re-collectée au prochain post, re-scorée et
-    // ré-enrichie (jetons et achat payés) avant que l'envoi, tout à la fin, ne
-    // soit bloqué. La collecte (`enregistrerEngageur`) consulte ce périmètre.
+    // Une seule écriture de « exclure » (`poserExclusion`), partagée avec l'exclusion automatique
+    // sur réponse. Ici l'opérateur décide, donc `manual`.
     //
-    // DEUX graphies, pas une : la collecte reconnaît une personne par l'adresse qu'elle
-    // lit ET par celle qu'elle déduit de l'URN. Si le contact a été créé sous son nom
-    // public et qu'un passage ultérieur ne le relit pas, seule la forme déduite arrive à
-    // `enregistrerEngageur` : une opposition posée sur la seule adresse du contact ne
-    // correspondrait à rien, et la personne serait recollectée malgré elle.
-    const adresses = [
-      ...new Set(
-        [contact.linkedin_url, contact.linkedin_provider_id ? lienProfilDeduit(contact.linkedin_provider_id) : null].filter(
-          (a): a is string => Boolean(a),
-        ),
-      ),
-    ];
-    for (const adresse of adresses) {
-      await tx.query(
-        `insert into suppressions (organization_id, scope, value, reason, origin) /* jr:dnc_suppression_linkedin */
-         select $1, 'linkedin', $2, 'operator_do_not_contact', 'manual'
-         where not exists (
-           select 1 from suppressions where organization_id = $1 and scope = 'linkedin' and lower(value) = lower($2)
-         )`,
-        [ctx.organisationId, adresse],
-      );
-    }
+    // Les adresses à opposer sont celles de l'exclusion sur réponse (`adressesLinkedinAOpposer`) :
+    // adresse réelle et forme déduite de l'URN, chacune VALIDÉE. La collecte reconnaît une personne
+    // par l'une ou l'autre ; un identifiant qui n'est pas un URN de membre n'en fabrique aucune.
+    const adresses = adressesLinkedinAOpposer(contact);
+    // Une adresse SAISIE que `normaliserUrlProfil` refuse (`/pub/`, `/mwlite/`, page société, URL tronquée)
+    // s'oppose quand même, brute : avant le lot elle passait telle quelle, et l'opérateur qui clique veut
+    // qu'on ne recontacte pas la personne. Seule la forme DÉDUITE d'un identifiant reste validée (jamais
+    // d'adresse fabriquée). Cette valeur brute ne sert qu'à l'opposition : l'annulation de file compare
+    // par adresse, et une adresse dégénérée y rattacherait des lignes d'autres personnes.
+    const saisie = contact.linkedin_url?.trim() ?? '';
+    const opposees = saisie !== '' && normaliserUrlProfil(saisie) === null ? [...adresses, saisie] : adresses;
+    await poserExclusion(tx, ctx.organisationId, contactId, {
+      email: contact.email,
+      adressesLinkedin: opposees,
+      motif: 'operator_do_not_contact',
+      origine: 'manual',
+    });
+    // Les envois LinkedIn déjà en file ne doivent pas partir : le clic de l'opérateur les arrête, y
+    // compris les lignes sans contact_id (engageur collecté), par adresse.
+    await annulerEnvoisEnFile(tx, ctx.organisationId, contactId, adresses);
 
     const inscriptionsRes = await tx.query<{ id: string }>(
       `update enrollments /* jr:dnc_inscriptions */

@@ -825,3 +825,10 @@ a.jr-puce, button.jr-puce { min-height: 24px; }
 .jr-posts-retenues p { margin: 0; color: var(--jr-secondaire); font-size: var(--jr-petit); max-width: 72ch; }
 .jr-posts-retenues .n { font-family: var(--font-mono), ui-monospace, monospace; color: var(--jr-encre); font-weight: 600; }
 @media (max-width: 620px) { .jr-posts-corps { padding: 16px 16px 0; } .jr-post-actions { margin-left: 0; } }
+
+/* Le seul mouvement du fil. Il porte une information que la couleur ne porte pas : cet état-là
+   changera tout seul, l'echec et l'incertain non. Pouls lent et discret, sur le point seulement —
+   jamais sur la pilule entiere, qui contient du texte a lire. */
+.jr-envoi-en-cours .jr-puce .point { animation: jr-pouls 1.8s ease-in-out infinite; }
+@keyframes jr-pouls { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .jr-envoi-en-cours .jr-puce .point { animation: none; } }

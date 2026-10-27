@@ -26,6 +26,7 @@ import {
 } from './traitements.js';
 import { enqueueLinkedInTours } from './producer.js';
 import { enqueueFichesPostALire } from './handlers/fiche-post.js';
+import { enqueueReleveLinkedIn } from './handlers/releve-linkedin.js';
 import { enqueueReleveSalesBlink } from './handlers/releve-salesblink.js';
 import { enqueueReleveGraph } from './handlers/releve-graph.js';
 import { enqueueEnvoiLinkedIn, cadenceEnvoiLinkedIn } from './handlers/envoi-linkedin-producteur.js';
@@ -85,6 +86,12 @@ const LINKEDIN_TOUR_POLL_MS = 30 * 60 * 1000;
  * job par jour bornent le volume, la cadence ne décide que du délai avant le rattrapage.
  */
 const FICHE_POST_POLL_MS = 60 * 60 * 1000;
+/**
+ * Cadence du minuteur de la relève des réponses LinkedIn. Ce n'est PAS la cadence de la relève : le
+ * rythme est `linkedin_releve_intervalle_min` (réglable), tenu par `singletonSeconds` à l'enfilage ;
+ * le minuteur passe chaque minute pour qu'un intervalle abaissé à l'écran soit pris vite.
+ */
+const RELEVE_LINKEDIN_POLL_MS = 60_000;
 
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
@@ -237,6 +244,20 @@ async function main(): Promise<void> {
     fichesPost.unref();
   }
 
+  /** La relève des réponses LinkedIn : même condition que l'envoi, dont elle partage le navigateur et le verrou. */
+  let releveLinkedIn: NodeJS.Timeout | null = null;
+  if (process.env.JAY_REACH_LINKEDIN === '1' && !filesIgnorees.includes('linkedin.releve')) {
+    const enfilerReleveLinkedIn = (): void => {
+      void enqueueReleveLinkedIn(boss, pool).catch((err: unknown) => {
+        console.error('[releve-linkedin] enfilage impossible (releve_linkedin_enqueue)');
+        void journaliserErreurMoteur(pool, err instanceof Error ? err : new Error(String(err)), 'relève LinkedIn');
+      });
+    };
+    enfilerReleveLinkedIn();
+    releveLinkedIn = setInterval(enfilerReleveLinkedIn, RELEVE_LINKEDIN_POLL_MS);
+    releveLinkedIn.unref();
+  }
+
   // La connexion du compte LinkedIn depuis l'écran : écoute du canal chiffré, et purge des demandes abandonnées.
   let arreterEcouteConnexion: (() => void) | null = null;
   let purgeConnexions: NodeJS.Timeout | null = null;
@@ -277,6 +298,7 @@ async function main(): Promise<void> {
     clearInterval(demandes);
     if (tourLinkedIn) clearInterval(tourLinkedIn);
     if (fichesPost) clearInterval(fichesPost);
+    if (releveLinkedIn) clearInterval(releveLinkedIn);
     clearInterval(ticker);
     clearInterval(releveSalesBlink);
     clearInterval(releveGraph);

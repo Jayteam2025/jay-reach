@@ -101,7 +101,14 @@ export async function compterEntreesDuJour(pool: Pool, campaignId: string, organ
  * lieu ; la déduplication réelle reste l'index `enrollments_one_active_uidx`
  * et le `on conflict do nothing` ci-dessus.
  */
-export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
+/**
+ * Pourquoi `enrollContact` n'a rien inscrit. `non_inscrit` = l'insertion n'a rien rendu, sans
+ * distinguer « déjà inscrit » de « contact exclu » (ce que `inscrireContact` précise).
+ */
+export type RefusInscription = 'post_non_valide' | 'plafond_du_jour' | 'non_inscrit' | 'contact_exclu' | 'deja_inscrit';
+export type ResultatInscription = { readonly id: string } | { readonly refus: RefusInscription };
+
+async function tenterInscription(pool: Pool, job: EnrollJob): Promise<ResultatInscription> {
   // LA GARDE D'ENTRÉE DU LOT « ACCROCHE DU POST », contrôle AUTORITAIRE : on n'inscrit personne
   // sur un post qu'un humain n'a pas relu. Le pré-filtre du producteur pose déjà la même
   // condition, mais il ne suffit pas — un job déposé autrement (reprise à la main, serveur MCP
@@ -123,7 +130,7 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
       console.warn(
         `[enroll] campagne ${job.campaignId} : le post du contact ${job.contactId} n'est pas validé (ou sa fiche est incomplète), inscription retenue`,
       );
-      return null;
+      return { refus: 'post_non_valide' };
     }
   }
   // Compter puis insérer n'est pas atomique, mais ça suffit ici : le moteur ne
@@ -137,19 +144,52 @@ export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string 
     const reste = placesRestantes(plafond, await compterEntreesDuJour(pool, job.campaignId, job.organizationId));
     if (reste === 0) {
       console.warn(`[enroll] plafond du jour atteint pour la campagne ${job.campaignId} (${plafond}/jour), contact ${job.contactId} reporte`);
-      return null;
+      return { refus: 'plafond_du_jour' };
     }
   }
   const res = await pool.query<{ id: string }>(
+    // Un contact exclu (réponse humaine reçue, ou « ne plus contacter » de l'opérateur) n'entre
+    // dans AUCUNE campagne, quelle que soit la source qui le propose : `exclureApresReponse` pose
+    // ce statut, et sans ce contrôle ici une autre source réinscrirait la personne qui a répondu.
+    // Dans l'insertion elle-même : un contrôle séparé laisserait une fenêtre entre lecture et écriture.
     `insert into enrollments
        (organization_id, campaign_id, contact_id, signal_id, status, current_step, next_action_at, started_at)
-     values ($1, $2, $3, $4, 'active', 0, now(), now())
+     select $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'active', 0, now(), now()
+      where not exists (
+        select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
+      )
      on conflict (contact_id) where status in ('active','paused','paused_absence')
      do nothing
      returning id`,
     [job.organizationId, job.campaignId, job.contactId, job.signalId ?? null],
   );
-  return res.rows[0]?.id ?? null;
+  const id = res.rows[0]?.id;
+  return id ? { id } : { refus: 'non_inscrit' };
+}
+
+/**
+ * Forme historique : l'identifiant de l'inscription, ou `null` sans distinguer le motif. Plus aucun appelant de
+ * production (le producteur passe par `inscrireContact`, qui rend le motif) : elle reste comme façade des tests et
+ * des harnais pg-verify, une quarantaine d'appels qui n'ont pas besoin du motif.
+ */
+export async function enrollContact(pool: Pool, job: EnrollJob): Promise<string | null> {
+  const r = await tenterInscription(pool, job);
+  return 'id' in r ? r.id : null;
+}
+
+/**
+ * Comme `enrollContact`, mais rend le MOTIF du refus : l'appelant journalise la vérité au lieu de
+ * « déjà inscrit » pour tout `null`. Le seul cas ambigu (insertion muette) est départagé par une
+ * lecture du statut du contact, uniquement sur ce chemin de refus.
+ */
+export async function inscrireContact(pool: Pool, job: EnrollJob): Promise<ResultatInscription> {
+  const r = await tenterInscription(pool, job);
+  if ('id' in r || r.refus !== 'non_inscrit') return r;
+  const exclu = await pool.query<{ n: number }>(
+    `select count(*)::int as n from contacts where id = $1 and organization_id = $2 and status = 'do_not_contact'`,
+    [job.contactId, job.organizationId],
+  );
+  return { refus: (exclu.rows[0]?.n ?? 0) > 0 ? 'contact_exclu' : 'deja_inscrit' };
 }
 
 interface StepRow {

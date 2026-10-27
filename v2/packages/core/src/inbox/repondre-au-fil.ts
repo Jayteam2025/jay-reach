@@ -13,21 +13,12 @@
  * peut donc couvrir tout l'algorithme sans réseau ni base réelle.
  */
 import type { Executeur } from '../executeur.js';
+import { enfilerReponseLinkedIn } from '../linkedin/reponse-manuelle.js';
+import { ErreurReponseImpossible } from './erreur-reponse.js';
 
 export type TransportReponse = 'microsoft_graph' | 'salesblink';
 
-/**
- * Erreur d'entrée : le fil ne peut pas recevoir de réponse dans son état
- * actuel (aucun message reçu, ou message reçu sans l'identifiant nécessaire
- * pour lui répondre). Ne porte jamais de secret ni de clé — uniquement un
- * message d'explication destiné à l'opérateur.
- */
-export class ErreurReponseImpossible extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ErreurReponseImpossible';
-  }
-}
+export { ErreurReponseImpossible };
 
 export interface OrigineMessage {
   readonly transport: TransportReponse;
@@ -77,8 +68,8 @@ export async function choisirTransport(ex: Executeur, org: string, threadId: str
   // liste aussi les fils LinkedIn, dont les réponses (enregistrées par le
   // même `recordInboundReply`) portent un `provider_message_id` LinkedIn :
   // sans cette borne, une réponse tapée dans un fil LinkedIn partait chez
-  // SalesBlink, sur un identifiant qu'il ne connaît pas. LinkedIn reste à
-  // venir (lot 4).
+  // SalesBlink, sur un identifiant qu'il ne connaît pas. Les fils LinkedIn
+  // n'arrivent jamais ici par `repondreAuFil` : il les route avant, vers la file.
   if (dernier.channel !== 'email') {
     throw new ErreurReponseImpossible("la réponse depuis Jay Reach n'existe que pour les fils email");
   }
@@ -113,8 +104,9 @@ export interface TransportsReponse {
 }
 
 export interface ReponseEnvoyee {
+  /** LinkedIn : l'identifiant de la ligne de file, le message n'est pas encore parti. */
   readonly messageId: string;
-  readonly transport: TransportReponse;
+  readonly transport: TransportReponse | 'linkedin';
 }
 
 /**
@@ -129,6 +121,17 @@ export async function repondreAuFil(
   p: { threadId: string; corps: string },
   transports: TransportsReponse,
 ): Promise<ReponseEnvoyee> {
+  // LinkedIn n'a pas de transport synchrone : l'envoi passe par le navigateur du worker, plus tard.
+  // La réponse est mise en file (et écrite dans le fil « en cours »), pas envoyée.
+  const canal = await ex.query<{ channel: string }>(
+    `select channel from threads where id = $2 and organization_id = $1`,
+    [org, p.threadId],
+  );
+  if (canal.rows[0]?.channel === 'linkedin_message') {
+    const { ligneId } = await enfilerReponseLinkedIn(ex, org, p);
+    return { messageId: ligneId, transport: 'linkedin' };
+  }
+
   const origine = await choisirTransport(ex, org, p.threadId);
   if (!origine) {
     throw new ErreurReponseImpossible("impossible de répondre : message d'origine inconnu");

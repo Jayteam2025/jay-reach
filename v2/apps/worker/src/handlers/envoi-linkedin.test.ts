@@ -115,6 +115,12 @@ function monde(opts: {
   etapeSupprimee?: boolean;
   /** `remettreActionEnAttente` rend `failed` : les tentatives de lecture sont épuisées. */
   tentativesEpuisees?: boolean;
+  /** L'écriture de l'URN du contact échoue. */
+  urnEchoue?: boolean;
+  /** La datation du message d'une réponse échoue (base indisponible à cet instant). */
+  reponseDateeEchoue?: boolean;
+  /** L'écriture du fil (lecture ou création) échoue. */
+  filEchoue?: boolean;
 }): Monde {
   const w: Monde = {
     journal: [],
@@ -161,6 +167,35 @@ function monde(opts: {
       w.traces += 1;
       w.journal.push('trace');
       return rep([{}]);
+    }
+    if (t.includes('jr:contact_memoriser_urn')) {
+      w.journal.push(`urn_contact org=${params[1]} contact=${params[0]} urn=${params[2]}`);
+      if (opts.urnEchoue) throw new Error('base indisponible');
+      return rep([]);
+    }
+    if (t.includes('jr:linkedin_reponse_envoyee')) {
+      if (opts.reponseDateeEchoue) throw new Error('base indisponible');
+      w.journal.push(`reponse_datee queue=${params[1]}`);
+      return rep([{}]);
+    }
+    if (t.includes('jr:linkedin_reponse_echec')) {
+      w.journal.push(`reponse_echec queue=${params[1]} code=${params[2]}`);
+      return rep([{}]);
+    }
+    if (t.includes('threads') || t.includes('thread_messages')) {
+      if (opts.filEchoue) throw new Error('base indisponible');
+      if (t.includes('select id from threads')) {
+        w.journal.push(`fil_lire org=${params[0]} contact=${params[1]} canal=${params[2]}`);
+        return rep([{ id: 'fil-1' }]);
+      }
+      if (t.includes('insert into thread_messages')) {
+        w.journal.push(`fil_message fil=${params[0]} corps=${params[1]} raw=${params[2]}`);
+        return rep([]);
+      }
+      if (t.includes('update threads')) {
+        w.journal.push(`fil_maj fil=${params[0]} org=${params[1]}`);
+        return rep([]);
+      }
     }
     if (t.includes('jr:linkedin_action_remettre')) {
       w.journal.push('remise');
@@ -476,6 +511,102 @@ describe('un envoi qui réussit', () => {
     await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(envoyees(w)).toEqual([`requete ${URL_MESSAGE}`]);
     expect(w.statutsAuxRequetes).toEqual(['processing']);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+  });
+
+  it('un envoi mémorise l URN du contact, sous sa forme nue, pour son organisation', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    avec(w, { ...ACTION_INVITATION, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain(`urn_contact org=${ORG} contact=contact-1 urn=ACoAAdestinataire`);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+  });
+
+  it('un message envoyé entre dans le fil du contact, en sortant, sur le canal linkedin_message', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain(`fil_lire org=${ORG} contact=contact-1 canal=linkedin_message`);
+    expect(w.journal).toContain(`fil_message fil=fil-1 corps=Bonjour Jeanne raw={"queue_id":"q-1"}`);
+    expect(w.journal).toContain(`fil_maj fil=fil-1 org=${ORG}`);
+    // Le message n'est écrit qu'une fois parti, jamais avant le POST.
+    expect(w.journal.indexOf(`requete ${URL_MESSAGE}`)).toBeLessThan(w.journal.findIndex((j) => j.startsWith('fil_message')));
+  });
+
+  it('une réponse de l opérateur date le message DÉJÀ présent dans le fil, sans en insérer un second', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal).toContain('reponse_datee queue=q-1');
+    expect(w.journal.some((j) => j.startsWith('fil_message'))).toBe(false);
+  });
+
+  it('une réponse partie dont la datation du message échoue reste enregistrée sent, sans second message (le balayage la datera)', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+      reponseDateeEchoue: true,
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+    expect(w.journal.some((j) => j.startsWith('fil_message'))).toBe(false);
+  });
+
+  it('un refus définitif d une réponse de l opérateur la signale, sans toucher à une séquence', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 422 } },
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1', origine: 'reponse' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal.some((j) => j.startsWith('reponse_echec queue=q-1'))).toBe(true);
+    expect(w.journal.some((j) => j.startsWith('reponse_datee'))).toBe(false);
+  });
+
+  it('une invitation, un message sans contact ou un refus n écrivent rien dans un fil', async () => {
+    const inv = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    avec(inv, { ...ACTION_INVITATION, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(inv), JOB);
+    expect(inv.journal.some((j) => j.startsWith('fil_'))).toBe(false);
+
+    const sans = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } } });
+    avec(sans, ACTION_MESSAGE);
+    await traiterEnvoiLinkedIn(deps(sans), JOB);
+    expect(sans.journal.some((j) => j.startsWith('fil_'))).toBe(false);
+
+    const refus = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 422 } } });
+    avec(refus, { ...ACTION_MESSAGE, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(refus), JOB);
+    expect(refus.journal.some((j) => j.startsWith('fil_'))).toBe(false);
+  });
+
+  it('un fil qu on ne peut pas écrire ne fait pas échouer l envoi : il reste enregistré sent', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_ME]: ME_OK, [URL_MESSAGE]: { statut: 201 } },
+      filEchoue: true,
+    });
+    avec(w, { ...ACTION_MESSAGE, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
+    expect(w.journal.filter((j) => j.startsWith('enregistrer'))).toEqual(['enregistrer sent']);
+  });
+
+  it('une action sans contact n écrit aucun URN', async () => {
+    const w = monde({ reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } } });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
+    expect(w.journal.some((j) => j.startsWith('urn_contact'))).toBe(false);
+  });
+
+  it('un URN qu on ne peut pas écrire ne retarde ni n empêche l envoi', async () => {
+    const w = monde({
+      reponses: { [URL_PROFIL('jeanne-dupont')]: PROFIL_OK, [URL_INVITATION]: { statut: 201 } },
+      urnEchoue: true,
+    });
+    avec(w, { ...ACTION_INVITATION, contactId: 'contact-1' });
+    await traiterEnvoiLinkedIn(deps(w), JOB);
     expect(enregistrements().map((e) => e.status)).toEqual(['sent']);
   });
 
