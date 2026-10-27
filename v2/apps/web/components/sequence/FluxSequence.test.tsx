@@ -15,7 +15,7 @@ const etape = (position: number, canalDetaille: EtapeVue['canalDetaille'], corps
   position,
   canal: canalDetaille === 'email' ? 'email' : 'linkedin',
   canalDetaille,
-  titre: 'Étape',
+  titreCode: 'etape',
   sujet: null,
   corps,
   delaiHeures: 48,

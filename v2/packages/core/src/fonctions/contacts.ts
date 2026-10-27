@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
-import { ecrireEvenement, type ActionJournal } from '../journal.js';
+import { ecrireEvenement, lireCodeEvenement, type ActionJournal } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { LIVE_STATUSES } from '../inbox/record-reply.js';
 import { normaliserUrlProfil } from './sources.js';
@@ -433,6 +433,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
     type: r.action,
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
+    ...lireCodeEvenement(r.diff),
   }));
 
   const campagnesRes = await ctx.ex.query<{ id: string; nom: string }>(

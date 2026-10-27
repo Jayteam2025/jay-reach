@@ -34,7 +34,7 @@ export function CarteEtape({ campagneId, etape }: CarteEtapeProps) {
         <div className="entete">
           <TuileLogo marque={etape.canal === 'linkedin' ? 'linkedin' : 'email'} />
           <span>
-            <b>{etape.titre}</b>
+            <b>{t(`nomEtape.${etape.titreCode}`)}</b>
             <small>
               {t('card.step', { n: etape.position })}
               {etape.canal === 'linkedin' &&

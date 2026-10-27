@@ -12,7 +12,7 @@
 import { z } from 'zod';
 import type { Contexte } from './contexte.js';
 import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js';
-import { ecrireEvenement, type ActionJournal } from '../journal.js';
+import { ecrireEvenement, lireCodeEvenement, type ActionJournal, type CodeEvenement, type ParametresEvenement } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
@@ -564,6 +564,13 @@ export interface Evenement {
    */
   readonly libelle: string | null;
   readonly detail: string | null;
+  /**
+   * Événement en CODE (#181) : le texte n'est pas stocké, `libelle` est alors vide et l'écran traduit `code`
+   * avec `parametres` (`campagne.fiche.historique.codes.<code>`). Absent pour un événement ancien en texte libre,
+   * qui garde son `libelle` français en repli.
+   */
+  readonly code?: CodeEvenement;
+  readonly parametres?: ParametresEvenement;
   /**
    * Donnée structurée d'un événement « envois groupés » (point 3.a, revue F5
    * point 4) — `n` emails envoyés, `etape` (1-based, tel qu'affiché à
@@ -1697,6 +1704,7 @@ function versEvenementAudit(r: LigneAuditEvenement): Evenement {
     type: r.action,
     libelle: r.diff?.libelle ?? '',
     detail: r.diff?.detail ?? null,
+    ...lireCodeEvenement(r.diff),
   };
 }
 

@@ -426,7 +426,7 @@ describe('apercuEnvoi', () => {
       score: 88,
       pourquoi: { titre: 'A commenté un post', detail: 'Correspond au persona cible' },
       etapePosition: 1,
-      etapeNom: 'Premier email',
+      etapeCode: 'premier_email',
       canal: 'email',
       heurePrevue: '2026-09-15T09:40:00.000Z',
       statut: 'pending_approval',
@@ -484,7 +484,7 @@ describe('apercuEnvoi', () => {
     expect(r.variablesManquantes.sort()).toEqual(['contexte', 'signal_titre']);
     expect(r.pourquoi).toBeNull();
     expect(r.etapePosition).toBe(2);
-    expect(r.etapeNom).toBe('Relance');
+    expect(r.etapeCode).toBe('relance');
   });
 
   it('sans gabarit relié à l’étape, renvoie un objet et un corps vides plutôt que d’échouer', async () => {
@@ -547,7 +547,7 @@ describe('apercuEnvoi', () => {
     });
     const r = await apercuEnvoi(ctx, { actionId });
     expect(r.canal).toBe('linkedin_invite');
-    expect(r.etapeNom).toBe('Invitation LinkedIn');
+    expect(r.etapeCode).toBe('invitation_linkedin');
     expect(r.etapePosition).toBe(1);
   });
 });

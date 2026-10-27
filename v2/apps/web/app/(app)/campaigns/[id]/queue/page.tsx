@@ -88,7 +88,7 @@ function construireLibellesTiroir(
     sousTitre: segments.join(' · '),
     pourquoi,
     pourquoiTitre: t('file.drawer.why'),
-    etape: t('file.drawer.step', { n: apercu.etapePosition, nom: apercu.etapeNom }),
+    etape: t('file.drawer.step', { n: apercu.etapePosition, nom: t(`sequence.nomEtape.${apercu.etapeCode}`) }),
     avertissementVariables:
       apercu.variablesManquantes.length > 0
         ? t('file.drawer.missingVariables', { liste: apercu.variablesManquantes.join(', ') })

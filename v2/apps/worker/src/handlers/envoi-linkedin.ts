@@ -553,10 +553,8 @@ async function attendreAcceptation(d: DependancesEnvoi, ctx: Contexte, action: A
             entityType: 'contact',
             entityId: sortie.contactId,
             action: 'action_skipped',
-            diff: {
-              libelle: `Message LinkedIn passé : l’invitation n’a pas été acceptée en ${sortie.jours} jours.`,
-              detail: 'La séquence continue à l’étape suivante.',
-            },
+            // Un CODE et ses paramètres, pas du français : l'écran traduit en fr, en et nl (#181).
+            diff: { code: 'linkedin_message_saute', parametres: { jours: sortie.jours } },
           });
         } catch (err) {
           console.warn(`[envoi-linkedin] trace du message sauté non écrite (${nomDe(err)})`);

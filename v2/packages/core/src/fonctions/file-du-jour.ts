@@ -15,6 +15,7 @@ import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/schedul
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
 import type { EtatEnvoi } from './aujourdhui.js';
 import { lireCanalEtape, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
+import type { CodeNomEtape } from './nom-etape.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -344,7 +345,8 @@ export interface ApercuEnvoi {
   readonly pourquoi: { titre: string; detail: string | null } | null;
   /** Le RANG de l'étape, 1-based (`sqlRangEtape`) — jamais `sequence_steps.position + 1`. */
   readonly etapePosition: number;
-  readonly etapeNom: string;
+  /** Le nom de l'étape, en CODE : l'écran le traduit (`campagne.sequence.nomEtape.<code>`), jamais du français ici (#181). */
+  readonly etapeCode: CodeNomEtape;
   /** Le canal réel de l'action : le tiroir ne peut pas dire « email » d'une invitation LinkedIn. */
   readonly canal: CanalEtapeLu;
   /** ISO de `actions.scheduled_for` — `null` si jamais programmé. */
@@ -385,18 +387,18 @@ function nomComplet(prenom: string | null, nom: string | null): string {
 }
 
 /**
- * Le nom d'une étape selon son rang (0-based) ET son canal : « Premier email » / « Relance » pour un email
- * (vocabulaire de la maquette, comme `titreEtape` de `sequence.ts`), « Invitation LinkedIn » pour une invitation.
- * Quel que soit le canal, la première étape s'appelait « Premier email » : l'aperçu d'une invitation LinkedIn
- * l'annonçait comme un email.
+ * Le nom d'une étape selon son rang (0-based) ET son canal, en CODE (#181) : « premier_email » / « relance » pour
+ * un email (vocabulaire de la maquette, comme `codeTitreEtape` de `sequence.ts`), « invitation_linkedin » pour une
+ * invitation. Quel que soit le canal, la première étape s'appelait « Premier email » : l'aperçu d'une invitation
+ * LinkedIn l'annonçait comme un email.
  */
-function nomEtape(rang: number, canal: CanalEtapeLu): string {
-  if (canal === 'linkedin_invite') return 'Invitation LinkedIn';
-  if (canal === 'linkedin_message') return rang === 0 ? 'Premier message LinkedIn' : 'Relance LinkedIn';
-  if (canal === 'letter') return 'Courrier';
-  if (canal === 'call') return 'Appel';
-  if (canal === 'autre') return 'Étape';
-  return rang === 0 ? 'Premier email' : 'Relance';
+function codeNomEtape(rang: number, canal: CanalEtapeLu): CodeNomEtape {
+  if (canal === 'linkedin_invite') return 'invitation_linkedin';
+  if (canal === 'linkedin_message') return rang === 0 ? 'premier_message_linkedin' : 'relance_linkedin';
+  if (canal === 'letter') return 'courrier';
+  if (canal === 'call') return 'appel';
+  if (canal === 'autre') return 'etape';
+  return rang === 0 ? 'premier_email' : 'relance';
 }
 
 /**
@@ -470,7 +472,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
     score: ligne.score,
     pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
     etapePosition: rang + 1,
-    etapeNom: nomEtape(rang, canal),
+    etapeCode: codeNomEtape(rang, canal),
     canal,
     heurePrevue: ligne.scheduled_for,
     statut: ligne.status,

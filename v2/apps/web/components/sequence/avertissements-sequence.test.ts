@@ -100,7 +100,7 @@ describe('sur la forme que lireSequence rend réellement', () => {
     position,
     canal: canalDetaille === 'email' ? 'email' : 'linkedin',
     canalDetaille,
-    titre: 'Étape',
+    titreCode: 'etape',
     sujet: null,
     corps,
     delaiHeures: 48,

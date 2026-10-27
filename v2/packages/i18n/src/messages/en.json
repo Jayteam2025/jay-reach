@@ -564,7 +564,13 @@
         "add": "Add"
       },
       "history": {
-        "empty": "No event for this contact."
+        "empty": "No event for this contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "LinkedIn message skipped: the invitation was not accepted within {jours, plural, one {# day} other {# days}}.",
+            "detail": "The sequence continues with the next step."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Discard from campaign",
@@ -919,6 +925,18 @@
       "avertissements": {
         "messageSansInvitation": "Step {n}: a LinkedIn message only reaches a 1st-degree connection. Add an invitation step before it, or it will never be sent.",
         "noteDInvitation": "Step {n}: server-side sending cannot carry the invitation note yet. While it is there, the invitation is not sent. Remove it to launch."
+      },
+      "nomEtape": {
+        "premier_email": "First email",
+        "relance": "Follow-up",
+        "dernier_mot": "Final word",
+        "invitation_linkedin": "LinkedIn invitation",
+        "premier_message_linkedin": "First LinkedIn message",
+        "relance_linkedin": "LinkedIn follow-up",
+        "dernier_message_linkedin": "Last LinkedIn message",
+        "courrier": "Letter",
+        "appel": "Call",
+        "etape": "Step"
       }
     },
     "activite": {

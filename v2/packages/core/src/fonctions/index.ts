@@ -6,6 +6,7 @@ export * from './demarrage.js';
 export * from './transport-email.js';
 export * from './campagnes.js';
 export * from './file-du-jour.js';
+export * from './nom-etape.js';
 export * from './sources.js';
 export * from './sequence.js';
 export * from './modeles-sequence.js';

@@ -29,6 +29,8 @@
 //  15. file.ts, `prochainesCandidates` : retirer `e.status is distinct from 'paused_absence'` : 10c, 10c-ter. (Faire annuler
 //      `paused_absence` par la garde est INATTEIGNABLE : le filtre des candidates l'écarte avant, aucun contrôle ne peut le voir.)
 //  16. file.ts, `reglerMessagePasEncoreRelation` : rendre `sans_sequence` au lieu de `deja_reglee` : 9c, 11b.
+//  Vague 2 (#181) : envoi-linkedin.ts, trace du saut remise en texte français (`libelle`) : 4g, 4g-bis ;
+//      file.ts, texte français remis dans `error_message` de l'attente ou du saut : 1a, 4a.
 //  Vague 2 (#180), chacune seule :
 //  17. sequence.ts, `reprendreAbsencesEchues` : neutraliser la garde `etapePrecedenteAttendSonDepart` (`&& false`) : 12a, 12c, 12e, 12f, 12h, 12j.
 //  18. sequence.ts, `etapePrecedenteAttendSonDepart` : retirer `approved` de la liste des statuts : 12j.
@@ -178,7 +180,7 @@ async function attente() {
 
   const f = await file(p.queue);
   check('1a. la ligne est de nouveau `pending` avec son code d\'attente, ni `failed` ni `cancelled`',
-    f.status === 'pending' && f.error_code === 'attente_acceptation' && !!f.error_message, JSON.stringify(f));
+    f.status === 'pending' && f.error_code === 'attente_acceptation' && f.error_message === null, JSON.stringify(f));
   const insc = await inscriptionDe(p.inscription);
   check('1b. l\'inscription est INTACTE : active, même étape, aucune pause, aucun motif',
     insc.status === 'active' && insc.stop_reason === null && insc.current_step === 2 && insc.next_action_at === null, JSON.stringify(insc));
@@ -270,7 +272,7 @@ async function saut() {
 
   const f = await file(p.queue);
   check('4a. la ligne de file est annulée, motif `invitation_non_acceptee` (pas `failed`)',
-    f.status === 'cancelled' && f.error_code === 'invitation_non_acceptee' && /8|7/.test(f.error_message ?? ''), JSON.stringify(f));
+    f.status === 'cancelled' && f.error_code === 'invitation_non_acceptee' && f.error_message === null, JSON.stringify(f));
   const act = await action(p.inscription, 1);
   check('4b. l\'action est `skipped` avec son motif, lisible', act?.status === 'skipped' && act?.error === 'invitation_non_acceptee', JSON.stringify(act));
   const insc = await inscriptionDe(p.inscription);
@@ -289,8 +291,11 @@ async function saut() {
 
   const fiche = await lireFiche({ ...m.ctx, role: 'admin' }, { contactId: p.contact });
   const trace = fiche.historique.find((e) => e.type === 'action_skipped');
-  check('4g. la personne le lit dans son historique : message sauté, avec la durée',
-    !!trace && /LinkedIn/.test(trace.libelle) && /7 jours/.test(trace.libelle), JSON.stringify(trace ?? fiche.historique));
+  check('4g. la personne le lit dans son historique : un CODE et la durée en paramètre (#181), aucun texte français stocké',
+    trace?.code === 'linkedin_message_saute' && trace.parametres?.jours === 7 && trace.libelle === '' && trace.detail === null, JSON.stringify(trace ?? fiche.historique));
+  const brut = (await q(`select diff from audit_events where organization_id = $1 and entity_id = $2 and action = 'action_skipped'`, [m.org, p.contact])).rows[0]?.diff;
+  check('4g-bis. en base : le diff ne porte que le code et ses paramètres',
+    JSON.stringify(brut) === JSON.stringify({ code: 'linkedin_message_saute', parametres: { jours: 7 } }), JSON.stringify(brut));
 }
 
 // ---------------------------------------------------------------- 5. sans invitation

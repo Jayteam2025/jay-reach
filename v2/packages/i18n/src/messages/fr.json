@@ -564,7 +564,13 @@
         "add": "Ajouter"
       },
       "history": {
-        "empty": "Aucun événement pour ce contact."
+        "empty": "Aucun événement pour ce contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "Message LinkedIn passé : l’invitation n’a pas été acceptée en {jours, plural, one {# jour} other {# jours}}.",
+            "detail": "La séquence continue à l’étape suivante."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Écarter de la campagne",
@@ -919,6 +925,18 @@
       "avertissements": {
         "messageSansInvitation": "Étape {n} : un message LinkedIn n'atteint qu'une relation de 1er degré. Ajoutez une étape d'invitation avant lui, sinon il ne partira jamais.",
         "noteDInvitation": "Étape {n} : l'envoi depuis le serveur ne sait pas encore porter la note d'invitation. Tant qu'elle est là, l'invitation ne part pas. Retirez-la pour lancer."
+      },
+      "nomEtape": {
+        "premier_email": "Premier email",
+        "relance": "Relance",
+        "dernier_mot": "Dernier mot",
+        "invitation_linkedin": "Invitation LinkedIn",
+        "premier_message_linkedin": "Premier message LinkedIn",
+        "relance_linkedin": "Relance LinkedIn",
+        "dernier_message_linkedin": "Dernier message LinkedIn",
+        "courrier": "Courrier",
+        "appel": "Appel",
+        "etape": "Étape"
       }
     },
     "activite": {

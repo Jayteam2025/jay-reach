@@ -760,24 +760,18 @@ export async function reglerMessagePasEncoreRelation(
       await tx.query(
         `update linkedin_action_queue /* jr:linkedin_attente_replanifier */
             set status = 'pending', scheduled_for = $3, attempts = greatest(attempts - 1, 0),
-                error_code = $4, error_message = $5, processing_started_at = null, updated_at = now()
+                error_code = $4, error_message = null, processing_started_at = null, updated_at = now()
           where id = $1 and organization_id = $2 and status = 'processing'`,
-        [
-          entree.queueId,
-          entree.organizationId,
-          entree.prochaineVerification.toISOString(),
-          CODE_ATTENTE_ACCEPTATION,
-          MESSAGE_ATTENTE_ACCEPTATION,
-        ],
+        [entree.queueId, entree.organizationId, entree.prochaineVerification.toISOString(), CODE_ATTENTE_ACCEPTATION],
       );
       return { issue: 'en_attente', jours };
     }
 
     await tx.query(
       `update linkedin_action_queue /* jr:linkedin_attente_sauter_file */
-          set status = 'cancelled', error_code = $3, error_message = $4, updated_at = now()
+          set status = 'cancelled', error_code = $3, error_message = null, updated_at = now()
         where id = $1 and organization_id = $2 and status = 'processing'`,
-      [entree.queueId, entree.organizationId, CODE_INVITATION_NON_ACCEPTEE, messageInvitationNonAcceptee(jours)],
+      [entree.queueId, entree.organizationId, CODE_INVITATION_NON_ACCEPTEE],
     );
     const sautee = await tx.query(
       `update actions set status = 'skipped', error = $3 /* jr:linkedin_attente_sauter_action */
@@ -788,15 +782,6 @@ export async function reglerMessagePasEncoreRelation(
     if ((sautee.rowCount ?? 0) > 0) await poserEcheanceApresDepartDepuisAction(tx, ligne.action_id, entree.maintenant);
     return { issue: 'saute', jours, contactId: ligne.contact_id };
   });
-}
-
-/** Texte écrit sur la ligne de file qui attend : lisible, jamais un extrait de réponse LinkedIn. */
-export const MESSAGE_ATTENTE_ACCEPTATION =
-  'La personne n’a pas encore accepté l’invitation : le message attend, avec une vérification par jour.';
-
-/** Texte écrit quand le délai est écoulé : il nomme la durée réglée. */
-export function messageInvitationNonAcceptee(jours: number): string {
-  return `L’invitation n’a pas été acceptée en ${jours} jours : le message est passé, la séquence continue.`;
 }
 
 /**

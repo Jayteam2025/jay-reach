@@ -847,6 +847,24 @@ describe('les refus de LinkedIn', () => {
       expect(w.journal.some((j) => j.startsWith('autre insert into audit_events'))).toBe(true);
     });
 
+    it('la trace du saut est un CODE et ses paramètres, jamais du français : l\'écran la traduit en fr, en et nl (#181)', async () => {
+      mocks.attente.mockResolvedValue({ issue: 'saute', jours: 7, contactId: 'contact-1' });
+      const w = monde({ reponses: refus });
+      const ecrits: unknown[][] = [];
+      const query = w.pool.query.bind(w.pool);
+      w.pool.query = (async (sql: string, params?: unknown[]) => {
+        if (String(sql).includes('insert into audit_events')) ecrits.push(params ?? []);
+        return query(sql, params);
+      }) as typeof w.pool.query;
+      avec(w, ACTION_MESSAGE);
+      await traiterEnvoiLinkedIn(deps(w), JOB);
+      expect(ecrits).toHaveLength(1);
+      expect(ecrits[0]?.[3]).toBe('contact-1');
+      expect(ecrits[0]?.[4]).toBe('action_skipped');
+      const diff = JSON.parse(String(ecrits[0]?.[5])) as Record<string, unknown>;
+      expect(diff).toEqual({ code: 'linkedin_message_saute', parametres: { jours: 7 } });
+    });
+
     it('une ligne déjà réglée (réponse de la transaction perdue après le commit) : rien n\'est écrit, pas d\'échec, pas de pause', async () => {
       mocks.attente.mockResolvedValue({ issue: 'deja_reglee' });
       const w = monde({ reponses: refus });

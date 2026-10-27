@@ -564,7 +564,13 @@
         "add": "Toevoegen"
       },
       "history": {
-        "empty": "Geen gebeurtenis voor dit contact."
+        "empty": "Geen gebeurtenis voor dit contact.",
+        "codes": {
+          "linkedin_message_saute": {
+            "libelle": "LinkedIn-bericht overgeslagen: de uitnodiging is niet binnen {jours, plural, one {# dag} other {# dagen}} geaccepteerd.",
+            "detail": "De reeks gaat door met de volgende stap."
+          }
+        }
       },
       "actions": {
         "discardFromCampaign": "Uit campagne verwijderen",
@@ -919,6 +925,18 @@
       "avertissements": {
         "messageSansInvitation": "Stap {n}: een LinkedIn-bericht bereikt alleen een connectie van de 1e graad. Voeg er een uitnodigingsstap vóór toe, anders wordt het nooit verstuurd.",
         "noteDInvitation": "Stap {n}: verzenden vanaf de server kan de uitnodigingsnotitie nog niet meesturen. Zolang die er staat, wordt de uitnodiging niet verstuurd. Verwijder de notitie om te starten."
+      },
+      "nomEtape": {
+        "premier_email": "Eerste e-mail",
+        "relance": "Herinnering",
+        "dernier_mot": "Laatste woord",
+        "invitation_linkedin": "LinkedIn-uitnodiging",
+        "premier_message_linkedin": "Eerste LinkedIn-bericht",
+        "relance_linkedin": "LinkedIn-herinnering",
+        "dernier_message_linkedin": "Laatste LinkedIn-bericht",
+        "courrier": "Brief",
+        "appel": "Telefoontje",
+        "etape": "Stap"
       }
     },
     "activite": {
