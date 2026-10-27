@@ -6,8 +6,9 @@
  *
  * Vitest n'applique pas cette frontière (il importe tout comme un seul module), donc aucun test
  * de rendu ne peut attraper ce défaut : il ne se voit qu'au build de production. Ce test lit donc
- * les sources : pour chaque module serveur, aucun import (hors `import type`) d'une fonction
- * exportée en minuscule par un module client. Un composant (majuscule) s'importe normalement.
+ * les sources : pour chaque module serveur, aucun import (hors `import type`) d'un export non-composant (fonction, constante, quelle que soit la casse)
+ * d'un module client. Un composant PascalCase s'importe normalement. Un import par défaut seul est
+ * tenu pour un composant.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -30,11 +31,26 @@ function estClient(source: string): boolean {
   return EST_CLIENT.test(source);
 }
 
-/** Les exports en minuscule d'un module client : des fonctions ou valeurs, pas des composants. */
-function exportsMinuscules(source: string): string[] {
+/** Un composant : PascalCase avec au moins une minuscule. `MAX_X` (constante) n'en est pas un. */
+function estComposant(nom: string): boolean {
+  return /^[A-Z][A-Za-z0-9]*$/.test(nom) && /[a-z]/.test(nom);
+}
+
+/**
+ * Les exports d'un module client qui ne sont PAS des composants : fonctions, constantes, classes,
+ * quelle que soit la casse (`ligneValidable`, `MAX_X`), y compris `export { x, y as z }`. Les types
+ * (`export type`, `export interface`) s'effacent à la compilation et ne comptent pas.
+ */
+function exportsNonComposants(source: string): Set<string> {
   const noms = new Set<string>();
-  for (const m of source.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let)\s+([a-z][A-Za-z0-9_]*)/gm)) noms.add(m[1]!);
-  return [...noms];
+  for (const m of source.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) noms.add(m[1]!);
+  for (const m of source.matchAll(/^export\s+(?!type\b)\{([^}]*)\}/gm)) {
+    for (const brut of m[1]!.split(',')) {
+      const nom = brut.trim().replace(/^type\s.*$/, '').split(/\s+as\s+/).pop()!.trim();
+      if (nom !== '') noms.add(nom);
+    }
+  }
+  return new Set([...noms].filter((n) => !estComposant(n)));
 }
 
 function resoudre(depuis: string, spec: string): string | null {
@@ -59,12 +75,13 @@ describe('la frontière client / serveur', () => {
     const violations: string[] = [];
     for (const [fichier, source] of sources) {
       if (estClient(source)) continue;
-      for (const m of source.matchAll(/import\s+(?!type\b)\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/g)) {
+      for (const m of source.matchAll(/import\s+(?!type\b)(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/g)) {
         const cible = resoudre(fichier, m[2]!);
         const sourceCible = cible ? sources.get(cible) : undefined;
         if (!cible || sourceCible === undefined || !estClient(sourceCible)) continue;
-        const interdits = new Set(exportsMinuscules(sourceCible));
+        const interdits = exportsNonComposants(sourceCible);
         for (const brut of m[1]!.split(',')) {
+          // Un spécificateur `type Foo` (import de type en ligne) s'efface à la compilation : on l'ignore.
           const nom = brut.trim().replace(/^type\s.*$/, '').split(/\s+as\s+/)[0]!.trim();
           if (nom !== '' && interdits.has(nom)) violations.push(`${fichier.replace(`${RACINE}/`, '')} importe ${nom} depuis ${cible.replace(`${RACINE}/`, '')}`);
         }

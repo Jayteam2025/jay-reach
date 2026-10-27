@@ -57,4 +57,3 @@ export function ligneValidable(ligne: LignePostEcran): boolean {
   if (ligne.morceaux.some((m) => 'manquant' in m)) return false;
   return champsDeLaLigne(ligne).every((c) => ((c === 'auteur' ? ligne.auteur : ligne.sujet) ?? '').trim() !== '');
 }
-
