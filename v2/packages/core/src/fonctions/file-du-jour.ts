@@ -14,7 +14,7 @@ import { ecrireEvenement } from '../journal.js';
 import { shiftIntoBusinessHours, type BusinessHours } from '../sequencer/scheduling.js';
 import { renderTemplate, lireValeursContact } from '../messages/index.js';
 import type { EtatEnvoi } from './aujourdhui.js';
-import { lireCanalEtape, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanalEtape, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
 
 export const schemaActionId = z.object({ actionId: z.string().uuid() });
 
@@ -323,7 +323,7 @@ export interface ApercuEnvoi {
   readonly etapePosition: number;
   readonly etapeNom: string;
   /** Le canal réel de l'action : le tiroir ne peut pas dire « email » d'une invitation LinkedIn. */
-  readonly canal: CanalEtapeSequence;
+  readonly canal: CanalEtapeLu;
   /** ISO de `actions.scheduled_for` — `null` si jamais programmé. */
   readonly heurePrevue: string | null;
   /** Statut réel de l'action (`actions.status`), pour que le tiroir n'affiche les boutons d'action que sur un envoi pas encore parti (R39). */
@@ -367,11 +367,12 @@ function nomComplet(prenom: string | null, nom: string | null): string {
  * Quel que soit le canal, la première étape s'appelait « Premier email » : l'aperçu d'une invitation LinkedIn
  * l'annonçait comme un email.
  */
-function nomEtape(rang: number, canal: string): string {
+function nomEtape(rang: number, canal: CanalEtapeLu): string {
   if (canal === 'linkedin_invite') return 'Invitation LinkedIn';
   if (canal === 'linkedin_message') return rang === 0 ? 'Premier message LinkedIn' : 'Relance LinkedIn';
   if (canal === 'letter') return 'Courrier';
   if (canal === 'call') return 'Appel';
+  if (canal === 'autre') return 'Étape';
   return rang === 0 ? 'Premier email' : 'Relance';
 }
 
@@ -432,6 +433,7 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
   const variablesManquantes = [...new Set([...renduObjet.missing, ...renduCorps.missing])];
 
   const rang = ligne.rang ?? 0;
+  const canal = lireCanalEtape(ligne.channel);
 
   return {
     objet: renduObjet.text,
@@ -445,8 +447,8 @@ export async function apercuEnvoi(ctx: Contexte, entree: unknown): Promise<Aperc
     score: ligne.score,
     pourquoi: ligne.signal_titre ? { titre: ligne.signal_titre, detail: ligne.score_reason } : null,
     etapePosition: rang + 1,
-    etapeNom: nomEtape(rang, ligne.channel),
-    canal: lireCanalEtape(ligne.channel),
+    etapeNom: nomEtape(rang, canal),
+    canal,
     heurePrevue: ligne.scheduled_for,
     statut: ligne.status,
   };

@@ -10,7 +10,7 @@ import { EtapeQui, type PersonaOptionAssistant } from './EtapeQui';
 import { EtapeSources, type SourceAssistant } from './EtapeSources';
 import { EtapeSequence, type EtapeSequenceEtape, type CleModeleSequence, etapesDepuisModele } from './EtapeSequence';
 import { EtapeEnvoi, type BoiteEnvoiAssistant } from './EtapeEnvoi';
-import { aUneEtapeEmail, compterCanaux, libellesCanaux, resumeCanaux } from '../../../lib/canaux-sequence';
+import { aUneEtapeEmail, libellesCanaux, recapSequence } from '../../../lib/canaux-sequence';
 
 const MODELE_PAR_DEFAUT: CleModeleSequence = 'question_relances';
 
@@ -349,9 +349,9 @@ export function Assistant({ personas, boites }: AssistantProps) {
           recapitulatif={{
             persona: t('send.recapPersonaValue', { persona: personaNom, score: Number(scoreMin) || 0 }),
             sources: sources.length === 0 ? t('send.recapSourcesEmpty') : sources.map((s) => s.nom).join(' · '),
-            sequence: t('send.recapSequenceValue', {
-              resume: resumeCanaux(compterCanaux(canauxEtapes), libellesCanaux(tCanaux)),
-              jours: totalJours,
+            sequence: recapSequence(canauxEtapes, libellesCanaux(tCanaux), totalJours, {
+              vide: t('send.recapSequenceVide'),
+              avec: (valeurs) => t('send.recapSequenceValue', valeurs),
             }),
             envoi: avecEmail
               ? t('send.recapEnvoiValue', { n: nbBoitesActives, plafond: Number(plafondJour) || 0 })

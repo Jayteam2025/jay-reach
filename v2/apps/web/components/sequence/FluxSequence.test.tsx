@@ -92,3 +92,22 @@ describe('CarteEtape — la carte nomme le canal réel', () => {
     expect(html).not.toContain('card.channelLinkedin');
   });
 });
+
+describe('FluxSequence — la phrase d’entrée suit les canaux des étapes', () => {
+  it('une séquence 100 % LinkedIn énonce l’absence d’exigence d’email', () => {
+    const html = renderToStaticMarkup(
+      <FluxSequence campagneId="camp-1" vue={vue([etape(1, 'linkedin_invite', ''), etape(2, 'linkedin_message', 'Suite')])} />,
+    );
+    expect(html).toContain('flow.intoSequenceSansEmail');
+  });
+
+  it('une séquence avec un email énonce l’attente de l’engageur sans email', () => {
+    const html = renderToStaticMarkup(<FluxSequence campagneId="camp-1" vue={vue([etape(1, 'linkedin_invite', ''), etape(2, 'email', 'Suite')])} />);
+    expect(html).toMatch(/flow\.intoSequence(?!SansEmail|Vide)/);
+  });
+
+  it('une séquence vide a sa propre phrase', () => {
+    const html = renderToStaticMarkup(<FluxSequence campagneId="camp-1" vue={vue([])} />);
+    expect(html).toContain('flow.intoSequenceVide');
+  });
+});

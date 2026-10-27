@@ -19,7 +19,7 @@ import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_LINKEDIN_COLLECTES } from './sources.j
 import { SQL_CONDITION_A_TRAITER } from './reception.js';
 import { versInstant } from '../temps.js';
 import { lireHeuresEnvoiLinkedIn } from '../linkedin/reglages-envoi.js';
-import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
 // `sqlContactsCampagne`/`tauxSurPartis` viennent de `campagnes.ts` (point 1, même définition
 // partout) : le seul import que `campagnes.ts` fait de ce fichier (`EnvoiPrevu`, `CanalFil`) est
 // un `import type`, effacé à la compilation — aucun cycle réel entre les deux modules (revue F5,
@@ -110,7 +110,7 @@ export interface CampagneResume {
   nom: string;
   statut: 'draft' | 'active' | 'paused' | 'archived';
   /** Canaux des étapes de la séquence, dans l'ordre : « 2 actions LinkedIn, 1 email » se compte là-dessus. */
-  canauxEtapes: CanalEtapeSequence[];
+  canauxEtapes: CanalEtapeLu[];
   boites: number;
   /** Un élément peut être `null` (R70, tour de correction 4) : aucun des trois repères de fournisseur n'a de valeur. */
   sources: (string | null)[];

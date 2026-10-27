@@ -125,3 +125,29 @@ export function ligneEtapesEtBoites(
   const resume = resumeCanaux(compterCanaux(canaux), libelles);
   return aUneEtapeEmail(canaux) ? t('stepsBoxes', { resume, boites }) : t('steps', { resume, boites });
 }
+
+/**
+ * Quelle phrase d'entrée l'onglet Séquence énonce. Règle du producteur (`producer.ts`, `sqlCampagneSansEmail`) : seule une
+ * personne repérée sur LinkedIn (engageur) dont on n'a pas l'email attend de l'avoir avant d'être inscrite, et seulement
+ * si la séquence contient une étape email. Séquence sans étape email : aucune attente. Séquence vide : le moteur ne sait pas
+ * par quel canal elle écrira, il retient donc l'engageur sans email comme pour une séquence email.
+ */
+export function cleRegleDEntree(canaux: readonly string[]): 'flow.intoSequence' | 'flow.intoSequenceSansEmail' | 'flow.intoSequenceVide' {
+  if (canaux.length === 0) return 'flow.intoSequenceVide';
+  return sequenceSansEmail(canaux) ? 'flow.intoSequenceSansEmail' : 'flow.intoSequence';
+}
+
+/**
+ * Le récapitulatif de la séquence dans l'assistant. Sans étape, `resumeCanaux` rend une chaîne vide : le gabarit
+ * « {resume} sur N jours » donnerait « sur un seul jour ». On dit « aucune étape » à la place.
+ */
+export function recapSequence(
+  canaux: readonly string[],
+  libelles: LibellesCanaux,
+  jours: number,
+  textes: { vide: string; avec: (valeurs: { resume: string; jours: number }) => string },
+): string {
+  const resume = resumeCanaux(compterCanaux(canaux), libelles);
+  if (resume === '') return textes.vide;
+  return textes.avec({ resume, jours });
+}

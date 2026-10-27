@@ -22,4 +22,4 @@ export * from './linkedin-sortie.js';
 export * from './linkedin-canal.js';
 export * from './linkedin-connexion.js';
 export * from './posts.js';
-export type { CanalEtapeSequence } from './etapes-sql.js';
+export type { CanalEtapeLu, CanalEtapeSequence } from './etapes-sql.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aUneEtapeEmail, afficherEtapeEmailVerifie, compterCanaux, ligneEtapesEtBoites, natureDesCanaux, resumeCanaux, sequenceSansEmail, type LibellesCanaux } from './canaux-sequence';
+import { aUneEtapeEmail, afficherEtapeEmailVerifie, cleRegleDEntree, compterCanaux, recapSequence, ligneEtapesEtBoites, natureDesCanaux, resumeCanaux, sequenceSansEmail, type LibellesCanaux } from './canaux-sequence';
 
 /** Libellés factices au singulier/pluriel français : rend le décompte lisible dans l'assertion. */
 const LIBELLES: LibellesCanaux = {
@@ -119,5 +119,41 @@ describe('afficherEtapeEmailVerifie : la marche « Email vérifié » de l’ent
     for (const canaux of [[], ['email'], ['linkedin_invite'], ['letter', 'call'], ['call', 'email']]) {
       expect(afficherEtapeEmailVerifie(canaux)).toBe(!sequenceSansEmail(canaux));
     }
+  });
+});
+
+describe('cleRegleDEntree : la phrase d’entrée de l’onglet Séquence', () => {
+  it('une étape email : l’engageur sans email attend (phrase avec attente)', () => {
+    expect(cleRegleDEntree(['linkedin_invite', 'email'])).toBe('flow.intoSequence');
+    expect(cleRegleDEntree(['email'])).toBe('flow.intoSequence');
+  });
+
+  it('aucune étape email : aucune attente', () => {
+    expect(cleRegleDEntree(['linkedin_invite', 'linkedin_message'])).toBe('flow.intoSequenceSansEmail');
+  });
+
+  it('séquence vide : ni l’une ni l’autre, le moteur ne sait pas par quel canal elle écrira', () => {
+    expect(cleRegleDEntree([])).toBe('flow.intoSequenceVide');
+  });
+});
+
+describe('recapSequence : le récapitulatif de l’assistant', () => {
+  const libelles: LibellesCanaux = {
+    email: (n) => `${n} email${n > 1 ? 's' : ''}`,
+    linkedin: (n) => `${n} action${n > 1 ? 's' : ''} LinkedIn`,
+    courrier: (n) => `${n} courrier`,
+    appel: (n) => `${n} appel`,
+  };
+  const textes = {
+    vide: 'Aucune étape pour l’instant',
+    avec: (v: { resume: string; jours: number }) => `${v.resume} sur ${v.jours} jours`,
+  };
+
+  it('zéro étape : « aucune étape », jamais un résumé vide suivi de « sur un seul jour »', () => {
+    expect(recapSequence([], libelles, 0, textes)).toBe('Aucune étape pour l’instant');
+  });
+
+  it('une séquence mixte garde le résumé par canal', () => {
+    expect(recapSequence(['linkedin_invite', 'email', 'linkedin_message'], libelles, 6, textes)).toBe('2 actions LinkedIn, 1 email sur 6 jours');
   });
 });

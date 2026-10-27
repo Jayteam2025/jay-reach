@@ -11,6 +11,8 @@
 //   3. sequence.ts : remettre `position: e.position + 1` — 2a et 2b rougissent.
 //   4. etapes-sql.ts : remplacer `<` par `<=` dans `sqlRangEtape` — 3a, 3b, 3e et 3f rougissent ; retirer le
 //      `case when ... is null` — 3i rougit.
+//   4bis. etapes-sql.ts : retirer le filtre `channel::text in (...)` du décompte de `sqlRangEtape` — 5b, 5c et 5d
+//      rougissent (la file compte le courrier, l'onglet non).
 //   5. campagnes.ts : retirer `sqlCanauxEtapes` de `lireCampagneEnTete` — 4a rougit ; de `listerCampagnes`
 //      — 4b rougit ; d'`aujourdhui.ts` — 4c rougit.
 import pg from 'pg';
@@ -147,6 +149,37 @@ async function rangDansLesAutresEcrans() {
   void s2;
 }
 
+// ------------------------------------------------------------ 5. même ensemble numéroté partout
+async function memeEnsembleQueLOnglet() {
+  console.log('[canaux] 5. la file numérote les mêmes étapes que l\'onglet Séquence (pas de décalage par une étape courrier)');
+  const m = await monde('Courrier puis email puis message');
+  await etape(m, 1, 'letter'); // que l'onglet Séquence ne montre jamais
+  const sEmail = await etape(m, 2, 'email');
+  const sMessage = await etape(m, 3, 'linkedin_message', 48);
+  const ct = await contact(m, 'Bea');
+  const insc = await inscription(m, ct, 'active', 1);
+  const poser = async (stepId, channel) =>
+    (
+      await q(
+        `insert into actions (organization_id, enrollment_id, step_id, channel, status, scheduled_for, idempotency_key)
+         values ($1, $2, $3, $4::channel_kind, 'scheduled', now(), $5) returning id`,
+        [m.org, insc, stepId, channel, `ens-${stepId}`],
+      )
+    ).rows[0].id;
+  const aEmail = await poser(sEmail, 'email');
+  const aMessage = await poser(sMessage, 'linkedin_message');
+  const onglet = await lireSequence(m.ctx, { campagneId: m.campagne });
+  const numeroOnglet = (id) => onglet.etapes.find((e) => e.id === id)?.position;
+  const file = await listerFileDuJour(m.ctx, { campagneId: m.campagne });
+  const tous = [...file.prevus, ...file.partis];
+  const etapeFile = (id) => tous.find((e) => e.id === id)?.etape;
+  check('5a. l\'onglet ne montre ni le courrier ni son numéro : email 1, message 2', numeroOnglet(sEmail) === 1 && numeroOnglet(sMessage) === 2 && onglet.etapes.length === 2, JSON.stringify(onglet.etapes.map((e) => e.position)));
+  check('5b. la file donne à l\'email le numéro de l\'onglet', etapeFile(aEmail) === numeroOnglet(sEmail), `file=${etapeFile(aEmail)} onglet=${numeroOnglet(sEmail)}`);
+  check('5c. la file donne au message le numéro de l\'onglet', etapeFile(aMessage) === numeroOnglet(sMessage), `file=${etapeFile(aMessage)} onglet=${numeroOnglet(sMessage)}`);
+  const apercu = await apercuEnvoi(m.ctx, { actionId: aMessage });
+  check('5d. le tiroir aussi', apercu.etapePosition === numeroOnglet(sMessage), `etapePosition=${apercu.etapePosition}`);
+}
+
 // ------------------------------------------------------------ 4. canaux des étapes
 async function canauxDesEtapes() {
   console.log('[canaux] 4. les canaux des étapes, lus par chaque écran');
@@ -165,7 +198,7 @@ async function canauxDesEtapes() {
   check('4d. campagne sans étape : liste vide, pas null', Array.isArray(v0.campagne.canauxEtapes) && v0.campagne.canauxEtapes.length === 0, JSON.stringify(v0.campagne.canauxEtapes));
 }
 
-await jouer(alleAuBoutParPersonne, rangDansLaSequence, rangDansLesAutresEcrans, canauxDesEtapes);
+await jouer(alleAuBoutParPersonne, rangDansLaSequence, rangDansLesAutresEcrans, canauxDesEtapes, memeEnsembleQueLOnglet);
 await pool.end();
 console.log(failures === 0 ? '\n[canaux] OK' : `\n[canaux] ${failures} contrôle(s) en échec`);
 process.exit(failures === 0 ? 0 : 1);

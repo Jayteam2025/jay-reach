@@ -17,7 +17,7 @@ import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
 import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
-import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeSequence } from './etapes-sql.js';
+import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
 import { construireValeursContact, normalizeListColumnName, renderTemplatePartial, type LigneValeursContact } from '../messages/index.js';
 import { campaignCreateSchema, campaignStatusSchema, toEntryRules, type CampaignStatus } from '../campaigns/validation.js';
 import { allocateWithinQuota } from '../sequencer/quota.js';
@@ -464,7 +464,7 @@ export interface CampagneListeResume {
    */
   readonly listeSource: { readonly nom: string; readonly autresListes: number } | null;
   /** Canaux des étapes de la séquence, dans l'ordre : la colonne Boîtes n'a de sens que s'il y a une étape email. */
-  readonly canauxEtapes: readonly CanalEtapeSequence[];
+  readonly canauxEtapes: readonly CanalEtapeLu[];
 }
 
 export interface CampagneEnTete {
@@ -479,7 +479,7 @@ export interface CampagneEnTete {
    * Les canaux des étapes de la séquence, dans l'ordre. Les boîtes d'envoi, SalesBlink et le vocabulaire d'email
    * ne concernent la campagne que s'il y figure au moins une étape `email`.
    */
-  readonly canauxEtapes: readonly CanalEtapeSequence[];
+  readonly canauxEtapes: readonly CanalEtapeLu[];
 }
 
 /** Marches communes aux deux natures de campagne (point 1 et point 2, tour de correction 5). */

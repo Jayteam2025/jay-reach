@@ -36,6 +36,7 @@ import {
 import { lireListeSourceCampagne, schemaCampagneId, type ListeSourceResume } from './campagnes.js';
 import { SQL_PROVIDER_ID_AFFICHAGE, TYPES_SOURCES_DE_POST } from './sources.js';
 import { dansUneTransaction } from '../transaction.js';
+import { CANAUX_ETAPE_AFFICHES } from './etapes-sql.js';
 import { actionIdempotencyKey } from '../sequencer/actions.js';
 import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 
@@ -44,7 +45,7 @@ import { echeanceEtapeSuivante } from '../sequencer/scheduling.js';
 // ---------------------------------------------------------------------------
 
 /** Canaux affichés dans l'onglet (R19) : courrier et appel n'y figurent jamais. */
-const CANAUX_AFFICHES = ['email', 'linkedin_invite', 'linkedin_message'] as const;
+const CANAUX_AFFICHES = CANAUX_ETAPE_AFFICHES;
 type CanalAffiche = 'email' | 'linkedin';
 /**
  * Le canal tel qu'il est en base. `canal` le collapse en « linkedin » pour l'icône et le
@@ -172,7 +173,7 @@ export async function lireSequence(ctx: Contexte, entree: unknown): Promise<VueS
          from sequence_steps
         where campaign_id = $1 and channel::text = any($2::text[])
         order by position asc`,
-      [campagneId, CANAUX_AFFICHES as unknown as string[]],
+      [campagneId, [...CANAUX_AFFICHES]],
     ),
     ctx.ex.query<{ n: number }>(
       // Des PERSONNES : « 3 contacts sont allés au bout » s'affichait pour une campagne de 2 personnes, parce
