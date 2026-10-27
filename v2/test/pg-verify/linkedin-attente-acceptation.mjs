@@ -762,7 +762,6 @@ async function attenteDeLaDerniereEtape() {
 async function pauseManuelleEtCampagneInactive() {
   console.log('\n15. une pause manuelle ou une campagne à l\'arrêt retient la ligne qui attend : pas de réclamation, pas d\'affichage (#183, revue)');
   const m = await monde();
-  const admin = { ...m.ctx, role: 'admin' };
   const p = await personne(m, { invitationIlYa: 2, prenom: 'PauseManuelle' });
   const autre = await personne(m, { invitationIlYa: 2, prenom: 'Temoin' });
   await essayerEtRefuser(m);
