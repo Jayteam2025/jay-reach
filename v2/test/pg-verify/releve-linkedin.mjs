@@ -104,6 +104,8 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import {
   compterRequetesLinkedIn,
+  compterVisitesProfilLinkedIn,
+  tracerResolutionProfil,
   contactsSansUrn,
   enregistrerMessageSortant,
   toucherDernierMessage,
@@ -516,6 +518,115 @@ async function resolutionDesUrn() {
   check('76 une adresse qui n est pas une page de profil est datee et jamais interrogee',
     (await tentee(111)) === true && !demandes.includes('') && demandes.length === 1 && demandes[0] === 'introuvable', JSON.stringify(demandes));
   check('77 isolement : la date ne touche aucun contact de l autre organisation', (await tentee(108)) === false);
+
+  // Le plafond hebdomadaire de visites de profil (decision JB, 27/10) : les resolutions de ce passage SONT des visites.
+  const ctxA = { ex: pool, organisationId: ORG_A };
+  const septJours = () => new Date(Date.now() - 7 * 24 * 3_600_000);
+  const resolutionsTracees = async () => (await q(`select count(*)::int n from linkedin_requetes where organization_id = $1 and kind = 'resolution_profil'`, [ORG_A])).rows[0].n;
+  const reglerPlafond = (n) => q(`insert into organization_settings (organization_id, key, value) values ($1, 'linkedin_visites_profil_par_semaine', to_jsonb($2::int))
+                                  on conflict (organization_id, key) do update set value = excluded.value`, [ORG_A, n]);
+  const dejaResolues = await resolutionsTracees();
+  const visites0 = await compterVisitesProfilLinkedIn(ctxA, septJours());
+  check('231 les resolutions deja faites par la releve sont tracees en resolution_profil (et non en messagerie) et comptees comme visites de profil',
+    dejaResolues >= 4 && visites0 === dejaResolues, `resolutions=${dejaResolues} visites=${visites0}`);
+
+  await contact(112, ORG_A, null, profil('plafond-a'));
+  await contact(113, ORG_A, null, profil('plafond-b'));
+  await contact(114, ORG_A, null, profil('plafond-c'));
+  // Dernier envoi d'abord : 112, puis 113, puis 114 (l'ordre des candidats se lit, il ne depend pas du hasard).
+  for (const n of [112, 113, 114]) await action(n, ORG_A, n, 'message', 'sent', jour(n - 111));
+  profils['plafond-a'] = 'ACoAAplafa';
+  profils['plafond-b'] = 'ACoAAplafb';
+  profils['plafond-c'] = 'ACoAAplafc';
+
+  // Plafond atteint : le passage a lieu (les messages sont releves), aucune resolution ne part.
+  await reglerPlafond(visites0);
+  demandes.length = 0;
+  await unJourAvant();
+  const avantPlafond = await traces();
+  const ePlafond = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
+  check('232 plafond hebdomadaire atteint : aucune resolution ne part, la releve des messages se fait quand meme (curseur avance, aucune erreur)',
+    ePlafond === null && demandes.length === 0 && (await curseurAvance()) && (await traces()) === avantPlafond + REQUETES_PAR_RELEVE && (await urnDe(112)) === null,
+    `${ePlafond?.message ?? ''} demandes=${JSON.stringify(demandes)}`);
+
+  // Il reste deux visites : deux resolutions sur trois candidats, le compte monte d'autant.
+  await reglerPlafond(visites0 + 2);
+  await unJourAvant();
+  const ePartiel = await erreur(traiterReleveLinkedIn(deps, { organizationId: ORG_A }));
+  const visites1 = await compterVisitesProfilLinkedIn(ctxA, septJours());
+  check('233 il reste deux visites : exactement deux resolutions partent (sur trois candidats), le compte de la semaine atteint alors le plafond',
+    ePartiel === null && demandes.length === 2 && visites1 === visites0 + 2 && (await urnDe(112)) !== null && (await urnDe(113)) !== null && (await urnDe(114)) === null,
+    `demandes=${JSON.stringify(demandes)} visites=${visites1}`);
+
+  // Le troisieme candidat attend : seul le plafond le retient (il est toujours candidat).
+  demandes.length = 0;
+  await unJourAvant();
+  await traiterReleveLinkedIn(deps, { organizationId: ORG_A });
+  check('234 plafond de nouveau atteint : le troisieme candidat, toujours sans URN, n est pas interroge', demandes.length === 0 && (await urnDe(114)) === null, JSON.stringify(demandes));
+
+  // Fenetre glissante : des visites vieilles de huit jours ne comptent plus, la resolution reprend.
+  await q(`update linkedin_requetes set requested_at = now() - interval '8 days' where organization_id = $1 and kind = 'resolution_profil'`, [ORG_A]);
+  await unJourAvant();
+  await traiterReleveLinkedIn(deps, { organizationId: ORG_A });
+  check('235 les visites de plus de sept jours ne comptent plus : le troisieme candidat est resolu', JSON.stringify(demandes) === JSON.stringify(['plafond-c']) && (await urnDe(114)) === 'ACoAAplafc', JSON.stringify(demandes));
+  await q(`delete from organization_settings where organization_id = $1 and key = 'linkedin_visites_profil_par_semaine'`, [ORG_A]);
+  check('235b chaque resolution partie a laisse UNE trace resolution_profil (les trois du bloc, rien de plus)', (await resolutionsTracees()) === dejaResolues + 3, `${await resolutionsTracees()} vs ${dejaResolues + 3}`);
+}
+
+async function visitesDeProfil() {
+  // La contrainte d'origine, le compte et l'index du plafond de visites, sur la vraie base.
+  const ORG_V = '00000000-0000-0000-0000-0000000000f8';
+  await q(`insert into organizations (id, name, slug) values ($1, 'Org V', 'org-v')`, [ORG_V]);
+  const ctx = { ex: pool, organisationId: ORG_V };
+  const septJours = () => new Date(Date.now() - 7 * 24 * 3_600_000);
+  const visites = () => compterVisitesProfilLinkedIn(ctx, septJours());
+  const heure = () => compterRequetesLinkedIn(ctx, new Date(Date.now() - 3_600_000));
+
+  await tracerResolutionProfil(ctx);
+  const l = (await q(`select kind, source_run_id, action_queue_id, post_id from linkedin_requetes where organization_id = $1`, [ORG_V])).rows;
+  check('236 la trace d une resolution de la releve passe la contrainte d origine : kind resolution_profil, aucune origine',
+    l.length === 1 && l[0].kind === 'resolution_profil' && l[0].source_run_id === null && l[0].action_queue_id === null && l[0].post_id === null, JSON.stringify(l));
+  check('237 elle compte dans le budget de requetes de l heure ET dans le plafond de visites de profil', (await heure()) === 1 && (await visites()) === 1, `${await heure()} / ${await visites()}`);
+
+  // Une visite de COLLECTE (kind profil, une origine : une action de la file sert d'origine valide) compte aussi.
+  await q(`insert into contacts (id, organization_id, email) values ($1, $2, 'v@example.test')`, [id(990), ORG_V]);
+  await q(`insert into linkedin_action_queue (id, organization_id, contact_id, linkedin_url, kind, status) values ($1, $2, $3, 'https://www.linkedin.com/in/x', 'message', 'pending')`, [id(990), ORG_V, id(990)]);
+  await q(`insert into linkedin_requetes (organization_id, action_queue_id, kind) values ($1, $2, 'profil')`, [ORG_V, id(990)]);
+  check('238 le compte est la collecte (profil) PLUS les resolutions de la releve', (await visites()) === 2, String(await visites()));
+  // Les autres natures ne sont pas des visites.
+  await tracerRequeteMessagerie(ctx);
+  await q(`insert into linkedin_requetes (organization_id, action_queue_id) values ($1, $2)`, [ORG_V, id(990)]);
+  check('238b paire : une requete de messagerie ou d envoi n est pas une visite de profil', (await visites()) === 2 && (await heure()) === 4, `${await visites()} / ${await heure()}`);
+
+  // Sens inverse : la nature sans origine n'ouvre pas la porte a n'importe quelle trace.
+  const deux = await erreur(q(`insert into linkedin_requetes (organization_id, kind, action_queue_id, post_id) values ($1, 'resolution_profil', $2, gen_random_uuid())`, [ORG_V, id(990)]));
+  check('239 sens inverse : une resolution_profil a DEUX origines reste refusee par linkedin_requetes_une_origine',
+    deux !== null && /linkedin_requetes_une_origine/.test(String(deux.message)), String(deux?.message));
+
+  // Fenetre et isolement.
+  await q(`update linkedin_requetes set requested_at = now() - interval '8 days' where organization_id = $1 and kind = 'resolution_profil'`, [ORG_V]);
+  check('240 une resolution vieille de huit jours ne compte plus dans la semaine glissante', (await visites()) === 1, String(await visites()));
+  await q(`insert into linkedin_requetes (organization_id, kind) select $1, 'resolution_profil' from generate_series(1, 5)`, [ORG_B]);
+  check('240b isolement : les resolutions d une autre organisation ne comptent pas dans la sienne', (await visites()) === 1, String(await visites()));
+
+  // 241. Le planificateur : la requete de compte doit pouvoir s'appuyer sur un index partiel. Meme reserve que 230 (table minuscule,
+  // `enable_seqscan = off` : l'index est UTILISABLE, pas forcement choisi a volume reel). Le temoin montre POURQUOI l'index a ete ajoute :
+  // sans lui, l'ancien index `linkedin_requetes_profil_idx` (kind = 'profil' seul) ne sert pas cette requete.
+  const sqlCompte = `explain select count(*)::int as n from linkedin_requetes where organization_id = $1 and kind in ('profil', 'resolution_profil') and requested_at >= $2`;
+  const plan = await pool.connect();
+  try {
+    await plan.query('begin');
+    await plan.query('set local enable_seqscan = off');
+    const avec = (await plan.query(sqlCompte, [ORG_V, septJours()])).rows.map((r) => r['QUERY PLAN']).join('\n');
+    check('241 le plan du compte de visites utilise linkedin_requetes_visites_idx (enable_seqscan = off, table minuscule)', avec.includes('linkedin_requetes_visites_idx'), avec);
+    await plan.query('drop index if exists linkedin_requetes_visites_idx');
+    const sans = (await plan.query(sqlCompte, [ORG_V, septJours()])).rows.map((r) => r['QUERY PLAN']).join('\n');
+    await plan.query('rollback');
+    check('241b temoin : sans cet index, l ancien linkedin_requetes_profil_idx (kind = profil seul) ne sert pas la requete', !sans.includes('linkedin_requetes_profil_idx'), sans);
+  } finally {
+    await plan.query('rollback').catch(() => undefined);
+    plan.release();
+  }
 }
 
 // Tâche 6 : le message sortant entre dans le fil. Le SQL est celui de production (`assurerFil` + insertion).
@@ -1927,7 +2038,7 @@ async function migrationRejouable() {
 
 try {
   await fixtures();
-  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif, parcoursComplet, releveHorsJoursEtHoraires, filetDesNotifications, receptionEtOppositions, nePlusContacterAdresseSaisie, gardesDInscription, migrationRejouable);
+  await jouer(rattachementParUrn, rattachementParUrl, prioriteEtOrganisation, etat, trace, passageComplet, resolutionDesUrn, visitesDeProfil, messageSortant, exclusionSurReponse, exclusionEtFile, reponseManuelle, reclassementTardif, parcoursComplet, releveHorsJoursEtHoraires, filetDesNotifications, receptionEtOppositions, nePlusContacterAdresseSaisie, gardesDInscription, migrationRejouable);
 } catch (e) {
   console.error('ERREUR', e);
   failures += 1;

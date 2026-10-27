@@ -2,6 +2,8 @@
 // production dont le SQL est exécuté par le harnais.
 export { notifierReponseEntrante, balayerReponsesNonNotifiees, enqueueReleveLinkedIn, ecrireEtat, lireEtat, rattacher, traiterReleveLinkedIn, contactsSansUrn, REQUETES_PAR_RELEVE } from '../../apps/worker/src/handlers/releve-linkedin.js';
 export { compterRequetesLinkedIn, lirePlafondLinkedIn, tracerRequeteMessagerie } from '@jay-reach/core';
+// Plafond de visites de profil : la résolution d'URN de la relève y compte.
+export { compterVisitesProfilLinkedIn, tracerResolutionProfil } from '@jay-reach/core';
 export { urlConversations } from '../../apps/worker/src/linkedin/messagerie.js';
 export { enregistrerMessageSortant, toucherDernierMessage } from '@jay-reach/core';
 // Tâche 7 : l'exclusion automatique sur une réponse humaine, et la garde d'entrée qui la fait tenir.
