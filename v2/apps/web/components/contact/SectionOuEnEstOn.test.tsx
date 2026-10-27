@@ -31,6 +31,7 @@ function sequence(overrides: Partial<FicheSequence> = {}): FicheSequence {
     boite: null,
     pause: null,
     prochainMessageLe: null,
+    attenteAcceptation: null,
     ...overrides,
   };
 }

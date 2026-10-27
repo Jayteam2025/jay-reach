@@ -19,6 +19,7 @@ import { normaliserUrlProfil } from './sources.js';
 import { adressesLinkedinAOpposer, annulerEnvoisEnFile, poserExclusion } from '../inbox/exclusion-sur-reponse.js';
 import { jourCourantDansFuseau, lireConsommationDuJour, lireReglages } from './plafonds.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { lireAttentesAcceptation, type AttenteAcceptation } from '../linkedin/file.js';
 import {
   CASE_STATUT_DERIVE,
   etapeAffichee,
@@ -120,6 +121,13 @@ export interface FicheSequence {
    * message » à annoncer, `pause` porte déjà sa propre échéance (`repriseLe`).
    */
   readonly prochainMessageLe: string | null;
+  /**
+   * Le message LinkedIn de cette inscription qui attend l'acceptation de l'invitation (#183), avec sa
+   * date limite (`limiteLe`, celle du saut) ; `null` si rien n'attend. Dans ce cas `prochainMessageLe`
+   * est nul (l'échéance de l'étape suivante n'est posée qu'à l'envoi réel ou au saut) : c'est ce champ,
+   * et non l'absence de date, qui dit à l'écran POURQUOI rien n'est prévu.
+   */
+  readonly attenteAcceptation: AttenteAcceptation | null;
 }
 
 /**
@@ -372,6 +380,7 @@ export async function lireFiche(ctx: Contexte, entree: unknown): Promise<Fiche> 
           ? { motif: motifPauseDe(enrollmentStatus, stopReason), repriseLe: resumeAt, inscriptionId: enrollmentId! }
           : null,
       prochainMessageLe: statut === 'en_sequence' ? nextActionAt : null,
+      attenteAcceptation: (await lireAttentesAcceptation(ctx.ex, ctx.organisationId, { inscriptionId: enrollmentId }))[0] ?? null,
     };
   }
 

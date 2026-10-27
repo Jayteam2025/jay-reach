@@ -9,6 +9,9 @@ import {
   enregistrerResultat,
   lireVolumeEnvoiLinkedIn,
   reglerMessagePasEncoreRelation,
+  echeanceAttenteAcceptation,
+  lireAttentesAcceptation,
+  SQL_INVITATION_ENVOYEE_LE,
   type TypeActionLinkedIn,
 } from './file.js';
 
@@ -436,5 +439,75 @@ describe('enregistrerResultat', () => {
     expect(journal).toContain('rollback');
     expect(journal).not.toContain('commit');
     // La preuve que la ligne n'est pas `sent` est dans pg-verify (section 17) : un faux ne l'établit pas.
+  });
+});
+
+describe('echeanceAttenteAcceptation : la formule unique de la date limite', () => {
+  const REPLI = new Date('2026-09-15T10:00:00.000Z');
+
+  it('compte depuis l envoi de l invitation quand il existe', () => {
+    const r = echeanceAttenteAcceptation('2026-09-10T08:00:00.000Z', '2026-09-12T08:00:00.000Z', 7, REPLI);
+    expect(r.depuis.toISOString()).toBe('2026-09-10T08:00:00.000Z');
+    expect(r.echeance.toISOString()).toBe('2026-09-17T08:00:00.000Z');
+  });
+
+  it('sinon depuis l arrivee de l etape, sinon depuis le repli', () => {
+    expect(echeanceAttenteAcceptation(null, new Date('2026-09-12T08:00:00.000Z'), 3, REPLI).echeance.toISOString()).toBe('2026-09-15T08:00:00.000Z');
+    expect(echeanceAttenteAcceptation(null, 'illisible', 1, REPLI).echeance.toISOString()).toBe('2026-09-16T10:00:00.000Z');
+  });
+});
+
+describe('lireAttentesAcceptation', () => {
+  function faux(rows: unknown[], jours = 7) {
+    const appels: { sql: string; values: unknown[] }[] = [];
+    const ex: Executeur = {
+      async query(sql: string, values: unknown[] = []) {
+        appels.push({ sql, values });
+        if (/from organization_settings/i.test(sql)) return { rows: [{ value: jours }], rowCount: 1 } as never;
+        if (/jr:linkedin_attentes_acceptation/.test(sql)) return { rows, rowCount: rows.length } as never;
+        return { rows: [], rowCount: 0 } as never;
+      },
+    };
+    return { ex, appels };
+  }
+  const ligne = {
+    queue_id: 'q-1', action_id: 'a-1', inscription_id: 'e-1', campagne_id: 'camp-1', campagne_nom: 'Directeurs',
+    contact_id: 'c-1', first_name: 'Ada', last_name: 'Lovelace', etape: 1,
+    arrivee_le: '2026-09-12T08:00:00.000Z', invitation_le: '2026-09-10T08:00:00.000Z', prochaine_verification_le: '2026-09-16T00:00:00.000Z',
+  };
+
+  it('rend la date limite par la MEME formule que le saut, avec les noms attendus', async () => {
+    const { ex } = faux([ligne]);
+    const [a] = await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(a).toEqual({
+      actionId: 'a-1', queueId: 'q-1', inscriptionId: 'e-1', campagneId: 'camp-1', campagneNom: 'Directeurs',
+      contactId: 'c-1', contactNom: 'Ada Lovelace', etape: 2,
+      invitationEnvoyeeLe: '2026-09-10T08:00:00.000Z', depuisLe: '2026-09-10T08:00:00.000Z', jours: 7,
+      limiteLe: '2026-09-17T08:00:00.000Z', prochaineVerificationLe: '2026-09-16T00:00:00.000Z',
+    });
+  });
+
+  it('sans invitation, l attente se compte depuis l arrivee de l etape', async () => {
+    const { ex } = faux([{ ...ligne, invitation_le: null }], 3);
+    const [a] = await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(a?.invitationEnvoyeeLe).toBeNull();
+    expect(a?.depuisLe).toBe('2026-09-12T08:00:00.000Z');
+    expect(a?.limiteLe).toBe('2026-09-15T08:00:00.000Z');
+  });
+
+  it('la requete est filtree par organisation, et par inscription ou campagne si demande', async () => {
+    const { ex, appels } = faux([]);
+    await lireAttentesAcceptation(ex, ORG, { inscriptionId: 'e-1', campagneId: 'camp-1' }, NOW);
+    const lecture = appels.find((x) => /jr:linkedin_attentes_acceptation/.test(x.sql));
+    expect(lecture?.sql).toMatch(/q\.organization_id = \$1/);
+    expect(lecture?.sql).toMatch(/e\.id = \$2/);
+    expect(lecture?.sql).toMatch(/e\.campaign_id = \$3/);
+    expect(lecture?.values).toEqual([ORG, 'e-1', 'camp-1']);
+  });
+
+  it('le saut et l affichage partagent la meme lecture de la date d invitation', async () => {
+    const { ex, appels } = faux([]);
+    await lireAttentesAcceptation(ex, ORG, {}, NOW);
+    expect(appels.find((x) => /jr:linkedin_attentes_acceptation/.test(x.sql))?.sql).toContain(SQL_INVITATION_ENVOYEE_LE);
   });
 });

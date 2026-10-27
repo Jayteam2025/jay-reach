@@ -15,6 +15,7 @@ import { exiger, valider, ErreurEntree, ErreurIntrouvable } from './contexte.js'
 import { ecrireEvenement, lireCodeEvenement, type ActionJournal, type CodeEvenement, type ParametresEvenement } from '../journal.js';
 import { dansUneTransaction } from '../transaction.js';
 import { comparerInstantsDesc } from '../temps.js';
+import { lireAttentesAcceptation, type AttenteAcceptation } from '../linkedin/file.js';
 import { lireConsommationDuJour, lirePlafondEnvois, lireReglages } from './plafonds.js';
 import { manquesTransportEmail } from './transport-email.js';
 import { lireCanauxEtapes, sqlCanauxEtapes, sqlRangEtape, type CanalEtapeLu } from './etapes-sql.js';
@@ -1633,11 +1634,18 @@ export async function listerFileDuJour(
   plafondDuJour: number | null;
   /** Revue F5, point 10 — voir `VueDEnsemble.projectionFileDuJour` (même calcul, même sens). */
   projection: { possiblesAujourdhui: number; reportesProchainCreneau: number } | null;
+  /**
+   * Messages LinkedIn de séquence qui attendent l'acceptation d'une invitation (#183), QUEL QUE SOIT
+   * le jour de leur `scheduled_for` d'origine et quel que soit `jour` : c'est un état courant, pas un
+   * envoi daté. Absents de `prevus` et de `partis` (l'action garde sa date d'origine, parfois ancienne).
+   * Chacun porte sa date limite (`limiteLe`), celle du saut.
+   */
+  enAttenteAcceptation: AttenteAcceptation[];
 }> {
   exiger(ctx, 'viewer');
   const { campagneId, jour } = valider(schemaFileDuJour, entree);
 
-  const [{ envois, projection }, plafondDuJour] = await Promise.all([
+  const [{ envois, projection }, plafondDuJour, enAttenteAcceptation] = await Promise.all([
     lireEnvoisDuJour(ctx, { campagneId, jour }),
     (async () => {
       if (!campagneId) return lirePlafondEnvois(ctx);
@@ -1648,6 +1656,7 @@ export async function listerFileDuJour(
       if (capRes.rowCount === 0) throw new ErreurIntrouvable('Campagne');
       return capRes.rows[0]!.daily_cap ?? (await lirePlafondEnvois(ctx));
     })(),
+    lireAttentesAcceptation(ctx.ex, ctx.organisationId, { campagneId }),
   ]);
 
   return {
@@ -1658,6 +1667,7 @@ export async function listerFileDuJour(
     partis: envois.filter((e) => e.livre),
     plafondDuJour,
     projection,
+    enAttenteAcceptation,
   };
 }
 

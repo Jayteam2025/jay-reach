@@ -13,6 +13,7 @@ import type { Executeur } from '../executeur.js';
 import { dansUneTransaction } from '../transaction.js';
 import { cloreDepartReel } from '../sequencer/echeance.js';
 import { versInstant } from '../temps.js';
+import { sqlRangEtape } from '../fonctions/etapes-sql.js';
 import { compterRequetesLinkedIn, plafondDuJour, type ClePlafond } from '../fonctions/plafonds.js';
 import { balayerReponsesSansSort, existeReponseSansSort } from './reponse-manuelle.js';
 import { HEURES_ENVOI_LINKEDIN_PAR_DEFAUT } from './reglages-envoi.js';
@@ -697,6 +698,131 @@ export type SortieMessagePasEncoreRelation =
   | { readonly issue: 'deja_reglee' };
 
 /**
+ * Date de l'invitation envoyée à CETTE personne (la plus récente), vue depuis une ligne `q` de
+ * `linkedin_action_queue`. UNE seule définition : le saut (`reglerMessagePasEncoreRelation`) et
+ * l'affichage de l'attente (`lireAttentesAcceptation`) la lisent, sinon l'écran annoncerait une date
+ * que le moteur ne juge pas.
+ */
+export const SQL_INVITATION_ENVOYEE_LE = `(select max(i.sent_at) from linkedin_action_queue i
+                where i.organization_id = q.organization_id and i.contact_id = q.contact_id
+                  and i.kind = 'invite' and i.status = 'sent')`;
+
+/**
+ * D'où se compte l'attente, et quand elle prend fin : `depuis` + `jours` jours. `depuis` est l'envoi de
+ * l'invitation à cette personne, sinon l'arrivée de l'étape (`created_at` de la ligne de file), sinon
+ * `repli` (une ligne sans date lisible ne doit pas rendre l'échéance invalide). Seule définition de la
+ * formule : le saut et l'affichage l'appellent tous les deux.
+ */
+export function echeanceAttenteAcceptation(
+  invitationLe: string | Date | null,
+  arriveeLe: string | Date,
+  jours: number,
+  repli: Date,
+): { depuis: Date; echeance: Date } {
+  const depuis = new Date(versInstant(invitationLe ?? arriveeLe) ?? repli.getTime());
+  return { depuis, echeance: new Date(depuis.getTime() + jours * 24 * 3_600_000) };
+}
+
+/** Un message LinkedIn de séquence qui attend que l'invitation soit acceptée (ligne `pending / attente_acceptation`). */
+export interface AttenteAcceptation {
+  readonly actionId: string;
+  readonly queueId: string;
+  readonly inscriptionId: string;
+  readonly campagneId: string;
+  readonly campagneNom: string;
+  readonly contactId: string | null;
+  readonly contactNom: string;
+  /** Étape du message, 1-based (rang, jamais `position`) ; `null` si l'étape a disparu. */
+  readonly etape: number | null;
+  /** Envoi de l'invitation à cette personne ; `null` si elle n'a jamais été invitée (l'attente se compte alors depuis l'arrivée de l'étape). */
+  readonly invitationEnvoyeeLe: string | null;
+  /** Point de départ du délai : `invitationEnvoyeeLe`, sinon l'arrivée de l'étape. */
+  readonly depuisLe: string;
+  /** Réglage `linkedin_attente_acceptation_jours` appliqué. */
+  readonly jours: number;
+  /** Date limite : passée celle-ci, la prochaine vérification SAUTE le message (`reglerMessagePasEncoreRelation`). */
+  readonly limiteLe: string;
+  /** Prochaine vérification réelle prévue (`scheduled_for` de la ligne), pas la date limite. */
+  readonly prochaineVerificationLe: string;
+}
+
+/**
+ * Les messages LinkedIn de séquence qui attendent l'acceptation d'une invitation, QUEL QUE SOIT leur
+ * `scheduled_for` d'origine (celui de l'action peut dater de plusieurs jours : la File du jour, qui lit
+ * le jour de l'action, ne les voit plus). Filtrés par organisation, et au choix par inscription
+ * (fiche d'un contact) ou par campagne (File du jour). Une inscription arrêtée ou terminée n'attend
+ * plus rien, même si une ligne traîne. Plus anciens d'abord.
+ */
+export async function lireAttentesAcceptation(
+  ex: Executeur,
+  organisationId: string,
+  filtre: { inscriptionId?: string; campagneId?: string } = {},
+  maintenant: Date = new Date(),
+): Promise<AttenteAcceptation[]> {
+  const jours = await plafondDuJour(ex, organisationId, 'linkedin_attente_acceptation_jours');
+  const valeurs: unknown[] = [organisationId];
+  let filtres = '';
+  if (filtre.inscriptionId) {
+    valeurs.push(filtre.inscriptionId);
+    filtres += ` and e.id = $${valeurs.length}`;
+  }
+  if (filtre.campagneId) {
+    valeurs.push(filtre.campagneId);
+    filtres += ` and e.campaign_id = $${valeurs.length}`;
+  }
+  const res = await ex.query<{
+    queue_id: string;
+    action_id: string;
+    inscription_id: string;
+    campagne_id: string;
+    campagne_nom: string;
+    contact_id: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    etape: number | null;
+    arrivee_le: string | Date;
+    invitation_le: string | Date | null;
+    prochaine_verification_le: string | Date;
+  }>(
+    `select q.id as queue_id, q.action_id, e.id as inscription_id, camp.id as campagne_id, camp.name as campagne_nom,
+            e.contact_id, c.first_name, c.last_name, ${sqlRangEtape('st')} as etape,
+            q.created_at as arrivee_le, ${SQL_INVITATION_ENVOYEE_LE} as invitation_le,
+            q.scheduled_for as prochaine_verification_le /* jr:linkedin_attentes_acceptation */
+       from linkedin_action_queue q
+       join actions a on a.id = q.action_id and a.organization_id = q.organization_id
+       join enrollments e on e.id = a.enrollment_id and e.organization_id = q.organization_id
+       join campaigns camp on camp.id = e.campaign_id and camp.organization_id = q.organization_id
+       left join contacts c on c.id = e.contact_id and c.organization_id = q.organization_id
+       left join sequence_steps st on st.id = a.step_id
+      where q.organization_id = $1 and q.status = 'pending' and q.error_code = '${CODE_ATTENTE_ACCEPTATION}'
+        and q.kind = 'message' and q.origine = 'sequence'
+        and a.channel = 'linkedin_message' and a.status in ('scheduled', 'approved')
+        and e.status in ('active', 'paused', 'paused_absence')${filtres}
+      order by q.created_at asc, q.id asc`,
+    valeurs,
+  );
+  return res.rows.map((r) => {
+    const { depuis, echeance } = echeanceAttenteAcceptation(r.invitation_le, r.arrivee_le, jours, maintenant);
+    const invitation = versInstant(r.invitation_le);
+    return {
+      actionId: r.action_id,
+      queueId: r.queue_id,
+      inscriptionId: r.inscription_id,
+      campagneId: r.campagne_id,
+      campagneNom: r.campagne_nom,
+      contactId: r.contact_id,
+      contactNom: `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() || '—',
+      etape: r.etape !== null ? r.etape + 1 : null,
+      invitationEnvoyeeLe: invitation === null ? null : new Date(invitation).toISOString(),
+      depuisLe: depuis.toISOString(),
+      jours,
+      limiteLe: echeance.toISOString(),
+      prochaineVerificationLe: new Date(versInstant(r.prochaine_verification_le) ?? maintenant.getTime()).toISOString(),
+    };
+  });
+}
+
+/**
  * LinkedIn a refusé un message de séquence (`cannot_message`) : la personne n'est, en règle générale,
  * pas encore une relation de premier degré. Ce n'est pas un échec de la séquence, c'est une attente.
  * Rien n'est parti (le refus est le fait de LinkedIn), la réessayer plus tard ne risque pas de doublon.
@@ -730,9 +856,7 @@ export async function reglerMessagePasEncoreRelation(
       invitation_le: string | Date | null;
     }>(
       `select q.action_id, q.contact_id, q.created_at as arrivee_le,
-              (select max(i.sent_at) from linkedin_action_queue i
-                where i.organization_id = q.organization_id and i.contact_id = q.contact_id
-                  and i.kind = 'invite' and i.status = 'sent') as invitation_le /* jr:linkedin_attente_lecture */
+              ${SQL_INVITATION_ENVOYEE_LE} as invitation_le /* jr:linkedin_attente_lecture */
          from linkedin_action_queue q
          join actions a on a.id = q.action_id and a.organization_id = q.organization_id
         where q.id = $1 and q.organization_id = $2 and q.status = 'processing'
@@ -753,10 +877,9 @@ export async function reglerMessagePasEncoreRelation(
       return { issue: (reglee.rowCount ?? 0) > 0 ? 'deja_reglee' : 'sans_sequence' };
     }
 
-    const depuis = new Date(versInstant(ligne.invitation_le ?? ligne.arrivee_le) ?? entree.maintenant.getTime());
-    const echeance = depuis.getTime() + jours * 24 * 3_600_000;
+    const { echeance } = echeanceAttenteAcceptation(ligne.invitation_le, ligne.arrivee_le, jours, entree.maintenant);
 
-    if (entree.maintenant.getTime() < echeance) {
+    if (entree.maintenant.getTime() < echeance.getTime()) {
       await tx.query(
         `update linkedin_action_queue /* jr:linkedin_attente_replanifier */
             set status = 'pending', scheduled_for = $3, attempts = greatest(attempts - 1, 0),

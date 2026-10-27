@@ -34,6 +34,12 @@
 //  Vague 2 (#180), chacune seule :
 //  17. sequence.ts, `reprendreAbsencesEchues` : neutraliser la garde `etapePrecedenteAttendSonDepart` (`&& false`) : 12a, 12c, 12e, 12f, 12h, 12j.
 //  18. sequence.ts, `etapePrecedenteAttendSonDepart` : retirer `approved` de la liste des statuts : 12j.
+//  Vague 2 (#183), chacune seule :
+//  19. file.ts, `lireAttentesAcceptation` : `SQL_INVITATION_ENVOYEE_LE` remplacé par `null` (compter depuis l'arrivée) : 13a, 13c, 13d, 13e, 13f.
+//  20. file.ts, `lireAttentesAcceptation` : retirer le filtre `q.organization_id = $1` : 13i, 13k (13j reste vert : la File du jour filtre aussi par campagne).
+//  21. file.ts, `lireAttentesAcceptation` : retirer `e.status in (...)` : 13k.
+//  22. contacts.ts, `lireFiche` : `attenteAcceptation` forcé à `null` : 13a, 13c (et l'exception qui suit). campagnes.ts,
+//      `listerFileDuJour` : `enAttenteAcceptation` forcé à `[]` : 13c, 13j.
 import pg from 'pg';
 import {
   tickDueEnrollments,
@@ -45,6 +51,8 @@ import {
   annulerEnvoisEnFile,
   lireFiche,
   reglerMessagePasEncoreRelation,
+  lireAttentesAcceptation,
+  listerFileDuJour,
   ecarterDuneCampagne,
   traiterEvenementEmail,
   recordInboundReply,
@@ -642,7 +650,74 @@ async function absencePendantLAttente() {
     (await inscriptionDe(c.inscription)).status === 'active' && (await inscriptionDe(c.inscription)).next_action_at === null, JSON.stringify(await inscriptionDe(c.inscription)));
 }
 
-await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente);
+async function attenteVisible() {
+  console.log('\n13. un message en attente est VISIBLE : File du jour et fiche, avec la date limite du saut (#183)');
+  const m = await monde(); // 7 jours
+  const admin = { ...m.ctx, role: 'admin' };
+  const p = await personne(m, { invitationIlYa: 2, prenom: 'Visible' });
+  await essayerEtRefuser(m);
+  // L'action garde son `scheduled_for` d'origine : on le recule de cinq jours, la File du jour (qui lit le jour de
+  // l'action) ne peut plus la voir dans `prevus`.
+  await q(`update actions set scheduled_for = now() - interval '5 days' where enrollment_id = $1 and status = 'scheduled' and step_id in (select id from sequence_steps where channel = 'linkedin_message')`, [p.inscription]);
+  const invitation = (await q(`select max(sent_at) as t from linkedin_action_queue where organization_id = $1 and contact_id = $2 and kind = 'invite' and status = 'sent'`, [m.org, p.contact])).rows[0].t;
+  const limiteAttendue = new Date(new Date(invitation).getTime() + 7 * JOUR_MS).toISOString();
+
+  const fiche = await lireFiche(admin, { contactId: p.contact, campagneId: m.campagne });
+  const att = fiche.sequence?.attenteAcceptation ?? null;
+  check('13a. la fiche porte l\'attente : inscription, étape, date de l\'invitation et date limite = invitation + 7 jours',
+    att !== null && att.inscriptionId === p.inscription && att.etape === 2 && att.jours === 7
+      && att.invitationEnvoyeeLe === new Date(invitation).toISOString() && att.limiteLe === limiteAttendue, JSON.stringify(att));
+  check('13b. la fiche : aucune échéance de message prévue (c\'est l\'attente qui explique pourquoi)', fiche.sequence?.prochainMessageLe === null);
+
+  const jour = await listerFileDuJour(admin, { campagneId: m.campagne });
+  const dansLaFile = jour.enAttenteAcceptation.find((x) => x.actionId === att?.actionId);
+  check('13c. la File du jour liste le message en attente alors que son scheduled_for d\'origine date de cinq jours',
+    dansLaFile !== undefined && dansLaFile.limiteLe === limiteAttendue && dansLaFile.contactNom === 'Visible Test'
+      && !jour.prevus.some((e) => e.id === att?.actionId) && !jour.partis.some((e) => e.id === att?.actionId), JSON.stringify({ dansLaFile, prevus: jour.prevus.length }));
+
+  // La date affichée EST la frontière du saut : une seconde avant, il attend ; à la date, il saute.
+  const jugement = async (instant) => {
+    await q(`update linkedin_action_queue set status = 'processing', processing_started_at = now() where id = $1`, [p.queue]);
+    return reglerMessagePasEncoreRelation(pool, { organizationId: m.org, queueId: p.queue, maintenant: instant, prochaineVerification: new Date(instant.getTime() + JOUR_MS) });
+  };
+  const limite = new Date(att.limiteLe);
+  const avant = await jugement(new Date(limite.getTime() - 1000));
+  check('13d. une seconde avant la date limite affichée, le message attend encore', avant.issue === 'en_attente', JSON.stringify(avant));
+  check('13e. toujours visible juste avant la limite', (await lireAttentesAcceptation(pool, m.org, { inscriptionId: p.inscription })).length === 1);
+  const apres = await jugement(limite);
+  check('13f. à la date limite affichée, il est sauté : la même formule dans les deux lectures', apres.issue === 'saute', JSON.stringify(apres));
+  const ficheApres = await lireFiche(admin, { contactId: p.contact, campagneId: m.campagne });
+  const jourApres = await listerFileDuJour(admin, { campagneId: m.campagne });
+  check('13g. une fois sauté, ni la fiche ni la File du jour ne le montrent plus',
+    ficheApres.sequence?.attenteAcceptation === null && !jourApres.enAttenteAcceptation.some((x) => x.actionId === att.actionId), JSON.stringify(ficheApres.sequence?.attenteAcceptation));
+
+  // Sans invitation : le délai se compte depuis l'arrivée de l'étape.
+  const m2 = await monde({ etapes: ['linkedin_message', 'email'] });
+  const q2 = await personne(m2, { prenom: 'SansInvitation' });
+  await essayerEtRefuser(m2);
+  const [sans] = await lireAttentesAcceptation(pool, m2.org, { inscriptionId: q2.inscription });
+  const arrivee = (await q(`select created_at from linkedin_action_queue where id = $1`, [q2.queue])).rows[0].created_at;
+  check('13h. sans invitation envoyée : invitationEnvoyeeLe nul, l\'attente se compte depuis l\'arrivée de l\'étape',
+    sans !== undefined && sans.invitationEnvoyeeLe === null && sans.depuisLe === new Date(arrivee).toISOString()
+      && sans.limiteLe === new Date(new Date(arrivee).getTime() + 7 * JOUR_MS).toISOString() && sans.etape === 1, JSON.stringify(sans));
+
+  // Cloisonnement : une autre organisation (m2) ne voit pas celle de m, ni l'inverse, même sans filtre de campagne.
+  const p3 = await personne(m, { invitationIlYa: 1, prenom: 'AutreCampagne' });
+  await essayerEtRefuser(m);
+  const parOrg1 = await lireAttentesAcceptation(pool, m.org);
+  const parOrg2 = await lireAttentesAcceptation(pool, m2.org);
+  check('13i. chaque organisation ne voit que ses propres attentes',
+    parOrg1.length === 1 && parOrg1[0].contactId === p3.contact && parOrg2.length === 1 && parOrg2[0].contactId === q2.contact,
+    JSON.stringify({ o1: parOrg1.map((x) => x.contactNom), o2: parOrg2.map((x) => x.contactNom) }));
+  const autreFile = await listerFileDuJour({ ...m2.ctx, role: 'admin' }, { campagneId: m2.campagne });
+  check('13j. la File du jour de m2 ne liste que la sienne', autreFile.enAttenteAcceptation.length === 1 && autreFile.enAttenteAcceptation[0].contactId === q2.contact);
+
+  // Une inscription arrêtée n'attend plus rien, même si une ligne traînait.
+  await q(`update enrollments set status = 'stopped', stop_reason = 'operator_skip' where id = $1`, [p3.inscription]);
+  check('13k. une inscription arrêtée n\'est plus listée', (await lireAttentesAcceptation(pool, m.org)).length === 0);
+}
+
+await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente, attenteVisible);
 
 await pool.end();
 console.log(failures === 0 ? '\nTOUS LES CONTRÔLES PASSENT' : `\n${failures} CONTRÔLE(S) EN ÉCHEC`);
