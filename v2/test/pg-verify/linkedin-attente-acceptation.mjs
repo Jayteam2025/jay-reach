@@ -19,6 +19,7 @@
 //   9. file.ts, `prochainesCandidates` : retirer la clé de tri des lignes en attente : 2b.
 //  10. file.ts, lecture de `reglerMessagePasEncoreRelation` : (a) retirer `origine = 'sequence'` : 9a ; (b) retirer le statut
 //      de l'action : 9b.
+//  12. file.ts, `prochainesCandidates`, tri EXTÉRIEUR : retirer `en_attente asc` : 2c (invitation neuve devant message en attente).
 //  11. file.ts : durée en dur (7) au lieu du réglage : 7a, 7b, 7c.
 import pg from 'pg';
 import {
@@ -204,6 +205,19 @@ async function rythmeEtOrdre() {
   const plusTard = await reclamerProchaineAction(pool, m.org, dans(25 * 60_000));
   check('2b. la ligne NEUVE passe avant la ligne en attente, même quand celle-ci est plus ancienne',
     plusTard.action?.id === b.queue, `réclamée=${plusTard.action?.id === a.queue ? 'a (en attente)' : plusTard.action?.id === b.queue ? 'b (neuve)' : plusTard.motif}`);
+
+  // Entre TYPES : une invitation neuve passe avant un message qui attend l'acceptation, même plus ancien.
+  const inviteNeuve = (await q(`insert into contacts (organization_id, linkedin_url) values ($1, 'https://www.linkedin.com/in/invitation-neuve') returning id`, [m.org])).rows[0].id;
+  const fileInvite = (await q(
+    `insert into linkedin_action_queue (organization_id, contact_id, linkedin_url, kind, method, message_body)
+     values ($1, $2, 'https://www.linkedin.com/in/invitation-neuve', 'invite', 'serveur', null) returning id`,
+    [m.org, inviteNeuve],
+  )).rows[0].id;
+  await q(`update linkedin_action_queue set status = 'cancelled' where id = $1`, [b.queue]); // on isole : message en attente contre invitation
+  await q(`update linkedin_action_queue set scheduled_for = now() - interval '3 days' where id = $1`, [a.queue]);
+  const entreTypes = await reclamerProchaineAction(pool, m.org, dans(50 * 60_000));
+  check('2c. une invitation NEUVE passe avant un message en attente d\'un AUTRE type, même plus ancien',
+    entreTypes.action?.id === fileInvite, `réclamée=${entreTypes.action?.id === a.queue ? 'message en attente' : entreTypes.action?.id === fileInvite ? 'invitation neuve' : entreTypes.motif}`);
 }
 
 // ---------------------------------------------------------------- 3. l'acceptation

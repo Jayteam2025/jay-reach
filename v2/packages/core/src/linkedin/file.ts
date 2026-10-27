@@ -325,7 +325,8 @@ async function prochainesCandidates(
 ): Promise<CandidateFile[]> {
   const candidates = await ex.query<CandidateFile>(
     `select id, kind, origine from (
-       select distinct on (q.kind) q.id, q.kind, q.origine, q.scheduled_for /* jr:linkedin_candidates_par_type */
+       select distinct on (q.kind) q.id, q.kind, q.origine, q.scheduled_for,
+              coalesce(q.error_code = '${CODE_ATTENTE_ACCEPTATION}', false) as en_attente /* jr:linkedin_candidates_par_type */
          from linkedin_action_queue q
          left join actions a on a.id = q.action_id
          left join enrollments e on e.id = a.enrollment_id
@@ -339,7 +340,8 @@ async function prochainesCandidates(
         order by q.kind, (q.origine = 'reponse') desc,
                  coalesce(q.error_code = '${CODE_ATTENTE_ACCEPTATION}', false) asc, q.scheduled_for asc, q.id asc
      ) par_type
-     order by (origine = 'reponse') desc, scheduled_for asc, id asc`,
+     -- Même règle ENTRE types : une invitation neuve passe avant un message qui attend l'acceptation.
+     order by (origine = 'reponse') desc, en_attente asc, scheduled_for asc, id asc`,
     [organisationId, now.toISOString()],
   );
   return candidates.rows;
