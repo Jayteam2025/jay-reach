@@ -1542,6 +1542,13 @@ export async function importerCsv(ctx: Contexte, entree: unknown): Promise<Resul
       where not exists (
          select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
        )
+         -- UNE inscription par campagne, quel qu'en soit le statut : l'index partiel et son on conflict
+         -- ne voient que les inscriptions vivantes, et réimporter ce fichier (ou réajouter cette liste)
+         -- réinscrivait une personne dont la séquence était terminée (completed, stopped, replied,
+         -- bounced). Même garde que enrollContact du worker.
+         and not exists (
+           select 1 from enrollments where contact_id = $3 and campaign_id = $2
+         )
        on conflict (contact_id) where status in ('active','paused','paused_absence') do nothing`,
       [ctx.organisationId, campagneId, contactId, listId],
     );
@@ -1736,6 +1743,13 @@ export async function ajouterDepuisListe(
       where not exists (
          select 1 from contacts where id = $3 and organization_id = $1 and status = 'do_not_contact'
        )
+         -- UNE inscription par campagne, quel qu'en soit le statut : l'index partiel et son on conflict
+         -- ne voient que les inscriptions vivantes, et réimporter ce fichier (ou réajouter cette liste)
+         -- réinscrivait une personne dont la séquence était terminée (completed, stopped, replied,
+         -- bounced). Même garde que enrollContact du worker.
+         and not exists (
+           select 1 from enrollments where contact_id = $3 and campaign_id = $2
+         )
        on conflict (contact_id) where status in ('active','paused','paused_absence') do nothing`,
       [ctx.organisationId, campagneId, c.id, listId],
     );

@@ -804,6 +804,59 @@ describe('ajouterDepuisListe', () => {
   });
 });
 
+// Une personne n'a qu'UNE inscription par campagne, quel qu'en soit le statut (tâche 8 du lot « prêt pour
+// Alex »). L'index partiel et son `on conflict` ne voient que les inscriptions VIVANTES : réimporter un
+// fichier ou réajouter une liste réinscrivait une personne dont la séquence était terminée.
+describe('une inscription par campagne, quel qu’en soit le statut', () => {
+  /** La garde `not exists (select 1 from enrollments ...)` d'une insertion, extraite pour être lue. */
+  function gardeDInscription(sql: string): string {
+    const garde = /not exists \(\s*select 1 from enrollments\b[^)]*\)/i.exec(sql);
+    expect(garde, 'une garde `not exists (... from enrollments ...)` dans l’insertion').not.toBeNull();
+    return garde![0];
+  }
+
+  it('importerCsv n’inscrit pas un contact qui a déjà une inscription à la campagne, sans filtre de statut', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:sources_csv_liste': [{ id: 'list-1' }],
+      'jr:sources_csv_contact_email': [{ id: 'contact-1', inserted: false }],
+    });
+    await importerCsv(ctx, {
+      campagneId: CAMPAGNE_ID,
+      nom: 'Liste',
+      fileName: 'a.csv',
+      mapping: { Email: 'email' },
+      parsed: { headers: ['Email'], rows: [{ Email: 'camille@exemple.fr' }] },
+    });
+    const insertion = appels.find(([sql]) => /jr:sources_csv_inscrire/.test(sql));
+    expect(insertion).toBeDefined();
+    const garde = gardeDInscription(insertion![0]);
+    expect(garde).toMatch(/contact_id = \$3/);
+    expect(garde).toMatch(/campaign_id = \$2/);
+    expect(garde).not.toMatch(/status/i);
+  });
+
+  it('ajouterDepuisListe n’inscrit pas un contact qui a déjà une inscription à la campagne, sans filtre de statut', async () => {
+    const { ctx, appels } = faux({
+      'jr:sources_campagne': [{ id: 'camp-1' }],
+      'jr:sources_liste_verifier': [{ id: 'list-1' }],
+      'jr:sources_liste_candidats': [{ id: 'contact-1' }],
+    });
+    const r = await ajouterDepuisListe(ctx, {
+      campagneId: CAMPAGNE_ID,
+      listId: '22222222-2222-2222-2222-222222222222',
+    });
+    // Rien n'est inséré : la personne n'est pas comptée comme « ajoutée ».
+    expect(r).toEqual({ ajoutes: 0 });
+    const insertion = appels.find(([sql]) => /jr:sources_liste_inscrire/.test(sql));
+    expect(insertion).toBeDefined();
+    const garde = gardeDInscription(insertion![0]);
+    expect(garde).toMatch(/contact_id = \$3/);
+    expect(garde).toMatch(/campaign_id = \$2/);
+    expect(garde).not.toMatch(/status/i);
+  });
+});
+
 describe('listerListesOrganisation', () => {
   it('refuse un rôle insuffisant', async () => {
     const { ctx } = faux({}, null);
