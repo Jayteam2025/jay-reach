@@ -109,7 +109,13 @@ export const URN_RESOLUES_PAR_PASSAGE = 3;
  * seulement laisseraient trois adresses invalides occuper la tête pour toujours.
  */
 const CANDIDATS_LUS = 20;
-const ENTETES = { ...ENTETES_VOYAGER, 'x-li-lang': 'fr_FR' };
+/**
+ * JSON simple, pas le format normalisé d'`ENTETES_VOYAGER` : celui-ci remplace la liste des conversations
+ * par des références (`*elements`) et range les objets dans `included`, une forme qu'`analyserConversations`
+ * ne lit pas (premier passage en production, 27/10 : `IllisibleMessagerie`). C'est l'en-tête de l'ancienne
+ * extension, sur lequel l'analyseur a été écrit.
+ */
+const ENTETES = { ...ENTETES_VOYAGER, accept: 'application/json', 'x-li-lang': 'fr_FR' };
 
 const TITRE_NOTIFICATION = 'Nouvelle réponse LinkedIn';
 /** Corps de la notification d'une réponse sans texte (pièce jointe seule) : jamais la classification brute, qui est un code technique. */
