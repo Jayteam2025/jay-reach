@@ -992,6 +992,7 @@
       },
       "who": {
         "errorName": "Give the campaign a name.",
+        "errorPersona": "Choose the persona you are looking for.",
         "name": "Campaign name",
         "namePlaceholder": "Follow-up with sales directors",
         "personaTitle": "Who are you looking for?",
@@ -1075,6 +1076,7 @@
         "channelLinkedinInvite": "LinkedIn invitation",
         "channelLinkedinMessage": "LinkedIn message",
         "inviteSansNote": "The invitation goes out without a note: server-side sending cannot carry one yet.",
+        "messageAfterInvitation": "This message only reaches people who have accepted your invitation. Jay Reach does not wait for that acceptance: if it has not happened by the time of sending, LinkedIn refuses the message and this person's sequence is paused. Leave a long enough delay after the invitation.",
         "subject": "Subject",
         "body": "Body",
         "delay": "Delay since the previous step",
@@ -1084,7 +1086,13 @@
         "remove": "Delete the step",
         "variablesHint": "Available variables: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "No step. Choose a model or add one.",
-        "errorEmpty": "The sequence needs at least one step."
+        "errorEmpty": "The sequence needs at least one step.",
+        "errorIncomplete": {
+          "emailVide": "Step {rang} is an empty email: write its subject and message before continuing.",
+          "emailObjet": "Step {rang} is an email without a subject: write its subject before continuing.",
+          "emailCorps": "Step {rang} is an email without a message: write its message before continuing.",
+          "messageLinkedinCorps": "Step {rang} is a LinkedIn message without text: write it before continuing."
+        }
       },
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
@@ -1098,7 +1106,7 @@
         "boxesNoneActive": "Choose at least one mailbox.",
         "review": "Review of first sends",
         "reviewSuffix": "sends",
-        "reviewHint": "The first sends wait for manual approval before going out.",
+        "reviewHint": "{n, plural, =0 {No review: everything goes out without approval.} one {The first send of each step waits for your approval before going out. You will review it in the campaign's “Today's queue” tab.} other {The first # sends of each step wait for your approval before going out. You will review them in the campaign's “Today's queue” tab.}}",
         "summaryTitle": "Summary",
         "summaryPersona": "Persona",
         "summarySources": "Sources",
@@ -1283,7 +1291,7 @@
     },
     "plafonds": {
       "title": "Organization limits and defaults",
-      "lead": "Everything is set here, in the database. The environment only kicks in if a row is missing: the \"fallback\" column says which.",
+      "lead": "Your organization's daily limits. When a limit is reached, the task waits until the next day; nothing is lost.",
       "consommation": {
         "title": "Today's usage",
         "scoring": "Scorings (Anthropic)",
@@ -1304,19 +1312,18 @@
       "table": {
         "colReglage": "Setting",
         "colValeur": "Value",
-        "colDefaut": "Default",
-        "colRepli": "Fallback",
+        "colConseillee": "Recommended value",
         "colModifie": "Modified",
         "modifier": "Edit",
         "enregistrer": "Save",
         "annuler": "Cancel",
-        "aucunRepli": "none",
         "jamaisModifie": "never",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Modified {date}} other {Modified on {date}}}",
         "erreurNombre": "Enter a whole number, zero or positive.",
         "sansObjet": "Not a volume",
-        "arrete": "Stopped: nothing is produced",
+        "arrete": "Paused: this limit is 0, so this task no longer runs.",
+        "arreteEnrichissement": "Paused: no email will be looked up, so contacts without an email will not get an email step.",
         "colConsomme": "Used"
       },
       "lignes": {
@@ -1399,6 +1406,7 @@
         "cleValide": "Valid key",
         "connecte": "Connected",
         "aRenseigner": "To fill in",
+        "facultatif": "Optional",
         "echec": "Connection error"
       },
       "nom": {
@@ -1423,7 +1431,7 @@
         "microsoft_graph": "Reply polling, mailbox by mailbox",
         "adzuna": "Job postings from French sites",
         "francetravail": "Postings from the public employment agency",
-        "apify": "Server-side LinkedIn reading · required for the LinkedIn channel"
+        "apify": "Reading job postings published on LinkedIn · optional: the LinkedIn channel does not need it"
       },
       "lien": {
         "reglerPlafond": "Set the limit",
@@ -1440,7 +1448,10 @@
       },
       "reglagesTitre": "Settings",
       "enregistrerReglages": "Save",
-      "champConfigDefaut": "Default: {defaut}."
+      "champConfigDefaut": "Default: {defaut}.",
+      "detailsTechniques": "Technical details",
+      "modeleNotation": "Scoring model",
+      "modeleLeger": "Light-task model"
     },
     "personas": {
       "title": "Personas",
@@ -1560,7 +1571,7 @@
         "aucuneTache": "None",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# enrichment} other {# enrichments}}",
         "linkedin": "LinkedIn",
-        "purge": "Retention purge",
+        "purge": "Cleanup of old data",
         "purgeOk": "Last run {quand}",
         "purgeJamais": "Never run",
         "purgeRetard": "Overdue: last run {quand}",
@@ -1582,13 +1593,16 @@
         "titre": "Run a task now",
         "sousTitre": "without waiting for the next scheduled run",
         "lancer": "Run",
+        "confirmer": "Yes, run it",
+        "annuler": "Cancel",
         "enCours": "Running",
         "erreur": "The task could not be started.",
         "continuAideGabarit": "Runs continuously server-side, about every {minutes} minutes. No manual trigger is possible here.",
         "sources": {
           "titre": "Run all sources",
           "detailGabarit": "{actives, plural, one {# active source} other {# active sources}} · last run {dernier}",
-          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet"
+          "detailAucunPassage": "{actives, plural, one {# active source} other {# active sources}} · no run yet",
+          "confirmation": "This starts collecting from every active source right now, without waiting for its scheduled run. New jobs and people found will then be scored, within today's limits."
         },
         "scoring": {
           "titre": "Score pending signals",
@@ -1603,7 +1617,8 @@
         "releve": {
           "titre": "SalesBlink reply polling",
           "detailGabarit": "last poll {quand}",
-          "detailJamais": "never polled yet"
+          "detailJamais": "never polled yet",
+          "confirmation": "This reads incoming replies right away, without waiting for the next scheduled run. Nothing is sent."
         }
       },
       "erreurs": {
@@ -1776,7 +1791,11 @@
         "compte": "Connected account",
         "comptePasEncore": "Read on the first send",
         "sortie": "Network exit",
-        "operateur": "Operator and country",
+        "operateur": "Operator",
+        "ip": "IP address",
+        "sortieValeur": "Exit through a residential IP — country: {pays}",
+        "sortieValeurSansPays": "Exit through a residential IP",
+        "detailsTechniques": "Technical details",
         "collecte": "Last collection",
         "inconnu": "Unknown",
         "jamais": "Never"
@@ -1887,6 +1906,8 @@
         "connecter": "Connect my LinkedIn account",
         "reconnecter": "Reconnect",
         "deconnecter": "Disconnect this account",
+        "deconnecterConfirmation": "Disconnecting this account stops LinkedIn collection and sending for your organization until an account is connected again.",
+        "deconnecterConfirmer": "Yes, disconnect",
         "annuler": "Cancel",
         "valider": "Submit code",
         "identifiant": "LinkedIn username",

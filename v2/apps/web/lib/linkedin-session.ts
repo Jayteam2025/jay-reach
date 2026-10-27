@@ -12,7 +12,7 @@
  */
 import { cache } from 'react';
 import { lireSessionLinkedIn, type Contexte, type SessionLinkedIn } from '@jay-reach/core';
-import { ligneMoteurLinkedIn } from '../components/reglages/linkedin-session-affichage';
+import { ligneMoteurLinkedIn, phraseEtatSession } from '../components/reglages/linkedin-session-affichage';
 import type { PuceTon } from '../components/ui';
 import { dateRelativeCourte } from './dates';
 
@@ -34,6 +34,14 @@ export const lireSessionLinkedInPourLaCoquille = cache(async (ctx: Contexte): Pr
     return undefined;
   }
 });
+
+/**
+ * Un compte LinkedIn est connecté ET prêt (même définition que la pastille « LinkedIn prêt »). Une session
+ * absente, bloquée, ou une lecture impossible (`undefined`) ne sont pas « prêtes » : l'assistant retombe alors sur l'email.
+ */
+export function sessionLinkedInPrete(session: SessionLinkedIn | null | undefined): boolean {
+  return session ? phraseEtatSession(session).cle === 'prete' : false;
+}
 
 export interface LigneLinkedin {
   ton: PuceTon;

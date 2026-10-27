@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { Carte, Champ } from '../../ui';
 
+/** Borne haute acceptée par le contrat (`dailyCap` : entier de 1 à 10 000, `assistant-campagne.ts`). */
+export const PLAFOND_JOUR_MAX = 10_000;
+
 export interface PersonaOptionAssistant {
   readonly id: string;
   readonly nom: string;
@@ -121,6 +124,7 @@ export function EtapeQui({
                 name="plafondJour"
                 type="number"
                 min={1}
+                max={PLAFOND_JOUR_MAX}
                 value={plafondJour}
                 onChange={(e) => onPlafondJourChange(e.target.value)}
                 disabled={disabled}

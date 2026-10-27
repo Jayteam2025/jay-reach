@@ -19,6 +19,9 @@ test('Assistant Nouvelle campagne : brouillon avec une source, puis archivage', 
 
   // Étape 1 — Qui
   await page.getByLabel('Nom de la campagne').fill(NOM_CAMPAGNE);
+  // Plusieurs personas : aucun n'est présélectionné, le choix est obligatoire (un seul : il l'est déjà).
+  const personas = page.locator('.jr-choix button.option[aria-pressed]');
+  if ((await personas.count()) > 1) await personas.first().click();
   await page.getByRole('button', { name: 'Continuer' }).click();
 
   // Étape 2 — Sources : une source Adzuna minimale.

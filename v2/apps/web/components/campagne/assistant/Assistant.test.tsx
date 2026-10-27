@@ -440,6 +440,7 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
     canalLinkedinInvite: 'Invitation LinkedIn',
     canalLinkedinMessage: 'Message LinkedIn',
     inviteSansNote: 'L’invitation part sans note.',
+    messageApresInvitation: 'Ce message n’atteint que les personnes qui ont accepté.',
     objet: 'Objet',
     corps: 'Corps',
     delai: 'Délai',
@@ -461,6 +462,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte="a"
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,
@@ -479,6 +482,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte="a"
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,
@@ -503,6 +508,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte="a"
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,
@@ -524,6 +531,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte={etapes[0]!.cle}
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,
@@ -544,6 +553,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte={etapes[0]!.cle}
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,
@@ -562,6 +573,8 @@ describe('EtapeSequence — options « partir de » et pilules d’étape (R59 :
         onAjouterEtape={() => {}}
         onModifierEtape={() => {}}
         onSupprimerEtape={() => {}}
+        etapeOuverte={etapes[0]!.cle}
+        onOuvrirEtape={() => {}}
         disabled={false}
         libelles={LIBELLES}
       />,

@@ -992,6 +992,7 @@
       },
       "who": {
         "errorName": "Geef de campagne een naam.",
+        "errorPersona": "Kies de persona die u zoekt.",
         "name": "Naam van de campagne",
         "namePlaceholder": "Opvolging salesdirecteuren",
         "personaTitle": "Wie zoek je?",
@@ -1075,6 +1076,7 @@
         "channelLinkedinInvite": "LinkedIn-uitnodiging",
         "channelLinkedinMessage": "LinkedIn-bericht",
         "inviteSansNote": "De uitnodiging vertrekt zonder notitie: de server kan er nog geen meesturen.",
+        "messageAfterInvitation": "Dit bericht bereikt alleen mensen die uw uitnodiging hebben geaccepteerd. Jay Reach wacht niet op die acceptatie: als die op het moment van verzenden niet heeft plaatsgevonden, weigert LinkedIn het bericht en wordt de sequentie van deze persoon gepauzeerd. Laat na de uitnodiging voldoende tijd verstrijken.",
         "subject": "Onderwerp",
         "body": "Inhoud",
         "delay": "Vertraging sinds de vorige stap",
@@ -1084,7 +1086,13 @@
         "remove": "Stap verwijderen",
         "variablesHint": "Beschikbare variabelen: '{{'prenom'}}', '{{'entreprise'}}', '{{'poste'}}'.",
         "empty": "Geen stap. Kies een model of voeg er een toe.",
-        "errorEmpty": "De sequentie heeft minstens één stap nodig."
+        "errorEmpty": "De sequentie heeft minstens één stap nodig.",
+        "errorIncomplete": {
+          "emailVide": "Stap {rang} is een lege e-mail: schrijf het onderwerp en het bericht voordat u verdergaat.",
+          "emailObjet": "Stap {rang} is een e-mail zonder onderwerp: schrijf het onderwerp voordat u verdergaat.",
+          "emailCorps": "Stap {rang} is een e-mail zonder bericht: schrijf het bericht voordat u verdergaat.",
+          "messageLinkedinCorps": "Stap {rang} is een LinkedIn-bericht zonder tekst: schrijf het voordat u verdergaat."
+        }
       },
       "send": {
         "recapPersonaValue": "{persona} · score ≥ {score}",
@@ -1098,7 +1106,7 @@
         "boxesNoneActive": "Kies minstens één mailbox.",
         "review": "Herziening van de eerste verzendingen",
         "reviewSuffix": "verzendingen",
-        "reviewHint": "De eerste verzendingen wachten op handmatige goedkeuring voordat ze verstuurd worden.",
+        "reviewHint": "{n, plural, =0 {Geen herziening: alles gaat zonder goedkeuring de deur uit.} one {De eerste verzending van elke stap wacht op uw goedkeuring voordat ze vertrekt. U herziet ze in het tabblad “Wachtrij van vandaag” van de campagne.} other {De eerste # verzendingen van elke stap wachten op uw goedkeuring voordat ze vertrekken. U herziet ze in het tabblad “Wachtrij van vandaag” van de campagne.}}",
         "summaryTitle": "Samenvatting",
         "summaryPersona": "Persona",
         "summarySources": "Bronnen",
@@ -1283,7 +1291,7 @@
     },
     "plafonds": {
       "title": "Limieten en standaardwaarden van de organisatie",
-      "lead": "Alles wordt hier ingesteld, in de database. De omgeving wordt alleen gebruikt als een regel ontbreekt: de kolom \"terugval\" zegt welke.",
+      "lead": "De dagelijkse limieten van uw organisatie. Is een limiet bereikt, dan wacht de taak tot de volgende dag; er gaat niets verloren.",
       "consommation": {
         "title": "Verbruik van vandaag",
         "scoring": "Scorings (Anthropic)",
@@ -1304,19 +1312,18 @@
       "table": {
         "colReglage": "Instelling",
         "colValeur": "Waarde",
-        "colDefaut": "Standaard",
-        "colRepli": "Terugval",
+        "colConseillee": "Aanbevolen waarde",
         "colModifie": "Gewijzigd",
         "modifier": "Bewerken",
         "enregistrer": "Opslaan",
         "annuler": "Annuleren",
-        "aucunRepli": "geen",
         "jamaisModifie": "nooit",
         "modifiePar": "{nom} · {date}",
         "modifieSansAuteur": "{estRelatif, select, oui {Gewijzigd {date}} other {Gewijzigd op {date}}}",
         "erreurNombre": "Voer een geheel getal in, nul of positief.",
         "sansObjet": "Geen volume",
-        "arrete": "Gestopt: er wordt niets meer geproduceerd",
+        "arrete": "Gepauzeerd: deze limiet staat op 0, deze taak wordt niet meer uitgevoerd.",
+        "arreteEnrichissement": "Gepauzeerd: er wordt geen e-mailadres meer gezocht, dus contacten zonder e-mailadres krijgen geen e-mailstap.",
         "colConsomme": "Verbruikt"
       },
       "lignes": {
@@ -1399,6 +1406,7 @@
         "cleValide": "Geldige sleutel",
         "connecte": "Verbonden",
         "aRenseigner": "In te vullen",
+        "facultatif": "Optioneel",
         "echec": "Verbindingsfout"
       },
       "nom": {
@@ -1423,7 +1431,7 @@
         "microsoft_graph": "Ophalen van reacties, mailbox per mailbox",
         "adzuna": "Vacatures van Franse sites",
         "francetravail": "Vacatures van de overheidsinstantie",
-        "apify": "Serverside lezen van LinkedIn · vereist voor het LinkedIn-kanaal"
+        "apify": "Vacatures lezen die op LinkedIn staan · optioneel: het LinkedIn-kanaal heeft het niet nodig"
       },
       "lien": {
         "reglerPlafond": "Limiet instellen",
@@ -1440,7 +1448,10 @@
       },
       "reglagesTitre": "Instellingen",
       "enregistrerReglages": "Opslaan",
-      "champConfigDefaut": "Standaard: {defaut}."
+      "champConfigDefaut": "Standaard: {defaut}.",
+      "detailsTechniques": "Technische details",
+      "modeleNotation": "Beoordelingsmodel",
+      "modeleLeger": "Model voor lichte taken"
     },
     "personas": {
       "title": "Persona's",
@@ -1560,7 +1571,7 @@
         "aucuneTache": "Geen",
         "tachesEnAttenteGabarit": "{scoring, plural, one {# scoring} other {# scorings}} · {enrichissement, plural, one {# verrijking} other {# verrijkingen}}",
         "linkedin": "LinkedIn",
-        "purge": "Bewaartermijnopruiming",
+        "purge": "Opruiming van oude gegevens",
         "purgeOk": "Laatste run {quand}",
         "purgeJamais": "Nog nooit gedraaid",
         "purgeRetard": "Achterstallig: laatste run {quand}",
@@ -1582,13 +1593,16 @@
         "titre": "Nu een taak uitvoeren",
         "sousTitre": "zonder te wachten op de volgende geplande run",
         "lancer": "Uitvoeren",
+        "confirmer": "Ja, uitvoeren",
+        "annuler": "Annuleren",
         "enCours": "Bezig",
         "erreur": "De taak kon niet worden gestart.",
         "continuAideGabarit": "Draait continu serverside, ongeveer elke {minutes} minuten. Hier is geen handmatige start mogelijk.",
         "sources": {
           "titre": "Alle bronnen uitvoeren",
           "detailGabarit": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · laatste run {dernier}",
-          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run"
+          "detailAucunPassage": "{actives, plural, one {# actieve bron} other {# actieve bronnen}} · nog geen run",
+          "confirmation": "Hiermee start het verzamelen bij alle actieve bronnen meteen, zonder te wachten op de geplande run. Nieuwe vacatures en personen worden daarna beoordeeld, binnen de limieten van vandaag."
         },
         "scoring": {
           "titre": "Wachtende signalen scoren",
@@ -1603,7 +1617,8 @@
         "releve": {
           "titre": "Ophalen van SalesBlink-reacties",
           "detailGabarit": "laatst opgehaald {quand}",
-          "detailJamais": "nog nooit opgehaald"
+          "detailJamais": "nog nooit opgehaald",
+          "confirmation": "Hiermee worden binnengekomen antwoorden meteen opgehaald, zonder te wachten op de volgende geplande run. Er wordt niets verstuurd."
         }
       },
       "erreurs": {
@@ -1776,7 +1791,11 @@
         "compte": "Verbonden account",
         "comptePasEncore": "Gelezen bij de eerste verzending",
         "sortie": "Netwerkuitgang",
-        "operateur": "Operator en land",
+        "operateur": "Operator",
+        "ip": "IP-adres",
+        "sortieValeur": "Uitgang via een residentieel IP-adres — land: {pays}",
+        "sortieValeurSansPays": "Uitgang via een residentieel IP-adres",
+        "detailsTechniques": "Technische details",
         "collecte": "Laatste verzameling",
         "inconnu": "Onbekend",
         "jamais": "Nooit"
@@ -1887,6 +1906,8 @@
         "connecter": "Mijn LinkedIn-account koppelen",
         "reconnecter": "Opnieuw koppelen",
         "deconnecter": "Dit account ontkoppelen",
+        "deconnecterConfirmation": "Als u dit account ontkoppelt, stoppen het verzamelen en versturen via LinkedIn voor uw organisatie totdat opnieuw een account is gekoppeld.",
+        "deconnecterConfirmer": "Ja, ontkoppelen",
         "annuler": "Annuleren",
         "valider": "Code bevestigen",
         "identifiant": "LinkedIn-gebruikersnaam",

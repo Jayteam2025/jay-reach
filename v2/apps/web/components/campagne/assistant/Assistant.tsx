@@ -6,10 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Bouton } from '../../ui';
 import { actionCreerCampagneComplete } from '../../../app/actions/nouvelle-campagne';
-import { EtapeQui, type PersonaOptionAssistant } from './EtapeQui';
+import { EtapeQui, PLAFOND_JOUR_MAX, type PersonaOptionAssistant } from './EtapeQui';
 import { EtapeSources, type SourceAssistant } from './EtapeSources';
 import { EtapeSequence, type EtapeSequenceEtape, type CleModeleSequence, etapesDepuisModele } from './EtapeSequence';
 import { EtapeEnvoi, type BoiteEnvoiAssistant } from './EtapeEnvoi';
+import {
+  ajouterEtapeALaSequence,
+  erreurEtapeQui,
+  personaInitial,
+  premiereEtapeIncomplete,
+  relectureInitiale,
+} from './regles-assistant';
 import { aUneEtapeEmail, libellesCanaux, recapSequence } from '../../../lib/canaux-sequence';
 
 const MODELE_PAR_DEFAUT: CleModeleSequence = 'question_relances';
@@ -20,6 +27,10 @@ const ORDRE_ETAPES: readonly CleEtapeAssistant[] = ['qui', 'sources', 'sequence'
 export interface AssistantProps {
   personas: readonly PersonaOptionAssistant[];
   boites: readonly BoiteEnvoiAssistant[];
+  /** Défaut de l'organisation (Réglages › Plafonds › « Relecture des premiers envois »), lu côté serveur. */
+  relectureDefaut: number;
+  /** Un compte LinkedIn est connecté et prêt : la première étape ouvre alors par une invitation. */
+  linkedinConnecte: boolean;
 }
 
 /**
@@ -47,7 +58,7 @@ export function construireEntreeAssistant(
     nom: etat.nom.trim(),
     personaIds: etat.personaId ? [etat.personaId] : [],
     minScore: Number(etat.scoreMin) || 0,
-    dailyCap: Math.max(1, Number(etat.plafondJour) || 1),
+    dailyCap: Math.min(PLAFOND_JOUR_MAX, Math.max(1, Number(etat.plafondJour) || 1)),
     sources: etat.sources.map((s) => ({ providerId: s.providerId, nom: s.nom, config: s.config })),
     etapes: etat.etapes.map((e) => ({ canal: e.canal, sujet: e.sujet, corps: e.corps, delaiHeures: e.delaiJours * 24 })),
     relecturePremiersEnvois: Number(etat.relecture) || 0,
@@ -85,7 +96,7 @@ export function lancementBloqueParLesBoites(
   return aUneEtapeEmail(canauxEtapes) && boites.length > 0 && nombreBoitesActives(boites, boiteIdsDesactivees) === 0;
 }
 
-export function Assistant({ personas, boites }: AssistantProps) {
+export function Assistant({ personas, boites, relectureDefaut, linkedinConnecte }: AssistantProps) {
   const t = useTranslations('campagne.nouvelle');
   const tCanaux = useTranslations('canauxSequence');
   const router = useRouter();
@@ -93,14 +104,15 @@ export function Assistant({ personas, boites }: AssistantProps) {
   const [etapeIndex, setEtapeIndex] = useState(0);
 
   const [nom, setNom] = useState('');
-  const [personaId, setPersonaId] = useState<string | null>(personas[0]?.id ?? null);
+  const [personaId, setPersonaId] = useState<string | null>(() => personaInitial(personas));
   const [scoreMin, setScoreMin] = useState('70');
   const [plafondJour, setPlafondJour] = useState('30');
 
   const [sources, setSources] = useState<readonly SourceAssistant[]>([]);
   const [etapes, setEtapes] = useState<readonly EtapeSequenceEtape[]>(() => etapesDepuisModele(MODELE_PAR_DEFAUT));
+  const [etapeOuverte, setEtapeOuverte] = useState<string | null>(() => etapes[0]?.cle ?? null);
 
-  const [relecture, setRelecture] = useState('5');
+  const [relecture, setRelecture] = useState(() => relectureInitiale(relectureDefaut));
   const [boiteIdsDesactivees, setBoiteIdsDesactivees] = useState<ReadonlySet<string>>(new Set());
 
   const [erreur, setErreur] = useState<string | null>(null);
@@ -117,13 +129,15 @@ export function Assistant({ personas, boites }: AssistantProps) {
   }
 
   function choisirModele(cle: CleModeleSequence) {
-    setEtapes(etapesDepuisModele(cle));
+    const suivantes = etapesDepuisModele(cle);
+    setEtapes(suivantes);
+    setEtapeOuverte(suivantes[0]?.cle ?? null);
   }
   function ajouterEtape() {
-    setEtapes((precedent) => [
-      ...precedent,
-      { cle: `manuel-${Date.now()}`, canal: 'email', sujet: '', corps: '', delaiJours: 2 },
-    ]);
+    // Calculé hors de l'updater : l'étape à ouvrir est celle qu'on vient d'ajouter, jamais l'ancienne.
+    const { etapes: suivantes, cleOuverte } = ajouterEtapeALaSequence(etapes, linkedinConnecte, Date.now());
+    setEtapes(suivantes);
+    setEtapeOuverte(cleOuverte);
   }
   function modifierEtape(cle: string, patch: Partial<Omit<EtapeSequenceEtape, 'cle'>>) {
     setEtapes((precedent) => precedent.map((e) => (e.cle === cle ? { ...e, ...patch } : e)));
@@ -147,13 +161,25 @@ export function Assistant({ personas, boites }: AssistantProps) {
   }
 
   function continuer() {
-    if (etapeCourante === 'qui' && !nom.trim()) {
-      setErreur(t('who.errorName'));
-      return;
+    if (etapeCourante === 'qui') {
+      const manque = erreurEtapeQui({ nom, personaId }, personas);
+      if (manque) {
+        setErreur(manque === 'nom' ? t('who.errorName') : t('who.errorPersona'));
+        return;
+      }
     }
-    if (etapeCourante === 'sequence' && etapes.length === 0) {
-      setErreur(t('sequence.errorEmpty'));
-      return;
+    if (etapeCourante === 'sequence') {
+      if (etapes.length === 0) {
+        setErreur(t('sequence.errorEmpty'));
+        return;
+      }
+      const incomplete = premiereEtapeIncomplete(etapes);
+      if (incomplete) {
+        // On ouvre l'étape en cause : le message dit laquelle, l'écran la montre.
+        setEtapeOuverte(incomplete.cle);
+        setErreur(t(`sequence.errorIncomplete.${incomplete.motif}`, { rang: incomplete.rang }));
+        return;
+      }
     }
     allerA(etapeIndex + 1);
   }
@@ -310,6 +336,8 @@ export function Assistant({ personas, boites }: AssistantProps) {
           onAjouterEtape={ajouterEtape}
           onModifierEtape={modifierEtape}
           onSupprimerEtape={supprimerEtape}
+          etapeOuverte={etapeOuverte}
+          onOuvrirEtape={setEtapeOuverte}
           disabled={pending}
           libelles={{
             partirDe: t('sequence.startFrom'),
@@ -323,6 +351,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             canalLinkedinInvite: t('sequence.channelLinkedinInvite'),
             canalLinkedinMessage: t('sequence.channelLinkedinMessage'),
             inviteSansNote: t('sequence.inviteSansNote'),
+            messageApresInvitation: t('sequence.messageAfterInvitation'),
             objet: t('sequence.subject'),
             corps: t('sequence.body'),
             delai: t('sequence.delay'),
@@ -364,7 +393,7 @@ export function Assistant({ personas, boites }: AssistantProps) {
             boitesAucuneActive: t('send.boxesNoneActive'),
             relecture: t('send.review'),
             relectureSuffixe: t('send.reviewSuffix'),
-            relectureAide: t('send.reviewHint'),
+            relectureAide: t('send.reviewHint', { n: Number(relecture) || 0 }),
             recapTitre: t('send.summaryTitle'),
             recapPersona: t('send.summaryPersona'),
             recapSources: t('send.summarySources'),

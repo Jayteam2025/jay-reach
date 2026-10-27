@@ -31,6 +31,8 @@ export interface EtapeSequenceLibelles {
   canalLinkedinMessage: string;
   /** Remplace le champ « Corps » pour une invitation, qui n'a pas de message. */
   inviteSansNote: string;
+  /** Sous un message LinkedIn : il n'atteint que les personnes qui ont accepté l'invitation (#169). */
+  messageApresInvitation: string;
   objet: string;
   corps: string;
   delai: string;
@@ -50,6 +52,9 @@ export interface EtapeSequenceProps {
   onAjouterEtape: () => void;
   onModifierEtape: (cle: string, patch: Partial<Omit<EtapeSequenceEtape, 'cle'>>) => void;
   onSupprimerEtape: (cle: string) => void;
+  /** Étape dont le formulaire est ouvert : l'état vit dans l'assistant, qui ouvre la nouvelle étape quand on en ajoute une. */
+  etapeOuverte: string | null;
+  onOuvrirEtape: (cle: string | null) => void;
   disabled: boolean;
   libelles: EtapeSequenceLibelles;
 }
@@ -106,10 +111,11 @@ export function EtapeSequence({
   onAjouterEtape,
   onModifierEtape,
   onSupprimerEtape,
+  etapeOuverte,
+  onOuvrirEtape,
   disabled,
   libelles,
 }: EtapeSequenceProps) {
-  const [etapeOuverte, setEtapeOuverte] = useState<string | null>(etapes[0]?.cle ?? null);
   // Point de départ choisi EXPLICITEMENT par un clic (pas déduit de `etapes`,
   // que l'utilisateur peut ensuite modifier librement étape par étape) —
   // seulement pour l'état visuel `aria-pressed` (R59, tour de correction 1) :
@@ -173,7 +179,7 @@ export function EtapeSequence({
                   className={['pilule', etapeOuverte === etape.cle ? 'en-cours' : undefined].filter(Boolean).join(' ')}
                   aria-pressed={etapeOuverte === etape.cle}
                   disabled={disabled}
-                  onClick={() => setEtapeOuverte(etape.cle)}
+                  onClick={() => onOuvrirEtape(etape.cle)}
                 >
                   {index + 1} · {libellePilule(etape, libelles)}
                 </button>
@@ -234,6 +240,7 @@ export function EtapeSequence({
                     />
                   </Champ>
                   <div className="jr-aide">{libelles.variablesAide}</div>
+                  {etape.canal === 'linkedin_message' && <p className="jr-aide">{libelles.messageApresInvitation}</p>}
                 </>
               )}
               {index === 0 ? (
@@ -257,7 +264,7 @@ export function EtapeSequence({
                   variante="danger"
                   onClick={() => {
                     onSupprimerEtape(etape.cle);
-                    setEtapeOuverte(null);
+                    onOuvrirEtape(null);
                   }}
                   disabled={disabled}
                 >

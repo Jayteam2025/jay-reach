@@ -1,5 +1,6 @@
-import { listerBoitesPourCampagne, listerPersonasOrganisation } from '@jay-reach/core';
+import { lireReglages, listerBoitesPourCampagne, listerPersonasOrganisation } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
+import { lireSessionLinkedInPourLaCoquille, sessionLinkedInPrete } from '../../../../lib/linkedin-session';
 import { Assistant } from '../../../../components/campagne/assistant/Assistant';
 
 export const revalidate = 0;
@@ -13,10 +14,21 @@ export const revalidate = 0;
  */
 export default async function NewCampaignPage() {
   const ctx = await contexteCourant();
-  const [personas, boites] = await Promise.all([
+  const [personas, boites, reglages, sessionLinkedin] = await Promise.all([
     listerPersonasOrganisation(ctx, {}),
     listerBoitesPourCampagne(ctx, {}),
+    lireReglages(ctx),
+    // La même lecture que la pastille « LinkedIn prêt » de la barre latérale : tolérante (undefined = inconnu).
+    lireSessionLinkedInPourLaCoquille(ctx),
   ]);
+  const relectureDefaut = reglages.relecture_premiers_envois_defaut;
 
-  return <Assistant personas={personas} boites={boites} />;
+  return (
+    <Assistant
+      personas={personas}
+      boites={boites}
+      relectureDefaut={typeof relectureDefaut === 'number' ? relectureDefaut : 0}
+      linkedinConnecte={sessionLinkedInPrete(sessionLinkedin)}
+    />
+  );
 }
