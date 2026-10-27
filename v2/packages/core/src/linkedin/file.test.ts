@@ -279,13 +279,13 @@ describe('reclamerProchaineAction', () => {
   });
 });
 
-describe('reclamerProchaineAction : une personne en pause d absence n est pas relancee', () => {
-  it('la requete des candidates exclut une inscription paused_absence, sans annuler la ligne', async () => {
-    // Forme du SQL seule : la preuve du comportement est la section 10 (10c) du harnais linkedin-attente-acceptation.
+describe('reclamerProchaineAction : une personne en pause n est pas relancee', () => {
+  it('la requete des candidates exclut une inscription paused ou paused_absence, sans annuler la ligne', async () => {
+    // Forme du SQL seule : la preuve du comportement est dans le harnais linkedin-attente-acceptation (10c, 15a à 15d).
     const { ex, appels } = creerExecuteur();
     await reclamerProchaineAction(ex, ORG, NOW);
     const candidates = appels.find((a) => /jr:linkedin_candidates_par_type/i.test(a.sql));
-    expect(candidates?.sql).toMatch(/e\.status is distinct from 'paused_absence'/);
+    expect(candidates?.sql).toMatch(/e\.status not in \('paused', 'paused_absence'\)/);
   });
 
   it('la garde de sequence annule (jamais `paused_absence`) une ligne dont l inscription est sortie ou l action plus partante', async () => {

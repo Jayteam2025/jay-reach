@@ -41,6 +41,9 @@
 //  23. file.ts, `lireAttentesAcceptation` : `e.status in ('active')` (sans `completed`) : 13x, 13x-bis (séquence invitation puis message).
 //  24. file.ts, `lireAttentesAcceptation` : `e.status in ('active', 'completed', 'paused', 'paused_absence')` : 13y, 13y-bis.
 //  25. file-du-jour.ts, `ecarterDuneCampagne` : `ended_at = now()` sans `coalesce` : accroche-post 60d.
+//  26. file.ts, `prochainesCandidates` : `(e.status is null or e.status not in ('paused', 'paused_absence'))` -> `is distinct from 'paused_absence'` : 15a, 15b, 15d.
+//  27. file.ts, `existeActionServeurEnAttente` : même retour en arrière : 15c.
+//  28. file.ts, `lireAttentesAcceptation` : retirer `and camp.status = 'active'` : 15e.
 //  22. contacts.ts, `lireFiche` : `attenteAcceptation` forcé à `null` : 13a, 13c (et l'exception qui suit). campagnes.ts,
 //      `listerFileDuJour` : `enAttenteAcceptation` forcé à `[]` : 13c, 13j.
 import pg from 'pg';
@@ -55,6 +58,7 @@ import {
   lireFiche,
   reglerMessagePasEncoreRelation,
   lireAttentesAcceptation,
+  existeActionServeurEnAttente,
   listerFileDuJour,
   ecarterDuneCampagne,
   traiterEvenementEmail,
@@ -755,7 +759,54 @@ async function attenteDeLaDerniereEtape() {
   check('13y-ter. témoin : la même inscription redevenue `active` est listée à nouveau', (await lireAttentesAcceptation(pool, m3.org)).length === 1);
 }
 
-await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente, attenteVisible, attenteDeLaDerniereEtape);
+async function pauseManuelleEtCampagneInactive() {
+  console.log('\n15. une pause manuelle ou une campagne à l\'arrêt retient la ligne qui attend : pas de réclamation, pas d\'affichage (#183, revue)');
+  const m = await monde();
+  const admin = { ...m.ctx, role: 'admin' };
+  const p = await personne(m, { invitationIlYa: 2, prenom: 'PauseManuelle' });
+  const autre = await personne(m, { invitationIlYa: 2, prenom: 'Temoin' });
+  await essayerEtRefuser(m);
+  await essayerEtRefuser(m, dans(2 * JOUR_MS));
+  check('0. précondition : les deux messages attendent (lignes `pending / attente_acceptation`)',
+    (await file(p.queue)).error_code === 'attente_acceptation' && (await file(autre.queue)).error_code === 'attente_acceptation'
+      && (await lireAttentesAcceptation(pool, m.org)).length === 2);
+
+  // Pause MANUELLE de l'opérateur (`paused`) pendant l'attente, le lendemain : seule la ligne du témoin est réclamable.
+  await q(`update enrollments set status = 'paused' where id = $1`, [p.inscription]);
+  const lendemain = dans(3 * JOUR_MS);
+  const r = await reclamerProchaineAction(pool, m.org, lendemain);
+  check('15a. une inscription `paused` n\'est pas réclamée : c\'est la ligne du témoin qui l\'est, pas la sienne',
+    r.action?.id === autre.queue && (await file(p.queue)).status === 'pending', JSON.stringify({ r: r.action?.id, motif: r.motif, f: await file(p.queue) }));
+  await q(`update linkedin_action_queue set status = 'pending', scheduled_for = now() - interval '1 minute' where id = $1`, [autre.queue]);
+  await q(`update enrollments set status = 'paused' where id = $1`, [autre.inscription]);
+  const seule = await reclamerProchaineAction(pool, m.org, lendemain);
+  check('15b. toutes les inscriptions en pause : rien n\'est réclamé, la ligne reste `pending` (jamais annulée)',
+    seule.action === null && (await file(p.queue)).status === 'pending' && (await file(autre.queue)).status === 'pending', JSON.stringify({ motif: seule.motif }));
+  check('15c. la sonde « il y a un envoi en attente » le dit aussi (le worker n\'ouvre pas le navigateur pour rien)',
+    (await existeActionServeurEnAttente(pool, m.org, lendemain)) === false);
+  await q(`update enrollments set status = 'active' where id in ($1, $2)`, [p.inscription, autre.inscription]);
+  const sondeReprise = await existeActionServeurEnAttente(pool, m.org, lendemain);
+  const reprise = await reclamerProchaineAction(pool, m.org, lendemain);
+  check('15d. à la reprise, la ligne est de nouveau réclamable, et la sonde le dit',
+    reprise.action !== null && sondeReprise === true, JSON.stringify({ motif: reprise.motif, sondeReprise }));
+
+  // Campagne à l'arrêt : rien n'est réclamé, donc la date limite affichée serait fausse.
+  const m2 = await monde();
+  const adm2 = { ...m2.ctx, role: 'admin' };
+  const c = await personne(m2, { invitationIlYa: 2, prenom: 'CampagneArretee' });
+  await essayerEtRefuser(m2);
+  check('0b. précondition : campagne active, l\'attente est listée', (await lireAttentesAcceptation(pool, m2.org)).length === 1);
+  await q(`update campaigns set status = 'paused' where id = $1`, [m2.campagne]);
+  check('15e. campagne non `active` : l\'attente n\'est listée ni par la fonction, ni par la fiche, ni par la File du jour',
+    (await lireAttentesAcceptation(pool, m2.org)).length === 0
+      && (await lireFiche(adm2, { contactId: c.contact, campagneId: m2.campagne })).sequence?.attenteAcceptation === null
+      && (await listerFileDuJour(adm2, { campagneId: m2.campagne })).enAttenteAcceptation.length === 0);
+  check('15f. et la file ne la réclame pas non plus (même condition)', (await reclamerProchaineAction(pool, m2.org, dans(3 * JOUR_MS))).action === null);
+  await q(`update campaigns set status = 'active' where id = $1`, [m2.campagne]);
+  check('15g. témoin : campagne de nouveau active, elle est listée', (await lireAttentesAcceptation(pool, m2.org)).length === 1);
+}
+
+await jouer(attente, rythmeEtOrdre, acceptation, saut, sansInvitation, personneSortie, reglage, cePuiAttendPas, gardesDuCoeur, sortiesPendantLAttente, reponseDeLaTransactionPerdue, absencePendantLAttente, attenteVisible, attenteDeLaDerniereEtape, pauseManuelleEtCampagneInactive);
 
 await pool.end();
 console.log(failures === 0 ? '\nTOUS LES CONTRÔLES PASSENT' : `\n${failures} CONTRÔLE(S) EN ÉCHEC`);

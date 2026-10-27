@@ -4,7 +4,7 @@
 export { tickDueEnrollments, enrollContact } from '../../apps/worker/src/handlers/sequence.js';
 export { runLinkedInDispatch } from '../../apps/worker/src/handlers/dispatch.js';
 export { regler } from '../../apps/worker/src/handlers/envoi-linkedin.js';
-export { reclamerProchaineAction, enregistrerResultat, reglerMessagePasEncoreRelation, lireAttentesAcceptation } from '../../packages/core/src/linkedin/file.js';
+export { reclamerProchaineAction, enregistrerResultat, reglerMessagePasEncoreRelation, lireAttentesAcceptation, existeActionServeurEnAttente } from '../../packages/core/src/linkedin/file.js';
 export { annulerEnvoisEnFile } from '../../packages/core/src/inbox/exclusion-sur-reponse.js';
 export { lireFiche } from '../../packages/core/src/fonctions/contacts.js';
 export { ecarterDuneCampagne } from '../../packages/core/src/fonctions/file-du-jour.js';

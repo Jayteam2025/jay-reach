@@ -336,9 +336,11 @@ async function prochainesCandidates(
         where q.organization_id = $1 and q.status = 'pending'
           and q.method = 'serveur' and q.scheduled_for <= $2
           and (q.action_id is null or camp.status = 'active')
-          -- Une personne en pause d'absence n'est pas relancée : sa ligne reste pending (jamais annulée,
-          -- elle repart à la reprise) et ne retient pas les autres, qui passent devant dans la même requête.
-          and e.status is distinct from 'paused_absence'
+          -- Une personne en pause (absence, ou pause manuelle de l'opérateur) n'est pas relancée : sa ligne reste
+          -- pending (jamais annulée, elle repart à la reprise) et ne retient pas les autres, qui passent devant
+          -- dans la même requête. Une ligne qui attend l'acceptation vit jusqu'à N jours : sans cette exclusion,
+          -- un message partirait PENDANT une pause manuelle.
+          and (e.status is null or e.status not in ('paused', 'paused_absence'))
         -- Une ligne qui ATTEND l'acceptation d'une invitation passe après celles qui n'ont jamais été
         -- essayées : sa vérification quotidienne ne doit pas retenir un message neuf, dont l'invitation
         -- est peut-être déjà acceptée.
@@ -493,7 +495,7 @@ export async function reclamerProchaineAction(
   // vit ici, avec 6 bis, pour que worker, MCP et écran la partagent. ANNULÉE et non laissée `pending` :
   // plus ancienne de son type elle serait choisie à chaque tick. `completed` n'est PAS une sortie : le
   // tick pose `completed` dès la création de l'action de la dernière étape, qui doit partir. Une pause
-  // d'absence n'arrive pas jusqu'ici : `prochainesCandidates` ne la propose pas.
+  // (`paused` ou `paused_absence`) n'arrive pas jusqu'ici : `prochainesCandidates` ne la propose pas.
   const arretee = await ex.query<{ action_id: string }>(
     `update linkedin_action_queue q /* jr:linkedin_garde_sequence_arretee */
         set status = 'cancelled', error_code = 'sequence_arretee', updated_at = now()
@@ -755,9 +757,11 @@ export interface AttenteAcceptation {
  * Inscriptions retenues : `active` ET `completed`. Le tick passe l'inscription en `completed` dès qu'il crée l'action
  * de la DERNIÈRE étape : dans une séquence invitation puis message, le message qui attend appartient donc à une
  * inscription `completed`, et `completed` n'est pas une sortie (même lecture que la garde de séquence de la file).
- * Exclues : `paused` et `paused_absence` (leur ligne n'est pas réclamée pendant la pause, la date limite peut être
- * dépassée sans saut et l'écran afficherait une date fausse : la fiche montre déjà la pause), et `stopped` (la
- * personne est sortie, une ligne qui traînerait n'attend plus rien).
+ * Exclues : `paused` et `paused_absence` (`prochainesCandidates` ne réclame pas la ligne d'une inscription en
+ * pause, qui reste `pending` et repart à la reprise : pendant la pause la date limite peut être dépassée sans
+ * saut, et l'écran en afficherait une fausse ; la fiche montre déjà la pause), `stopped` (la personne est sortie,
+ * une ligne qui traînerait n'attend plus rien) et toute inscription dont la campagne n'est pas `active`
+ * (`prochainesCandidates` exige `camp.status = 'active'` : rien n'est réclamé, même raison).
  */
 export async function lireAttentesAcceptation(
   ex: Executeur,
@@ -803,7 +807,7 @@ export async function lireAttentesAcceptation(
       where q.organization_id = $1 and q.status = 'pending' and q.error_code = '${CODE_ATTENTE_ACCEPTATION}'
         and q.kind = 'message' and q.origine = 'sequence'
         and a.channel = 'linkedin_message' and a.status in ('scheduled', 'approved')
-        and e.status in ('active', 'completed')${filtres}
+        and e.status in ('active', 'completed') and camp.status = 'active'${filtres}
       order by q.created_at asc, q.id asc`,
     valeurs,
   );
@@ -938,7 +942,7 @@ export async function existeActionServeurEnAttente(
            where q.organization_id = $1 and q.status = 'pending' and q.method = 'serveur'
              and q.scheduled_for <= $2
              and (q.action_id is null or camp.status = 'active')
-             and e.status is distinct from 'paused_absence'
+             and (e.status is null or e.status not in ('paused', 'paused_absence'))
         )
         and not exists (
           select 1 from linkedin_server_sessions s
