@@ -17,6 +17,8 @@
  * l'appelant selon la classification (arrêt / pause datée / départ).
  */
 
+import { reparerMojibake } from './encodage-recu.js';
+
 export type ReplyClassification = 'human_reply' | 'auto_absence' | 'auto_left_company' | 'auto_other' | 'unclassified';
 
 export interface ClassifyResult {
@@ -27,6 +29,22 @@ export interface ClassifyResult {
 
 const ABSENCE = /\b(absent|en cong[ée]s?|cong[ée]s?|out of office|on vacation|away from (the|my) (office|desk)|afwezig|met verlof|vakantie|de retour le|back (on|from)|réponse automatique|automatic reply|automatisch antwoord)\b/i;
 const LEFT_COMPANY = /\b(ne (suis|travaille) plus|n'est plus (en poste|dans l'entreprise|chez)|plus en poste|a quitt[ée] (l'entreprise|la soci[ée]t[ée]|nos [ée]quipes)|no longer (with|at|works? (at|for))|has left the (company|organi[sz]ation)|left the company|niet meer (bij|werkzaam)|uit dienst)\b/i;
+
+/**
+ * Demande d'arrêt, lue sur le DÉBUT du message seulement (`FENETRE_DEMANDE_ARRET`), accents retirés et
+ * casse ignorée. Deux formes : un mot seul en tête de message (« Stop message », « Unsubscribe »), ou une
+ * phrase à la première personne (« me désinscrire », « ne plus me contacter », « unsubscribe me »). Jamais
+ * « vous désinscrire » : c'est le pied de page d'un courriel, pas une demande.
+ */
+const DEMANDE_ARRET_EN_TETE = /^\W*(stop|unsubscribe|desinscri\w*|desabonn\w*|uitschrijven|opt[- ]?out)\b/;
+const DEMANDE_ARRET_PHRASE = /\b(me (desinscri|desabonn)\w*|unsubscribe me|remove me|take me off|schrijf me uit|ne (souhaite|veux) plus (recevoir|etre contacte)|ne plus (me )?(contacter|recevoir|envoyer|ecrire)|(do not|don'?t|stop) (contact|email|emailing|sending|contacting) me|stop (emailing|sending|contacting))\b/;
+/** Caractères lus au début du message : au-delà, signature, citation ou mentions légales. */
+const FENETRE_DEMANDE_ARRET = 240;
+
+function estUneDemandeDArret(texte: string): boolean {
+  const debut = texte.slice(0, FENETRE_DEMANDE_ARRET).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return DEMANDE_ARRET_EN_TETE.test(debut) || DEMANDE_ARRET_PHRASE.test(debut);
+}
 
 /** Jours avant reprise quand le corps ne donne aucune date exploitable. */
 const REPRISE_PAR_DEFAUT = 7;
@@ -213,9 +231,15 @@ function resoudreReprise(body: string, reference: Date): number {
 
 /** Passe 1 — motifs multilingues sur le corps du message, et la date de reprise si elle y figure. */
 export function classifyByRules(body: string, referenceDate: Date): ClassifyResult | null {
-  const text = body ?? '';
+  // Un corps relevé en UTF-8 relu en Windows-1252 (« dÃ©sinscrire ») doit se lire comme la forme juste.
+  const text = reparerMojibake(body ?? '');
   if (LEFT_COMPANY.test(text)) return { classification: 'auto_left_company' };
   if (ABSENCE.test(text)) return { classification: 'auto_absence', resumeInDays: resoudreReprise(text, referenceDate) };
+  // Une demande d'arrêt est une réponse humaine, quoi que dise l'en-tête : sans cette règle, un « Stop »
+  // arrivé avec `auto-submitted` se lisait comme une absence et la séquence reprenait. Il n'existe pas de
+  // classe « désinscription » (l'enum `thread_classification` n'en a pas, et ce lot n'ajoute pas de
+  // migration) : `human_reply` a déjà l'effet voulu, qui est de sortir le contact de toute l'organisation.
+  if (estUneDemandeDArret(text)) return { classification: 'human_reply' };
   return null;
 }
 
@@ -253,5 +277,5 @@ export function classifyReply(
   if (parCorps) return parCorps;
   const parEntetes = classifyByHeaders(headers);
   if (!parEntetes) return null;
-  return { ...parEntetes, resumeInDays: resoudreReprise(body ?? '', referenceDate) };
+  return { ...parEntetes, resumeInDays: resoudreReprise(reparerMojibake(body ?? ''), referenceDate) };
 }

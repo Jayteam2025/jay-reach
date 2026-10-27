@@ -68,6 +68,23 @@ describe('recordInboundReply', () => {
     expect(JSON.parse(insertion!.values[3] as string)).toEqual({ subject: 'Re: Prise de contact' });
   });
 
+  it('un corps relevé en mojibake est stocké réparé, et une demande d’arrêt y est vue (cas réel du 14/10)', async () => {
+    const { ex, appels } = creerExecuteurFactice({});
+    // « Stop message … Envoyé : … » tel que Graph l'a livré : « é » = U+00C3 U+00A9.
+    const resultat = await recordInboundReply(ex, 'org-1', {
+      contactId: 'contact-1',
+      channel: 'email',
+      body: 'Stop message\r\n\r\nEnvoy\u00C3\u00A9 : mardi 14 octobre\r\nPr\u00C3\u00A9servez l\u00E2\u0080\u0099environnement',
+      headers: { 'auto-submitted': 'auto-replied' },
+    });
+
+    const insertion = appels.find((a) => a.text.includes('insert into thread_messages'));
+    expect(insertion!.values[1]).toBe('Stop message\r\n\r\nEnvoyé : mardi 14 octobre\r\nPréservez l’environnement');
+    // Le « Stop » l'emporte sur l'en-tête automatique : réponse humaine, donc exclusion du contact.
+    expect(resultat.classification).toBe('human_reply');
+    expect(appels.some((a) => a.text.includes('jr:exclusion_reponse_contact'))).toBe(true);
+  });
+
   it('sans headers, thread_messages.headers reste NULL (pas la chaîne "null")', async () => {
     const { ex, appels } = creerExecuteurFactice({});
     await recordInboundReply(ex, 'org-1', {
