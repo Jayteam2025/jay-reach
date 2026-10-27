@@ -181,3 +181,20 @@ export function phraseEtatEnvoi(
     }
   }
 }
+
+/**
+ * Le pays de la sortie réseau, en toutes lettres dans la langue de l'écran (« FR » → « France »).
+ * Le code vient de la donnée réellement relevée à l'ouverture de la session (`last_egress_country`) :
+ * rien n'est supposé. Un code que la plateforme ne connaît pas (ou absent) ne se traduit pas, on ne
+ * l'invente pas — `null` quand rien n'est relevé, le code brut quand il est inconnu d'Intl.
+ */
+export function nomDuPays(code: string | null | undefined, locale: string): string | null {
+  const propre = code?.trim();
+  if (!propre) return null;
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(propre.toUpperCase()) ?? propre;
+  } catch {
+    // `of` lève une RangeError sur un code qui n'est pas une région (« Liberty », « 12 »).
+    return propre;
+  }
+}

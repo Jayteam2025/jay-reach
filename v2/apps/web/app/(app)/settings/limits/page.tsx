@@ -127,10 +127,12 @@ export default async function PlafondsPage() {
               pourcentage: pourcentageJauge(utilise, plafond),
               ton: tonJauge(utilise, plafond),
             },
-      arrete: PLAFONDS_DE_VOLUME.has(cle) && d.valeur === 0,
+      arret:
+        PLAFONDS_DE_VOLUME.has(cle) && d.valeur === 0
+          ? t(cle === 'enrichissements_par_jour' ? 'table.arreteEnrichissement' : 'table.arrete')
+          : undefined,
       valeur: d.valeur,
-      defaut: d.defaut,
-      repli: d.repli,
+      conseillee: d.defaut,
       modifie: libelleModification(d.modifiePar, d.modifieLe, (cle, valeurs) => t(`table.${cle}`, valeurs), maintenant, fuseau),
       type: 'nombre',
       suffixe: libelle.suffixe,
@@ -204,16 +206,13 @@ export default async function PlafondsPage() {
           colReglage: t('table.colReglage'),
           colConsomme: t('table.colConsomme'),
           colValeur: t('table.colValeur'),
-          colDefaut: t('table.colDefaut'),
-          colRepli: t('table.colRepli'),
+          colConseillee: t('table.colConseillee'),
           colModifie: t('table.colModifie'),
           modifier: t('table.modifier'),
           enregistrer: t('table.enregistrer'),
           annuler: t('table.annuler'),
-          aucunRepli: t('table.aucunRepli'),
           erreurNombre: t('table.erreurNombre'),
           sansObjet: t('table.sansObjet'),
-          arrete: t('table.arrete'),
         }}
       />
 

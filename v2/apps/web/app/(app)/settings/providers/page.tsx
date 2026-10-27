@@ -3,12 +3,14 @@ import {
   listerFournisseurs,
   normaliserDelaiRelanceMax,
   normaliserIntervalleReleve,
+  resolveScoringModel,
   SCORING_MODELS,
   type FournisseurVue,
 } from '@jay-reach/core';
 import { getProviderEntry } from '@jay-reach/providers';
 import { contexteCourant } from '../../../../lib/contexte';
 import { dateCourte, FUSEAU_PAR_DEFAUT } from '../../../../lib/dates';
+import { libelleModele } from '../../../../lib/libelle-modele';
 import {
   CarteFournisseur,
   type ChampCleFournisseur,
@@ -16,6 +18,7 @@ import {
   type InfoFournisseur,
   type MasqueFournisseur,
 } from '../../../../components/reglages/CarteFournisseur';
+import { etatFournisseur, FOURNISSEURS_FACULTATIFS } from '../../../../components/reglages/fournisseur-affichage';
 import type { PuceTon, TuileLogoMarque } from '../../../../components/ui';
 
 export const revalidate = 0;
@@ -86,6 +89,13 @@ const CHAMPS_CONFIG_EXCLUS: Partial<Record<string, string[]>> = {
   fullenrich: ['daily_cap'],
 };
 
+/**
+ * Champs optionnels qui ne se lisent qu'avec le vocabulaire du serveur : l'identifiant brut d'un
+ * modèle (`claude-haiku-4-5-20251001`). Rangés sous « Détails techniques », repliés ; le nom lisible
+ * (« Claude Haiku 4.5 ») est montré à côté, en information.
+ */
+const CHAMPS_CONFIG_TECHNIQUES: ReadonlySet<string> = new Set(['model_smart', 'model_fast']);
+
 export default async function ProvidersPage() {
   const t = await getTranslations('reglages.fournisseurs');
   // Traducteur racine (sans namespace) : `PROVIDER_CATALOG` (@jay-reach/providers) porte des
@@ -103,10 +113,8 @@ export default async function ProvidersPage() {
   const fuseau = FUSEAU_PAR_DEFAUT;
 
   function libelleEtat(f: FournisseurVue): { ton: PuceTon; texte: string } {
-    if (!f.cle.presente) return { ton: 'gris', texte: t('etat.aRenseigner') };
-    if (f.cle.statut === 'echec') return { ton: 'attention', texte: t('etat.echec') };
-    const connecte = f.categorie === 'envoi' || f.categorie === 'reception';
-    return { ton: 'bon', texte: connecte ? t('etat.connecte') : t('etat.cleValide') };
+    const etat = etatFournisseur(f);
+    return { ton: etat.ton, texte: t(`etat.${etat.cle}`) };
   }
 
   function infosDuFournisseur(f: FournisseurVue): InfoFournisseur[] {
@@ -146,6 +154,12 @@ export default async function ProvidersPage() {
             : undefined;
     infos.push({ libelle: t('colAujourdhui'), valeur: valeurAujourdhui, lien });
 
+    // Les modèles réellement utilisés, en noms lisibles : l'identifiant brut est sous « Détails techniques ».
+    if (f.providerId === 'anthropic') {
+      infos.push({ libelle: t('modeleNotation'), valeur: libelleModele(resolveScoringModel('smart', f.config)) });
+      infos.push({ libelle: t('modeleLeger'), valeur: libelleModele(resolveScoringModel('fast', f.config)) });
+    }
+
     return infos;
   }
 
@@ -178,7 +192,10 @@ export default async function ProvidersPage() {
             .filter((champ) => !champ.required && !champ.secret && !exclus.has(champ.name))
             .map((champ) => {
               const defaut = DEFAUTS_CHAMPS_CONFIG[f.providerId]?.[champ.name];
-              const aide = [champ.hintKey ? tChamps(champ.hintKey) : undefined, defaut ? t('champConfigDefaut', { defaut }) : undefined]
+              const technique = CHAMPS_CONFIG_TECHNIQUES.has(champ.name);
+              // Le défaut d'un modèle se dit « Claude Sonnet 5 » ; l'identifiant brut reste en exemple du champ.
+              const defautLisible = defaut && technique ? libelleModele(defaut) : defaut;
+              const aide = [champ.hintKey ? tChamps(champ.hintKey) : undefined, defautLisible ? t('champConfigDefaut', { defaut: defautLisible }) : undefined]
                 .filter(Boolean)
                 .join(' ');
               return {
@@ -187,6 +204,7 @@ export default async function ProvidersPage() {
                 valeurActuelle: f.config?.[champ.name] ?? '',
                 aide: aide || undefined,
                 placeholder: defaut,
+                technique,
               };
             });
 
@@ -203,6 +221,7 @@ export default async function ProvidersPage() {
               presente={f.cle.presente}
               masque={composerMasque(champsNonSecrets, f.config, f.cle.dernierCaracteres)}
               infos={infosDuFournisseur(f)}
+              facultatif={FOURNISSEURS_FACULTATIFS.has(f.providerId)}
               peutModifier={peutModifier}
               libelles={{
                 champCle: t('champCle'),
@@ -214,6 +233,7 @@ export default async function ProvidersPage() {
                 placeholderSecret: t('placeholderSecret'),
                 reglagesTitre: t('reglagesTitre'),
                 enregistrerReglages: t('enregistrerReglages'),
+                detailsTechniques: t('detailsTechniques'),
               }}
             />
           );

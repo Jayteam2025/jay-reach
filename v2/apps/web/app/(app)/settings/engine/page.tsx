@@ -59,6 +59,7 @@ export default async function ReglagesMoteurPage() {
             })
           : t('taches.sources.detailAucunPassage', { actives: taches.sources.actives }),
       lancable: taches.sources.lancable,
+      confirmation: t('taches.sources.confirmation'),
     },
     {
       cle: 'scoring',
@@ -88,6 +89,7 @@ export default async function ReglagesMoteurPage() {
           ? t('taches.releve.detailGabarit', { quand: dateCourte(taches.releve.dernierPassage, maintenant, fuseau) })
           : t('taches.releve.detailJamais'),
       lancable: taches.releve.lancable,
+      confirmation: t('taches.releve.confirmation'),
       enCours: true,
     },
   ];
@@ -172,6 +174,8 @@ export default async function ReglagesMoteurPage() {
           sousTitre: t('taches.sousTitre'),
           lancer: t('taches.lancer'),
           enCours: t('taches.enCours'),
+          confirmer: t('taches.confirmer'),
+          annuler: t('taches.annuler'),
         }}
       />
 

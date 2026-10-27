@@ -8,7 +8,7 @@ import type { TuileLogoMarque } from '../ui';
 import { actionModifierBoite } from '../../app/actions/senders';
 import { parametresValeurConsommation } from '../../lib/plafonds-affichage';
 import { libelleJoursEnvoi } from '../../lib/jours-envoi';
-import { boiteArretee, puceEtatBoite } from './boite-affichage';
+import { boiteArretee, puceEtatBoite, titreBoite } from './boite-affichage';
 import { TiroirBoite } from './TiroirBoite';
 
 const MARQUE_TUILE: Record<Boite['marque'], TuileLogoMarque> = {
@@ -37,6 +37,7 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
   const [erreur, setErreur] = useState<string | null>(null);
 
   const etat = puceEtatBoite(boite);
+  const { titre, complement } = titreBoite(boite);
 
   async function basculerActif(nouveauActif: boolean) {
     setErreur(null);
@@ -69,8 +70,11 @@ export function CarteBoite({ boite, creeLeTexte, creeLeEstRelatif, derniereRelev
           <div className="jr-qui">
             <TuileLogo marque={MARQUE_TUILE[boite.marque]} taille="grande" />
             <span>
-              <b style={{ fontSize: 16 }}>{boite.nomAffiche ?? boite.identite}</b>
-              <small>{t('box.createdOn', { date: creeLeTexte, estRelatif: creeLeEstRelatif ? 'oui' : 'non' })}</small>
+              <b style={{ fontSize: 16 }}>{titre}</b>
+              <small>
+                {complement ? `${complement} · ` : ''}
+                {t('box.createdOn', { date: creeLeTexte, estRelatif: creeLeEstRelatif ? 'oui' : 'non' })}
+              </small>
             </span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

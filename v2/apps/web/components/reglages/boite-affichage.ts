@@ -31,3 +31,18 @@ export function puceEtatBoite(boite: Pick<Boite, 'active' | 'sante'>): { ton: Pu
 export function boiteArretee(boite: Pick<Boite, 'active' | 'quotas'>): boolean {
   return boite.active && boite.quotas.jour === 0;
 }
+
+/**
+ * Le titre d'une carte de boîte : l'ADRESSE COMPLÈTE d'abord, le nom d'affichage ensuite. Trois
+ * boîtes d'un même dirigeant (a.declercq@, alex.declercq@, alexandre@) portent le même nom
+ * d'affichage chez le fournisseur d'envoi : seul l'email les distingue, il se lit donc en premier.
+ * Le nom n'est repris en complément que s'il apporte quelque chose, c'est-à-dire s'il existe et
+ * n'est pas déjà l'adresse.
+ */
+export function titreBoite(boite: Pick<Boite, 'identite' | 'nomAffiche'>): { titre: string; complement: string | null } {
+  const nom = boite.nomAffiche?.trim();
+  return {
+    titre: boite.identite,
+    complement: nom && nom.toLowerCase() !== boite.identite.toLowerCase() ? nom : null,
+  };
+}

@@ -3,41 +3,65 @@
 import { Fragment, useState, useTransition } from 'react';
 import { Bouton, Carte, Puce } from '../ui';
 import { actionLancerTache } from '../../app/actions/moteur';
+import { ConfirmationEnLigne } from './ConfirmationEnLigne';
 
-export interface LigneTache {
+interface LigneTacheBase {
   cle: string;
   titre: string;
   detail: string;
   lancable: boolean;
   enCours?: boolean;
-  /**
-   * Ligne d'aide sous la tâche (tour de correction 1, Important n° 1) :
-   * réservée aux tâches dont le bouton est désactivé parce qu'elles tournent
-   * déjà en continu côté worker (scoring, enrichissement) — jamais pour
-   * « sources » (bouton actif, rien à expliquer) ni pour « relève » (déjà
-   * couverte par sa propre carte en lecture seule, `releveLectureSeule`).
-   * Un bouton désactivé sans cette aide laisserait l'opérateur croire à un
-   * bug plutôt qu'à un fonctionnement normal.
-   */
-  aide?: string;
 }
+
+/**
+ * Une tâche porte soit une aide (elle n'a pas de bouton), soit la phrase de confirmation de son
+ * bouton — jamais les deux, jamais aucune des deux :
+ *
+ * - `aide` (tour de correction 1, Important n° 1) : réservée aux tâches qui tournent déjà en
+ *   continu côté worker (scoring, enrichissement), donc sans bouton — jamais pour « sources »
+ *   (bouton actif, rien à expliquer) ni pour « relève » (déjà couverte par sa propre carte en
+ *   lecture seule, `releveLectureSeule`). Un bouton désactivé sans cette aide laisserait
+ *   l'opérateur croire à un bug plutôt qu'à un fonctionnement normal.
+ * - `confirmation` : ce que « Lancer » déclenche, dit avant de le faire. Un clic sur « Lancer »
+ *   n'exécute rien : il pose cette question, et c'est « Oui, lancer » qui part.
+ */
+export type LigneTache = LigneTacheBase &
+  ({ aide: string; confirmation?: undefined } | { aide?: undefined; confirmation: string });
 
 export interface TableTachesLibelles {
   titre: string;
   sousTitre: string;
   lancer: string;
   enCours: string;
+  confirmer: string;
+  annuler: string;
 }
 
 // Corps pur (aucun hook) — testable par `renderToStaticMarkup`.
 export interface CorpsTableTachesProps {
   lignes: LigneTache[];
+  /** La tâche en cours d'exécution (après confirmation). */
   enAttente: string | null;
+  /** La tâche dont on demande la confirmation, ou `null`. */
+  aConfirmer: string | null;
+  /** Clic sur « Lancer » : ouvre la confirmation, ne lance rien. */
+  onDemander: (cle: string) => void;
+  /** Clic sur « Annuler » : referme la confirmation, ne lance rien. */
+  onAnnuler: () => void;
+  /** Clic sur « Oui, lancer » : la seule voie qui exécute la tâche. */
   onLancer: (cle: string) => void;
   libelles: TableTachesLibelles;
 }
 
-export function CorpsTableTaches({ lignes, enAttente, onLancer, libelles }: CorpsTableTachesProps) {
+export function CorpsTableTaches({
+  lignes,
+  enAttente,
+  aConfirmer,
+  onDemander,
+  onAnnuler,
+  onLancer,
+  libelles,
+}: CorpsTableTachesProps) {
   return (
     <Carte
       titre={
@@ -65,7 +89,7 @@ export function CorpsTableTaches({ lignes, enAttente, onLancer, libelles }: Corp
                     taille="petit"
                     disabled={!ligne.lancable || enAttente !== null}
                     aria-busy={enAttente === ligne.cle}
-                    onClick={() => onLancer(ligne.cle)}
+                    onClick={() => onDemander(ligne.cle)}
                   >
                     {libelles.lancer}
                   </Bouton>
@@ -73,6 +97,16 @@ export function CorpsTableTaches({ lignes, enAttente, onLancer, libelles }: Corp
               </span>
             </div>
             {ligne.aide && <p className="jr-aide jr-tache-aide">{ligne.aide}</p>}
+            {ligne.confirmation !== undefined && aConfirmer === ligne.cle && (
+              <ConfirmationEnLigne
+                texte={ligne.confirmation}
+                libelleConfirmer={libelles.confirmer}
+                libelleAnnuler={libelles.annuler}
+                onConfirmer={() => onLancer(ligne.cle)}
+                onAnnuler={onAnnuler}
+                pending={enAttente !== null}
+              />
+            )}
           </Fragment>
         ))}
       </div>
@@ -89,10 +123,17 @@ export interface TableTachesProps {
 export function TableTaches({ lignes, libelles, erreurLibelle }: TableTachesProps) {
   const [, startTransition] = useTransition();
   const [enAttente, setEnAttente] = useState<string | null>(null);
+  const [aConfirmer, setAConfirmer] = useState<string | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
+
+  function demander(cle: string) {
+    setErreur(null);
+    setAConfirmer(cle);
+  }
 
   function lancer(cle: string) {
     setErreur(null);
+    setAConfirmer(null);
     setEnAttente(cle);
     startTransition(async () => {
       const res = await actionLancerTache(cle);
@@ -105,7 +146,15 @@ export function TableTaches({ lignes, libelles, erreurLibelle }: TableTachesProp
 
   return (
     <>
-      <CorpsTableTaches lignes={lignes} enAttente={enAttente} onLancer={lancer} libelles={libelles} />
+      <CorpsTableTaches
+        lignes={lignes}
+        enAttente={enAttente}
+        aConfirmer={aConfirmer}
+        onDemander={demander}
+        onAnnuler={() => setAConfirmer(null)}
+        onLancer={lancer}
+        libelles={libelles}
+      />
       {erreur && (
         <div className="jr-notification erreur" role="alert">
           {erreur}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boiteArretee, puceEtatBoite } from './boite-affichage';
+import { boiteArretee, puceEtatBoite, titreBoite } from './boite-affichage';
 
 describe('puceEtatBoite', () => {
   it('boîte non reliée à SalesBlink : priorité absolue, même active', () => {
@@ -54,5 +54,30 @@ describe('une boîte dont le quota du jour est à zéro', () => {
 
   it('ne l’est pas quand la boîte est déjà inactive : sa puce le dit déjà', () => {
     expect(boiteArretee({ active: false, quotas: { jour: 0, heure: null } })).toBe(false);
+  });
+});
+
+describe('titreBoite', () => {
+  // Constat du 27/10 : trois boîtes s'affichaient toutes « Alexandre De Clercq ».
+  const trois = [
+    { identite: 'a.declercq@get-jay.fr', nomAffiche: 'Alexandre De Clercq' },
+    { identite: 'Alex.declercq@get-jay.fr', nomAffiche: 'Alexandre De Clercq' },
+    { identite: 'alexandre@get-jay.fr', nomAffiche: 'Alexandre De Clercq' },
+  ];
+
+  it('trois boîtes au même nom d’affichage se distinguent par leur adresse complète, lue en premier', () => {
+    const titres = trois.map((b) => titreBoite(b).titre);
+    expect(titres).toEqual(['a.declercq@get-jay.fr', 'Alex.declercq@get-jay.fr', 'alexandre@get-jay.fr']);
+    expect(new Set(titres).size).toBe(3);
+  });
+
+  it('le nom d’affichage passe en complément', () => {
+    expect(titreBoite(trois[0]!).complement).toBe('Alexandre De Clercq');
+  });
+
+  it('sans nom d’affichage, ou avec l’adresse comme nom, aucun complément redondant', () => {
+    expect(titreBoite({ identite: 'hey@get-jay.fr', nomAffiche: null }).complement).toBeNull();
+    expect(titreBoite({ identite: 'hey@get-jay.fr', nomAffiche: 'HEY@get-jay.fr' }).complement).toBeNull();
+    expect(titreBoite({ identite: 'hey@get-jay.fr', nomAffiche: '  ' }).complement).toBeNull();
   });
 });

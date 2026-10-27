@@ -9,14 +9,22 @@
  * Composant serveur : aucune interaction ici, les réglages vivent sur l'écran LinkedIn.
  */
 import { Carte, TuileLogo } from '../ui';
+import { DetailsTechniques } from './DetailsTechniques';
 
 export interface CarteSessionLinkedInProps {
   /** L'état de la session du serveur, `null` quand aucun compte n'est branché. */
   session: {
     compteIdentifiant: string | null;
     ipVue: string | null;
+    operateur: string | null;
     derniereCollecte: Date | null;
   } | null;
+  /**
+   * La sortie réseau en une phrase de non-technicien (« Sortie par une IP résidentielle — pays :
+   * France »), déjà composée et traduite par l'appelant. L'adresse IP et l'opérateur n'apparaissent
+   * que dans « Détails techniques ».
+   */
+  sortieTexte: string | null;
   /** La phrase d'état déjà traduite, et son ton, tels que l'écran LinkedIn les compose. */
   etat: { ton: string; phrase: string };
   /**
@@ -31,6 +39,9 @@ export interface CarteSessionLinkedInProps {
     compte: string;
     comptePasEncore: string;
     sortie: string;
+    detailsTechniques: string;
+    ip: string;
+    operateur: string;
     envoisSemaine: string;
     derniereCollecte: string;
     jamais: string;
@@ -44,6 +55,7 @@ export interface CarteSessionLinkedInProps {
 
 export function CarteSessionLinkedIn({
   session,
+  sortieTexte,
   etat,
   envoisTexte,
   libelles,
@@ -88,7 +100,7 @@ export function CarteSessionLinkedIn({
         </div>
         <div>
           <dt>{libelles.sortie}</dt>
-          <dd className="mono">{session?.ipVue ?? libelles.inconnu}</dd>
+          <dd>{sortieTexte ?? libelles.inconnu}</dd>
         </div>
         {/* Le chiffre qui dit si le canal travaille. Affiché seulement s'il est mesuré :
             un « 0 sur 0 » inventé vaudrait moins que rien. */}
@@ -105,6 +117,18 @@ export function CarteSessionLinkedIn({
           </dd>
         </div>
       </dl>
+      <DetailsTechniques titre={libelles.detailsTechniques}>
+        <dl className="jr-session-faits">
+          <div>
+            <dt>{libelles.ip}</dt>
+            <dd className="mono">{session?.ipVue ?? libelles.inconnu}</dd>
+          </div>
+          <div>
+            <dt>{libelles.operateur}</dt>
+            <dd>{session?.operateur || libelles.inconnu}</dd>
+          </div>
+        </dl>
+      </DetailsTechniques>
 
       <p className="jr-session-action">
         <a className="jr-lien" href="/settings/linkedin">

@@ -2,10 +2,14 @@
 
 /**
  * Table éditable de l'écran Réglages › Plafonds (tâche 21, maquette
- * `reglages-plafonds.html`) : une ligne par réglage, valeur / défaut / repli /
+ * `reglages-plafonds.html`) : une ligne par réglage, valeur / valeur conseillée /
  * modifié — édition ligne par ligne (« Modifier » → champ + Enregistrer/Annuler),
  * comme la maquette. Colonnes secondaires masquées sous 1180 px (`masquable`,
  * déjà posé par `composants.css`).
+ *
+ * Aucune variable d'environnement ne s'affiche ici : le lecteur est un directeur commercial, pas
+ * un opérateur du serveur. Le repli par l'environnement reste décrit dans la documentation
+ * d'auto-hébergement.
  */
 import { useState, useTransition } from 'react';
 import { BarreProgression, Bouton, Champ } from '../ui';
@@ -28,9 +32,8 @@ export interface LignePlafond {
   nom: string;
   description: string;
   valeur: number | string;
-  defaut: number | string;
-  /** Nom de la variable d'environnement de repli, `null` → « aucun ». */
-  repli: string | null;
+  /** La valeur que l'application conseille quand rien n'est réglé. */
+  conseillee: number | string;
   /** Déjà composé côté serveur (auteur + date dans le fuseau de l'organisation), ou « jamais ». */
   modifie: string;
   type: 'nombre' | 'texte';
@@ -38,11 +41,13 @@ export interface LignePlafond {
   /** `null` quand le réglage n'est pas un volume consommable. */
   consommation?: ConsommationLigne | null;
   /**
-   * Ce plafond vaut zéro et arrête donc la production. Distingué à l'œil parce que c'est le
-   * réglage qui a coupé l'enrichissement pendant des jours sans que l'écran le dise — c'est aussi
-   * ce que l'alerte `plafond_a_zero` du tableau de bord signale.
+   * Ce que veut dire un plafond à zéro pour CETTE ligne, déjà traduit : présent seulement quand
+   * le plafond arrête la production. Distingué à l'œil parce que c'est le réglage qui a coupé
+   * l'enrichissement pendant des jours sans que l'écran le dise — c'est aussi ce que l'alerte
+   * `plafond_a_zero` du tableau de bord signale. La phrase dit la conséquence, pas seulement
+   * l'arrêt : « plus rien ne se produit » ne dit pas à un non-technicien ce qui va manquer.
    */
-  arrete?: boolean;
+  arret?: string;
 }
 
 export interface TablePlafondsProps {
@@ -52,16 +57,13 @@ export interface TablePlafondsProps {
     colReglage: string;
     colConsomme: string;
     colValeur: string;
-    colDefaut: string;
-    colRepli: string;
+    colConseillee: string;
     colModifie: string;
     modifier: string;
     enregistrer: string;
     annuler: string;
-    aucunRepli: string;
     erreurNombre: string;
     sansObjet: string;
-    arrete: string;
   };
 }
 
@@ -109,8 +111,7 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                 plafond seul ne dit jamais s'il est sur le point de bloquer. */}
             <th>{libelles.colConsomme}</th>
             <th>{libelles.colValeur}</th>
-            <th className="masquable">{libelles.colDefaut}</th>
-            <th className="masquable">{libelles.colRepli}</th>
+            <th className="masquable">{libelles.colConseillee}</th>
             <th className="masquable">{libelles.colModifie}</th>
           </tr>
         </thead>
@@ -140,7 +141,7 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                 <td>
                   {!enEdition ? (
                     <>
-                      <b style={{ fontSize: 15 }} className={ligne.arrete ? 'jr-valeur-arretee' : undefined}>
+                      <b style={{ fontSize: 15 }} className={ligne.arret ? 'jr-valeur-arretee' : undefined}>
                         {ligne.valeur}
                         {ligne.suffixe ? ` ${ligne.suffixe}` : ''}
                       </b>
@@ -156,9 +157,7 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                       )}
                       {/* Après « Modifier », pas avant : `jr-etat-detail` est un bloc, et le
                           placer plus haut rejetait le lien d'édition sur une ligne à lui. */}
-                      {ligne.arrete && (
-                        <small className="jr-valeur-arretee jr-etat-detail">{libelles.arrete}</small>
-                      )}
+                      {ligne.arret && <small className="jr-valeur-arretee jr-etat-detail">{ligne.arret}</small>}
                     </>
                   ) : (
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -184,10 +183,7 @@ export function TablePlafonds({ lignes, peutModifier, libelles }: TablePlafondsP
                     </div>
                   )}
                 </td>
-                <td className="jr-secondaire masquable">{ligne.defaut}</td>
-                <td className="jr-secondaire masquable" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>
-                  {ligne.repli ?? libelles.aucunRepli}
-                </td>
+                <td className="jr-secondaire masquable">{ligne.conseillee}</td>
                 <td className="jr-secondaire masquable" style={{ fontSize: 12.5 }}>
                   {ligne.modifie}
                 </td>

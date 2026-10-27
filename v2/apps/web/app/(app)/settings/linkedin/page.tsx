@@ -1,4 +1,4 @@
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import {
   compterPostsEnAttenteDeValidation,
   compterPostsLinkedInDuJour,
@@ -19,7 +19,7 @@ import {
 import { lireDemandeEnCours } from '@jay-reach/core';
 import { contexteCourant } from '../../../../lib/contexte';
 import { pourcentageJauge, tonJauge } from '../../../../lib/plafonds-affichage';
-import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour } from '../../../../lib/dates';
+import { dateCourte, dateRelativeCourte, FUSEAU_PAR_DEFAUT, heureAvecJour, sansPointFinal } from '../../../../lib/dates';
 import { lireSessionLinkedInCourante } from '../../../../lib/linkedin-session';
 import { BarreProgression, Carte, TuileLogo } from '../../../../components/ui';
 import { FenetreEnvoiLinkedin } from '../../../../components/reglages/FenetreEnvoiLinkedin';
@@ -28,7 +28,8 @@ import { CollecteAutoLinkedin } from '../../../../components/reglages/CollecteAu
 import { ConnexionLinkedin } from '../../../../components/reglages/ConnexionLinkedin';
 import { ChoixRythme } from '../../../../components/reglages/ChoixRythme';
 import type { CranRythme } from '../../../../components/reglages/rythme-affichage';
-import { phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
+import { DetailsTechniques } from '../../../../components/reglages/DetailsTechniques';
+import { nomDuPays, phraseEtatEnvoi, phraseEtatSession, varianteDetailSession } from '../../../../components/reglages/linkedin-session-affichage';
 
 export const revalidate = 0;
 
@@ -58,6 +59,7 @@ function plafondEffectif(regle: number): number {
 export default async function ReglagesLinkedinPage() {
   const ctx = await contexteCourant();
   const t = await getTranslations('reglages.linkedin');
+  const locale = await getLocale();
 
   const reglages = await lireReglages(ctx);
   const fuseau = String(reglages.fuseau || FUSEAU_PAR_DEFAUT);
@@ -115,19 +117,32 @@ export default async function ReglagesLinkedinPage() {
   const envoi = phraseEtatEnvoi(session, prochain, maintenant);
   const inconnu = t('faits.inconnu');
   const origine = [session?.operateur, session?.pays].filter(Boolean).join(', ');
+  // Ce que lit un non-technicien : le genre de sortie et le pays, en toutes lettres. L'adresse IP
+  // et l'opérateur restent derrière « Détails techniques ». Le pays est celui relevé à l'ouverture
+  // de la session, jamais supposé : sans relevé, la phrase ne cite pas de pays.
+  const pays = nomDuPays(session?.pays, locale);
+  const sortie = !session?.ipVue
+    ? inconnu
+    : pays
+      ? t('faits.sortieValeur', { pays })
+      : t('faits.sortieValeurSansPays');
+  // Les gabarits de `etat.*.detail` posent eux-mêmes le point qui suit chaque date : une date
+  // abrégée (« 14 oct. ») est donc rendue sans le sien, sinon l'écran affichait « 14 oct.. ».
   const detail = t(`etat.${phrase.cle}.${variante}`, {
-    depuis: session?.connecteeLe ? dateCourte(session.connecteeLe.toISOString(), maintenant, fuseau) : inconnu,
-    collecte: session?.derniereCollecte
-      ? dateRelativeCourte(session.derniereCollecte.toISOString(), maintenant, fuseau)
-      : inconnu,
-    quand: session?.bloqueeLe ? dateCourte(session.bloqueeLe.toISOString(), maintenant, fuseau) : inconnu,
+    depuis: sansPointFinal(session?.connecteeLe ? dateCourte(session.connecteeLe.toISOString(), maintenant, fuseau) : inconnu),
+    collecte: sansPointFinal(
+      session?.derniereCollecte
+        ? dateRelativeCourte(session.derniereCollecte.toISOString(), maintenant, fuseau)
+        : inconnu,
+    ),
+    quand: sansPointFinal(session?.bloqueeLe ? dateCourte(session.bloqueeLe.toISOString(), maintenant, fuseau) : inconnu),
     ip: session?.ipVue ?? inconnu,
     origine,
   });
 
   // « jusqu'à » pour une pause, « prochain envoi » pour un créneau à venir : deux dates
   // différentes, une seule variable de texte — chaque phrase ne lit que la sienne.
-  const dateEnvoi = (() => {
+  const dateEnvoi = sansPointFinal((() => {
     if (envoi.cle === 'enPause' && session?.envoiPauseJusqua) {
       return dateCourte(session.envoiPauseJusqua.toISOString(), maintenant, fuseau);
     }
@@ -140,7 +155,7 @@ export default async function ReglagesLinkedinPage() {
       return heureAvecJour(prochain.disponibleA.toISOString(), maintenant, fuseau);
     }
     return inconnu;
-  })();
+  })());
 
   const peutModifier = ctx.role === 'admin' || ctx.role === 'owner';
 
@@ -178,6 +193,8 @@ export default async function ReglagesLinkedinPage() {
                 connecter: t('connexion.connecter'),
                 reconnecter: t('connexion.reconnecter'),
                 deconnecter: t('connexion.deconnecter'),
+                deconnecterConfirmation: t('connexion.deconnecterConfirmation'),
+                deconnecterConfirmer: t('connexion.deconnecterConfirmer'),
                 annuler: t('connexion.annuler'),
                 valider: t('connexion.valider'),
                 identifiant: t('connexion.identifiant'),
@@ -245,11 +262,7 @@ export default async function ReglagesLinkedinPage() {
           </div>
           <div>
             <dt>{t('faits.sortie')}</dt>
-            <dd className="mono">{session?.ipVue ?? inconnu}</dd>
-          </div>
-          <div>
-            <dt>{t('faits.operateur')}</dt>
-            <dd>{origine || inconnu}</dd>
+            <dd>{sortie}</dd>
           </div>
           <div>
             <dt>{t('faits.collecte')}</dt>
@@ -260,6 +273,18 @@ export default async function ReglagesLinkedinPage() {
             </dd>
           </div>
         </dl>
+        <DetailsTechniques titre={t('faits.detailsTechniques')}>
+          <dl className="jr-session-faits">
+            <div>
+              <dt>{t('faits.ip')}</dt>
+              <dd className="mono">{session?.ipVue ?? inconnu}</dd>
+            </div>
+            <div>
+              <dt>{t('faits.operateur')}</dt>
+              <dd>{session?.operateur || inconnu}</dd>
+            </div>
+          </dl>
+        </DetailsTechniques>
       </Carte>
 
       {/* Envoi d'abord, collecte ensuite : les deux cartes se lisent dans l'ordre des

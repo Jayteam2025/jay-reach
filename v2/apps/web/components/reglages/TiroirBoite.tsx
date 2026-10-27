@@ -89,7 +89,7 @@ export function TiroirBoite({ ouvert, boite, onFermer, onEnregistre }: TiroirBoi
   return (
     <Tiroir
       ouvert={ouvert}
-      titre={t('title', { identite: boite.nomAffiche ?? boite.identite })}
+      titre={t('title', { identite: boite.identite })}
       onFermer={onFermer}
       libelleFermer={t('close')}
       pied={pied}

@@ -10,6 +10,8 @@ const libelles = {
   connecter: c.connecter,
   reconnecter: c.reconnecter,
   deconnecter: c.deconnecter,
+  deconnecterConfirmation: c.deconnecterConfirmation,
+  deconnecterConfirmer: c.deconnecterConfirmer,
   annuler: c.annuler,
   valider: c.valider,
   identifiant: c.identifiant,

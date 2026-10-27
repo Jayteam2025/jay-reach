@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ProchainEnvoi, SessionLinkedIn } from '@jay-reach/core';
-import { ligneMoteurLinkedIn, phraseEtatEnvoi, phraseEtatSession, varianteDetailSession, type CleEtatEnvoi, type CleEtatSession } from './linkedin-session-affichage';
+import { ligneMoteurLinkedIn, nomDuPays, phraseEtatEnvoi, phraseEtatSession, varianteDetailSession, type CleEtatEnvoi, type CleEtatSession } from './linkedin-session-affichage';
 
 const base: SessionLinkedIn = {
   etat: 'active',
@@ -321,5 +321,24 @@ describe('clés de traduction du canal d envoi', () => {
     for (const cle of ['enPause', 'planifie'] as const) {
       expect(String((envoi[cle] as { phrase?: string } | undefined)?.phrase), `${langue} > ${cle}`).toContain('{quand}');
     }
+  });
+});
+
+describe('nomDuPays', () => {
+  it('rend le pays en toutes lettres dans la langue de l’écran, lu du code réellement relevé', () => {
+    expect(nomDuPays('FR', 'fr')).toBe('France');
+    expect(nomDuPays('fr', 'en')).toBe('France');
+    expect(nomDuPays('DE', 'fr')).toBe('Allemagne');
+    expect(nomDuPays('BG', 'nl')).toBe('Bulgarije');
+  });
+
+  it('ne fabrique pas de pays quand rien n’est relevé', () => {
+    expect(nomDuPays(null, 'fr')).toBeNull();
+    expect(nomDuPays(undefined, 'fr')).toBeNull();
+    expect(nomDuPays('  ', 'fr')).toBeNull();
+  });
+
+  it('garde tel quel un libellé que la plateforme ne reconnaît pas comme un code région', () => {
+    expect(nomDuPays('France', 'fr')).toBe('France');
   });
 });
