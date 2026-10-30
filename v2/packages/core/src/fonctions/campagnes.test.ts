@@ -2178,6 +2178,37 @@ describe('manquesPourLancer', () => {
     expect(await manquesPourLancer(ctx, { campagneId })).toEqual([]);
   });
 
+  /**
+   * Mesuré le 30/10 sur la campagne du boss : invitation SANS message relié, puis deux messages.
+   * Le contrôle « étape sans message » la bloquait, alors que le contrôle de note exige justement
+   * qu'elle n'en porte pas, et que le worker l'envoie nue quand l'étape n'a pas de modèle.
+   */
+  it('laisse passer une invitation sans message relié : elle part sans note', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [
+        { position: 0, channel: 'linkedin_invite', template_parent_id: null },
+        { position: 1, channel: 'linkedin_message', template_parent_id: 'tpl-1' },
+      ],
+      'jr:manques_note_invitation': [],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    expect(await manquesPourLancer(ctx, { campagneId })).toEqual([]);
+  });
+
+  it('signale toujours un message LinkedIn sans message relié', async () => {
+    const ctx = faux({
+      'jr:manques_etapes': [
+        { position: 0, channel: 'linkedin_invite', template_parent_id: null },
+        { position: 1, channel: 'linkedin_message', template_parent_id: null },
+      ],
+      'jr:manques_note_invitation': [],
+      'jr:manques_genres': [],
+      'jr:manques_session_linkedin': [{ status: 'active' }],
+    });
+    expect(await manquesPourLancer(ctx, { campagneId })).toEqual(['l’étape 2 n’a pas de message relié']);
+  });
+
   it('ne signale rien quand tout est prêt', async () => {
     const ctx = faux({
       'jr:manques_etapes': [{ position: 0, channel: 'email', template_parent_id: 'tpl-1' }],
