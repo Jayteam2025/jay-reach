@@ -2175,7 +2175,9 @@ export async function manquesPourLancer(ctx: Contexte, entree: unknown): Promise
     return ['la séquence ne comporte aucune étape'];
   }
 
-  const sansMessage = etapes.filter((e) => e.channel !== 'call' && !e.template_parent_id);
+  // L'invitation LinkedIn est exemptée : sans message relié, elle part sans note, ce que le
+  // contrôle de note ci-dessous exige justement (le worker l'envoie nue, `sequence.ts`).
+  const sansMessage = etapes.filter((e) => e.channel !== 'call' && e.channel !== 'linkedin_invite' && !e.template_parent_id);
   if (sansMessage.length > 0) {
     // Le RANG de l'étape (sa place dans la séquence), jamais `position + 1` : `position` garde les trous
     // laissés par une étape supprimée, et l'opérateur compte les étapes qu'il voit.
