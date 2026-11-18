@@ -4,13 +4,9 @@ name: CI v2
 # couvre le socle actuel (racine) et ignore desormais v2/ : les deux mondes ont
 # leur propre tsconfig, leur propre eslint et leur propre suite de tests.
 #
-# Ne se declenche que sur les chemins du v2. Une PR qui ne touche pas v2/ ne
-# lance pas ce workflow.
-#
-# Volontairement, le workflow ne se declenche pas sur son propre fichier : tant
-# que v2/ n'est pas sur main, le job echouerait faute de v2/pnpm-lock.yaml a
-# mettre en cache. Une modification de ce fichier se verifie donc avec une PR
-# qui touche aussi v2/.
+# Le job v2-lint-and-test tourne sur toute PR vers main (pas de filtre de chemins),
+# pour pouvoir etre un check requis du ruleset : une PR qui ne touche pas v2/ le
+# passe quand meme. Le push sur main reste limite aux chemins v2/.
 
 on:
   push:
@@ -21,8 +17,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'v2/**'
   # Parcours Playwright (tâche 26) : déclenchement manuel uniquement, tant
   # que la base de test n'est pas provisionnée en CI (voir le job v2-e2e).
   workflow_dispatch:

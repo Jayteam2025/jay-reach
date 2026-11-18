@@ -1,1 +1,8 @@
 * @Jeeiib
+
+# Ces fichiers n'exigent plus la revue du code owner, pour que le robot puisse approuver
+# les PR Dependabot. Une PR humaine qui ne touche qu'eux exige toujours 1 approbation.
+package.json
+**/package.json
+pnpm-lock.yaml
+**/pnpm-lock.yaml

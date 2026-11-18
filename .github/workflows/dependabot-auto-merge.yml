@@ -1,7 +1,10 @@
 # Fusion automatique des PR Dependabot de mineures et correctifs, une fois les checks
 # requis verts (l'auto-merge GitHub attend le ruleset de la branche par défaut).
-# Les majeures, et les mineures des dépendances listées dans SENSIBLES, sont assignées
-# à RELECTEUR : ce sont les seules PR Dependabot qui notifient.
+# Les mineures et correctifs non sensibles sont approuvés par le workflow (CODEOWNERS ne
+# demande pas de code owner pour package.json et les lockfiles), puis fusionnés.
+# Les majeures, les mineures des dépendances listées dans SENSIBLES et les mises à jour de
+# GitHub Actions (le code owner des workflows reste requis) sont assignées à RELECTEUR :
+# ce sont les seules PR Dependabot qui notifient.
 name: Dependabot auto-merge
 
 on: pull_request
@@ -25,6 +28,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          ECOSYSTEME: ${{ steps.meta.outputs.package-ecosystem }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           DEPS: ${{ steps.meta.outputs.dependency-names }}
           # Noms exacts, séparés par des virgules : seuls leurs correctifs passent seuls.
@@ -44,10 +48,12 @@ jobs:
               case ",${SENSIBLES}," in *",${dep},"*) manuel=true ;; esac
             done
           fi
+          [ "$ECOSYSTEME" = "github_actions" ] && manuel=true
           if [ "$manuel" = true ]; then
             echo "Revue manuelle ($UPDATE_TYPE : $DEPS)"
             gh pr edit "$PR_URL" --add-assignee "$RELECTEUR"
           else
             echo "Fusion automatique ($UPDATE_TYPE : $DEPS)"
+            gh pr review "$PR_URL" --approve --body "Mineure ou correctif : approuvée par le workflow, fusion dès que la CI est verte."
             gh pr merge "$PR_URL" --auto --squash
           fi
