@@ -23,6 +23,15 @@ updates:
       semver-minor-days: 7
       semver-patch-days: 3
     groups:
+      # Dependances sensibles (voir SENSIBLES du workflow) : leurs mineures sont relues a la main.
+      # Groupe place AVANT le principal (premiere correspondance) pour ne pas bloquer le reste.
+      sensibles:
+        patterns:
+          - "vite"
+          - "react"
+          - "react-dom"
+          - "next"
+        update-types: ["minor", "patch"]
       dependances:
         update-types: ["minor", "patch"]
     ignore:
