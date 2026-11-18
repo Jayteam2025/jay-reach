@@ -1,0 +1,59 @@
+# Fusion automatique des PR Dependabot de mineures et correctifs, une fois les checks
+# requis verts (l'auto-merge GitHub attend le ruleset de la branche par défaut).
+# Les mineures et correctifs non sensibles sont approuvés par le workflow (CODEOWNERS ne
+# demande pas de code owner pour package.json et les lockfiles), puis fusionnés.
+# Les majeures, les mineures des dépendances listées dans SENSIBLES et les mises à jour de
+# GitHub Actions (le code owner des workflows reste requis) sont assignées à RELECTEUR :
+# ce sont les seules PR Dependabot qui notifient.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions: {}
+
+jobs:
+  dependabot:
+    name: dependabot-auto-merge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Lire les métadonnées de la mise à jour
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Fusionner automatiquement ou assigner pour revue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          ECOSYSTEME: ${{ steps.meta.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+          # Noms exacts, séparés par des virgules : seuls leurs correctifs passent seuls.
+          SENSIBLES: "vite,react,react-dom,next"
+          RELECTEUR: Jeeiib
+        run: |
+          set -euo pipefail
+          manuel=false
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch|version-update:semver-minor) ;;
+            *) manuel=true ;;  # majeure, ou type inconnu : un humain regarde
+          esac
+          if [ "$UPDATE_TYPE" = "version-update:semver-minor" ]; then
+            IFS=',' read -ra liste <<< "$DEPS"
+            for dep in "${liste[@]}"; do
+              dep="${dep// /}"
+              case ",${SENSIBLES}," in *",${dep},"*) manuel=true ;; esac
+            done
+          fi
+          [ "$ECOSYSTEME" = "github_actions" ] && manuel=true
+          if [ "$manuel" = true ]; then
+            echo "Revue manuelle ($UPDATE_TYPE : $DEPS)"
+            gh pr edit "$PR_URL" --add-assignee "$RELECTEUR"
+          else
+            echo "Fusion automatique ($UPDATE_TYPE : $DEPS)"
+            gh pr review "$PR_URL" --approve --body "Mineure ou correctif : approuvée par le workflow, fusion dès que la CI est verte."
+            gh pr merge "$PR_URL" --auto --squash
+          fi

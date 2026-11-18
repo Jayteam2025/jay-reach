@@ -1,0 +1,44 @@
+# Mises à jour des dépendances : une PR groupée par semaine pour les mineures et correctifs
+# (fusionnée seule si la CI est verte, voir workflows/dependabot-auto-merge.yml), une PR par
+# majeure (assignée pour revue). Le cooldown laisse quelques jours à la communauté pour
+# repérer une version piégée ou cassée avant qu'elle n'arrive ici.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /v2
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+      prefix-development: "build(deps-dev)"
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      dependances:
+        update-types: ["minor", "patch"]
+    ignore:
+      # @types/node suit la version majeure de Node choisie volontairement.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      time: "06:00"
+      timezone: Europe/Paris
+    commit-message:
+      prefix: "ci(deps)"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
