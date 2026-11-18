@@ -16,6 +16,6 @@
     "db:types": "supabase gen types typescript --local > src/database.types.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.47.10"
+    "@supabase/supabase-js": "^2.119.0"
   }
 }
