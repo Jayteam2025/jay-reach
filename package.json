@@ -119,7 +119,7 @@
     "critters": "^0.0.23",
     "crypto-js": "^4.2.0",
     "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^15.9.0",
     "jest-axe": "^10.0.0",
